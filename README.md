@@ -1,52 +1,87 @@
-# This is my backport of Distant Horizons to 1.7.10 - see the [official Distant Horizons](https://gitlab.com/distant-horizons-team/distant-horizons).
+# DistantHorizons-WDG
 
-# What is Distant Horizons?
+DistantHorizons-WDG is the **Wargames Development Group-maintained fork** of the Minecraft 1.7.10 backport of Distant Horizons.
 
-Distant Horizons is a mod which implements a [Level of Detail](https://en.wikipedia.org/wiki/Level_of_detail_(computer_graphics)) system to Minecraft.\
-This allows for far greater render distances without harming performance by gradually lowering the quality of distant terrain.
+- WDG repository: <https://github.com/Wargames-Development/DistantHorizons-WDG>
+- Upstream 1.7.10 backport: <https://github.com/DarkShadow44/DistantHorizonsStandalone>
+- Original Distant Horizons project: <https://gitlab.com/distant-horizons-team/distant-horizons>
 
-Below is a video demonstrating the system:
+Distant Horizons was created by James Seibel and its contributors. DarkShadow44 and the contributors to DistantHorizonsStandalone established and maintain the upstream 1.7.10 backport. Wargames Development Group maintains this fork while preserving the original LGPL-3.0 licensing, authorship, public mod identity, API, protocol, configuration, and world-data compatibility boundaries.
 
-<a href="https://youtu.be/SxQdbtjGEsc" target="_blank">![Distant Horizons - Alpha 2.0](https://i.ytimg.com/vi/SxQdbtjGEsc/hqdefault.jpg)</a>
+## What the mod does
 
-# Installation
+Distant Horizons extends the visible world with Level of Detail terrain. Nearby Minecraft terrain remains fully rendered; progressively simplified distant terrain allows substantially longer effective view distances at a lower cost than rendering every distant chunk normally.
 
-- Download the latest version from [DistantHorizonsStandalone Releases](https://github.com/DarkShadow44/DistantHorizonsStandalone/releases) and put it into the mods folder
+## Runtime contract
 
-Make sure the latest versions of each of the dependencies are installed:
+This repository targets:
 
-- [lwjgl3ify](https://github.com/GTNewHorizons/lwjgl3ify) - Use 3.0.15 or higher
-- [GTNHLib](https://github.com/GTNewHorizons/GTNHLib)
-- [UniMixins](https://github.com/LegacyModdingMC/UniMixins)
+- Minecraft 1.7.10;
+- Forge 10.13.4.1614;
+- the public mod ID `distanthorizons`;
+- Java 21 for the **actual Minecraft game process**.
 
-Now supports shaders when used with Angelica 2.1.12 or higher. Tested with [Complementary 5.7.1](https://modrinth.com/shader/complementary-reimagined/version/r5.7.1) with [Euphoria patches 1.8.6](https://modrinth.com/mod/euphoria-patches/version/1.8.6-r5.7.1-forge1.7.10)
-If it works with modern DH+Iris, but not with latest Angelica + DH, this should be reported as bug.
+DistantHorizons-WDG is intentionally not converted to Java 8. Its production classes use Java 21 bytecode and modern Java APIs.
 
-# Known Issues
+The intended WDG launch path is:
 
-- Memory usage might creep up over time and crash the server
-- Server side not fully stable, use with caution
-- Sometimes LODs don't update properly, change rendering distance and then back to fix that (upstream issue)
+1. a launcher may initially enter through the legacy Java path;
+2. `lwjgl3ify-wdg` installs or reuses a packaged Temurin Java 21 runtime;
+3. `lwjgl3ify-wdg` relaunches the real Minecraft process under Java 21;
+4. DistantHorizons-WDG loads inside that Java 21 process.
 
-# GTNH 2.8.4
+The automatic packaged-Java installer and relauncher belong to `lwjgl3ify-wdg`, not this repository. **Change 005 establishes the development, dependency, metadata, and artifact-verification foundation only. It does not create or claim a final combined WDG client package.**
 
-Here detailed instructions how to get DH + latest Angelica working in GTNH 2.8.4 (you'll need to upgrade a few things) in Prism Launcher:
+## Required dependencies
 
-Download the following mods:
-- Latest DH - tested with [alpha18](https://github.com/DarkShadow44/DistantHorizonsStandalone/releases/tag/alpha18) - get `distanthorizons-alpha18.jar`
-- Latest Angelica - tested with [2.1.16](https://github.com/GTNewHorizons/Angelica/releases/tag/2.1.16) - get `angelica-2.1.16.jar`
-- Latest lwjgl3ify - tested with [3.0.15](https://github.com/GTNewHorizons/lwjgl3ify/releases/tag/3.0.15) - get `lwjgl3ify-3.0.15.jar` and `lwjgl3ify-3.0.15-multimc.zip`
-- Latest GTNHLib - tested with [0.9.47](https://github.com/GTNewHorizons/GTNHLib/releases/tag/0.9.47) - get `gtnhlib-0.9.47.jar`
+The 1.7.10 port requires these runtime mods:
 
-From your mods folder delete
-- angelica-1.0.0-beta66b.jar
-- lwjgl3ify-2.1.16.jar
-- gtnhlib-0.7.10.jar
+- `lwjgl3ify` — the LWJGL 3 environment and WDG Java 21 bootstrap path;
+- `gtnhlib` — GTNHLib APIs used directly by the implementation;
+- `gtnhmixins` / UniMixins — the Mixin provider used by the early and normal Mixin configurations.
 
-Then add to your mods folder:
-- distanthorizons-alpha18.jar
-- angelica-2.1.16.jar
-- lwjgl3ify-3.0.15.jar
-- gtnhlib-0.9.47.jar
+The default development dependency uses the reproducible upstream `lwjgl3ify` coordinate. Maintainers can opt into an exact local `lwjgl3ify-wdg` development JAR without publishing it first; see [COMPILING.md](COMPILING.md).
 
-Then unzip `lwjgl3ify-3.0.15-multimc.zip`, copy the contents into your Prism Launcher instance. You know you copy into the right folder when you overwrite your `mmc-pack.json`.
+## Optional integrations
+
+These are compatibility integrations, not mandatory dependencies:
+
+- Angelica 2.1.54 or newer, including shader/render compatibility and an explicit runtime version gate;
+- Hodgepodge;
+- GregTech 5 Unofficial;
+- RPLE;
+- NotEnoughItems as an optional development convenience only.
+
+The optional compatibility classes remain guarded by mod-presence checks. Angelica is compiled against 2.1.54 and accepted at runtime from 2.1.54 onward. Optional integrations are not published as required Maven or Forge dependencies.
+
+## Client and server status
+
+The client is the primary supported environment for this 1.7.10 backport. Dedicated-server code remains present and its public behavior is preserved, but server-side operation has known stability limitations, including reported long-running memory growth. Change 005 does not claim improved server stability and does not run a dedicated-server smoke test.
+
+Known upstream/runtime limitations can include stale LOD updates that recover after changing the render distance. Real-world database migrations, world loading, LOD rendering, shaders, and server behavior remain deferred to later production-like runtime validation.
+
+## Development
+
+- [SETUP.md](SETUP.md) — JDK and IntelliJ IDEA import setup.
+- [COMPILING.md](COMPILING.md) — build, verification, artifact roles, local lwjgl3ify-wdg inputs, and troubleshooting.
+- [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) — required, optional, development, and shadowed dependency classifications.
+
+Ordinary Gradle client/server run tasks remain deliberately disabled. The next bounded change will construct an isolated production-like client from the exact reobfuscated Distant Horizons JAR, exact reobfuscated `lwjgl3ify-wdg` JAR, required runtime mods, and packaged Java 21 runtime bundle.
+
+## Building
+
+The repository uses the Gradle 9.4.0 wrapper. Gradle itself is selected through the checked-in Java 25 Adoptium daemon criteria; Distant Horizons source and tests compile with the Java 21 toolchain.
+
+```bash
+./gradlew --no-daemon verifyRepository
+./gradlew --no-daemon test
+./gradlew --no-daemon clean build
+./gradlew --no-daemon verifyProductionModArtifact
+./gradlew --no-daemon verifyPublishedDependencyMetadata
+```
+
+The one distributable mod artifact is the unclassified output of `reobfJar`. The `-dev-preshadow`, `-dev`, sources, and API JARs are intermediate or development artifacts and must not be installed as the production mod.
+
+## Licence and attribution
+
+Distant Horizons source remains licensed under the GNU Lesser General Public License v3.0. Existing file-level copyright notices and upstream attribution are preserved. No statement in this README replaces the repository licence or the attribution in individual source files.

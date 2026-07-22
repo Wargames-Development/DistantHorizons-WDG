@@ -1,21 +1,21 @@
 {
-	"modListVersion": 2,
-	"modList": [{
-		"modid": "${modId}",
-		"name": "${modName}",
-		"description": "An example mod for Minecraft 1.7.10 with Forge focused on a stable setup.",
-		"version": "${modVersion}",
-		"mcversion": "${minecraftVersion}",
-		"url": "https://github.com/SinTh0r4s/MyMod",
-		"updateUrl": "",
-		"authorList": ["SinTho0r4s"],
-		"credits": "",
-		"logoFile": "",
-		"screenshots": [],
-		"parent": "",
-		"requiredMods": [],
-		"dependencies": [],
-		"dependants": [],
-		"useDependencyInformation": false
-	}]
+  "modListVersion": 2,
+  "modList": [{
+    "modid": "${modId}",
+    "name": "${modName}",
+    "description": "Extends Minecraft's view distance with a Level of Detail terrain system for distant horizons.",
+    "version": "${modVersion}",
+    "mcversion": "${minecraftVersion}",
+    "url": "https://github.com/Wargames-Development/DistantHorizons-WDG",
+    "updateUrl": "",
+    "authorList": ["James Seibel", "Distant Horizons contributors", "DarkShadow44", "Wargames Development Group"],
+    "credits": "Original Distant Horizons project by James Seibel and contributors; Minecraft 1.7.10 backport maintained upstream by DarkShadow44; WDG fork maintenance by Wargames Development Group.",
+    "logoFile": "assets/distanthorizons/logo.png",
+    "screenshots": [],
+    "parent": "",
+    "requiredMods": ["lwjgl3ify", "gtnhlib", "gtnhmixins"],
+    "dependencies": [],
+    "dependants": [],
+    "useDependencyInformation": true
+  }]
 }

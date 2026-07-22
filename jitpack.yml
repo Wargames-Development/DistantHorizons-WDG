@@ -1,2 +1,6 @@
 before_install:
-  - ./gradlew setupCIWorkspace
+  - sdk install java 25-open
+  - sdk use java 25-open
+  - ./gradlew --no-daemon setupCIWorkspace
+install:
+  - ./gradlew --no-daemon clean build publishToMavenLocal

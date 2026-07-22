@@ -32,6 +32,7 @@ import com.seibel.distanthorizons.core.wrapperInterfaces.misc.IPluginPacketSende
 import com.seibel.distanthorizons.core.wrapperInterfaces.modAccessor.IC2meAccessor;
 import com.seibel.distanthorizons.core.wrapperInterfaces.modAccessor.IIrisAccessor;
 import com.seibel.distanthorizons.core.wrapperInterfaces.modAccessor.IModChecker;
+import com.seibel.distanthorizons.coreapi.ModInfo;
 import com.seibel.distanthorizons.forge.wrappers.modAccessor.ModChecker;
 
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -51,11 +52,16 @@ import cpw.mods.fml.relauncher.Side;
  * If you are looking for the real start of the mod
  * check out the ClientProxy.
  */
-@Mod(modid = "distanthorizons", name = "DistantHorizons", dependencies = "after:angelica;")
+@Mod(
+    modid = ModInfo.ID,
+    name = ModInfo.NAME,
+    version = ModInfo.VERSION,
+    acceptedMinecraftVersions = "[1.7.10]",
+    dependencies = "required-after:lwjgl3ify;required-after:gtnhlib;required-after:gtnhmixins;after:angelica;")
 public class ForgeMain extends AbstractModInitializer {
 
     public static final String ANGELICA_MOD_ID = "angelica";
-    public static final String MINIMUM_ANGELICA_VERSION = "2.1.5";
+    public static final String MINIMUM_ANGELICA_VERSION = "2.1.54";
     public static final VersionRange SUPPORTED_ANGELICA_RANGE = VersionParser
         .parseRange("[" + MINIMUM_ANGELICA_VERSION + ",)");
 

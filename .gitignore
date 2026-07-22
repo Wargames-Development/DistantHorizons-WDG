@@ -1,9 +1,12 @@
 .gradle
+/.gradle/
 .settings
 /.idea/
 /.vscode/
 /run/
 /build/
+/buildSrc/build/
+/buildSrc/.gradle/
 /eclipse/
 .classpath
 .project
@@ -36,3 +39,31 @@ addon.local.gradle.kts
 addon.late.local.gradle
 addon.late.local.gradle.kts
 layout.json
+
+# DistantHorizons-WDG local/runtime state
+/validation-logs/
+/source-packages/
+/distributions/
+/combined-client/
+/staging/
+/native/
+/natives/
+/lwjgl3ify/
+/wdg-lwjgl3ify*/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.lod
+*.jar
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.jre
+*.jdk
+
+# Keep the Gradle wrapper binary despite the general JAR exclusion.
+!/gradle/wrapper/gradle-wrapper.jar

@@ -1,56 +1,103 @@
+import com.wargamesdevelopment.distanthorizons.gradle.FoundationSupport
+
 /*
- * Add your dependencies here. Supported configurations:
- *  - api("group:name:version:classifier"): if you use the types from this dependency in the public API of this mod
- *       Available at runtime and compiletime for mods depending on this mod
- *  - implementation("g:n:v:c"): if you need this for internal implementation details of the mod, but none of it is visible via the public API
- *       Available at runtime but not compiletime for mods depending on this mod
- *  - compileOnly("g:n:v:c"): if the mod you're building doesn't need this dependency during runtime at all, e.g. for optional mods
- *       Not available at all for mods depending on this mod, only visible at compiletime for this mod
- *  - compileOnlyApi("g:n:v:c"): like compileOnly, but also visible at compiletime for mods depending on this mod
- *       Available at compiletime but not runtime for mods depending on this mod
- *  - runtimeOnlyNonPublishable("g:n:v:c"): if you want to include a mod in this mod's runClient/runServer runs, but not publish it as a dependency
- *       Not available at all for mods depending on this mod, only visible at runtime for this mod
- *  - devOnlyNonPublishable("g:n:v:c"): a combination of runtimeOnlyNonPublishable and compileOnly for dependencies present at both compiletime and runtime,
- *       but not published as Maven dependencies - useful for RFG-deobfuscated dependencies or local testing
- *  - runtimeOnly("g:n:v:c"): if you don't need this at compile time, but want it to be present at runtime
- *       Available at runtime for mods depending on this mod
- *  - annotationProcessor("g:n:v:c"): mostly for java compiler plugins, if you know you need this, use it, otherwise don't worry
- *  - testCONFIG("g:n:v:c") - replace CONFIG by one of the above (except api), same as above but for the test sources instead of main
+ * DistantHorizons-WDG dependency contract
  *
- *  - shadowImplementation("g:n:v:c"): effectively the same as API, but the dependency is included in your jar under a renamed package name
- *       Requires you to enable usesShadowedDependencies in gradle.properties
+ * Required runtime/implementation mods:
+ *  - lwjgl3ify: LWJGL 3 and Java 8 parent -> Java 21 child bootstrap environment
+ *  - GTNHLib: directly used implementation APIs
+ *  - UniMixins/GTNHMixins: supplied by the GTNHGradle Mixin convention when usesMixins=true
  *
- *  - compile("g:n:v:c"): deprecated, replace with "api" (works like the old "compile") or "implementation" (can be more efficient)
- *
- * You can exclude transitive dependencies (dependencies of the chosen dependency) by appending { transitive = false } if needed,
- * but use this sparingly as it can break using your mod as another mod's dependency if you're not careful.
- *
- * To depend on obfuscated jars you can use `devOnlyNonPublishable(rfg.deobf("dep:spec:1.2.3"))` to fetch an obfuscated jar from maven,
- * or `devOnlyNonPublishable(rfg.deobf(project.files("libs/my-mod-jar.jar")))` to use a file.
- *
- * Gradle names for some of the configuration can be misleading, compileOnlyApi and runtimeOnly both get published as dependencies in Maven, but compileOnly does not.
- * The buildscript adds runtimeOnlyNonPublishable to also have a runtime dependency that's not published.
- *
- * For more details, see https://docs.gradle.org/8.0.1/userguide/java_library_plugin.html#sec:java_library_configurations_graph
+ * Optional integrations are compileOnly and are never published as mandatory dependencies.
+ * Private Java libraries use shadowImplementation and are included in the production DH JAR.
  */
 minecraft {
     mainLwjglVersion = 3
     lwjgl3Version = "3.4.0"
 }
 
+def defaultLwjgl3ify = "com.github.GTNewHorizons:lwjgl3ify:3.0.28:dev"
+def gtnhLib = "com.github.GTNewHorizons:GTNHLib:0.9.47:dev"
+def hodgepodge = "com.github.GTNewHorizons:Hodgepodge:2.7.13:dev"
+def angelica = "com.github.GTNewHorizons:Angelica:2.1.54:dev"
+def nei = "com.github.GTNewHorizons:NotEnoughItems:2.7.4-GTNH:dev"
+
+def localLwjgl3ifyDevPath = providers.gradleProperty("wdgLwjgl3ifyDevJar")
+    .orElse(providers.environmentVariable("WDG_LWJGL3IFY_DEV_JAR"))
+def localAngelicaPath = providers.gradleProperty("wdgAngelicaJar")
+    .orElse(providers.environmentVariable("WDG_ANGELICA_JAR"))
+
+def enableHodgepodgeRuntime = providers.gradleProperty("wdgEnableHodgepodgeRuntime")
+    .map { it.toBoolean() }
+    .orElse(false)
+def enableNeiRuntime = providers.gradleProperty("wdgEnableNeiRuntime")
+    .map { it.toBoolean() }
+    .orElse(false)
+
 dependencies {
-    api("com.github.GTNewHorizons:lwjgl3ify:3.0.10:dev")
-    api("com.github.GTNewHorizons:Hodgepodge:2.7.13:dev")
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:NotEnoughItems:2.7.4-GTNH:dev")
+    // Keep a reproducible external coordinate in published metadata.
+    implementation(defaultLwjgl3ify)
+    implementation(gtnhLib)
+
+    // Optional integrations: compile against their guarded adapters, do not publish as required.
+    compileOnly(hodgepodge) {
+        transitive = false
+    }
+    compileOnly("com.github.GTNewHorizons:GT5-Unofficial:5.09.51.469:dev") {
+        transitive = false
+    }
+    if (localAngelicaPath.isPresent()) {
+        def localAngelicaJar = file(localAngelicaPath.get()).absoluteFile
+        if (!localAngelicaJar.isFile() || !localAngelicaJar.canRead()) {
+            throw new GradleException("wdgAngelicaJar is not a readable file: ${localAngelicaJar}")
+        }
+        if (!localAngelicaJar.name.equalsIgnoreCase("angelica-2.1.54.jar")) {
+            throw new GradleException(
+                "wdgAngelicaJar must be the exact Angelica 2.1.54 production JAR: ${localAngelicaJar.name}"
+            )
+        }
+        compileOnly(rfg.deobf(files(localAngelicaJar)))
+        logger.lifecycle("Using exact local Angelica 2.1.54 artifact: ${localAngelicaJar}")
+    } else {
+        compileOnly(angelica) {
+            transitive = false
+        }
+    }
+    compileOnly("com.falsepattern:rple-mc1.7.10:2.1.0:api") {
+        transitive = false
+    }
+
+    // Opt-in development runtime conveniences only.
+    if (enableHodgepodgeRuntime.get()) {
+        runtimeOnlyNonPublishable(hodgepodge)
+    }
+    if (enableNeiRuntime.get()) {
+        runtimeOnlyNonPublishable(nei)
+    }
+
+    // Internal Java libraries packaged by shadowJar and then reobfuscated for production.
     shadowImplementation("com.electronwill.night-config:toml:3.6.6")
     shadowImplementation("com.electronwill.night-config:json:3.6.6")
     shadowImplementation("org.lz4:lz4-java:1.8.0")
     shadowImplementation("org.tukaani:xz:1.9")
     shadowImplementation("org.xerial:sqlite-jdbc:3.47.2.0")
     shadowImplementation("com.github.luben:zstd-jni:1.5.7-4")
-    implementation("org.jetbrains:annotations:26.0.2")
-    api("com.github.GTNewHorizons:GTNHLib:0.6.11:dev")
-    compileOnly("com.github.GTNewHorizons:GT5-Unofficial:5.09.51.469:dev")
-    compileOnly('com.github.GTNewHorizons:Angelica:2.1.5:dev')
-    compileOnly("com.falsepattern:rple-mc1.7.10:2.1.0:api")
+    compileOnly("org.jetbrains:annotations:26.0.2")
+
+    // Exact local development override. Paths containing spaces are supported. The published
+    // non-resolvable variants retain defaultLwjgl3ify, while resolvable classpaths exclude it.
+    if (localLwjgl3ifyDevPath.isPresent()) {
+        def localJar = file(localLwjgl3ifyDevPath.get()).absoluteFile
+        if (!localJar.isFile() || !localJar.canRead()) {
+            throw new GradleException("wdgLwjgl3ifyDevJar is not a readable file: ${localJar}")
+        }
+        FoundationSupport.validateLwjglDevelopmentCandidateName(localJar.name)
+        devOnlyNonPublishable(rfg.deobf(files(localJar)))
+        configurations.configureEach {
+            if (canBeResolved) {
+                exclude group: "com.github.GTNewHorizons", module: "lwjgl3ify"
+            }
+        }
+        logger.lifecycle("Using explicit local lwjgl3ify development artifact: ${localJar}")
+    }
 }
