@@ -8,6 +8,8 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import org.junit.Test;
 
@@ -16,6 +18,14 @@ public class FoundationSupportTest {
     @Test
     public void unifiedVersionParsingAcceptsCurrentVersion() {
         assertEquals("3.0.4-b-dev", FoundationSupport.validateVersion(" 3.0.4-b-dev "));
+    }
+
+    @Test
+    public void unifiedVersionParsingAcceptsWdgPrereleaseAndBuildMetadata() {
+        assertEquals(
+            "3.0.28-master.4+7500f19e88",
+            FoundationSupport.validateVersion("3.0.28-master.4+7500f19e88")
+        );
     }
 
     @Test
@@ -93,6 +103,29 @@ public class FoundationSupportTest {
             IllegalStateException.class,
             () -> FoundationSupport.validateArchiveNames(List.of("Mixins.json", "mixins.json"))
         );
+    }
+
+    @Test
+    public void archiveMemberComparisonStreamsExactBytes() throws Exception {
+        Path directory = Files.createTempDirectory("archive stream comparison");
+        byte[] bytes = new byte[2 * 1024 * 1024];
+        for (int index = 0; index < bytes.length; index++) {
+            bytes[index] = (byte) (index * 31);
+        }
+        Path expected = Files.write(directory.resolve("expected.bin"), bytes);
+        Path archive = directory.resolve("fixture.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            zip.putNextEntry(new ZipEntry("fixture/expected.bin"));
+            zip.write(bytes);
+            zip.closeEntry();
+        }
+
+        try (FoundationSupport.ArchiveInventory inventory =
+                 FoundationSupport.ArchiveInventory.open(archive.toFile())) {
+            assertTrue(inventory.contentEquals("fixture/expected.bin", expected));
+            Files.write(expected, new byte[] {1, 2, 3});
+            assertTrue(!inventory.contentEquals("fixture/expected.bin", expected));
+        }
     }
 
     @Test

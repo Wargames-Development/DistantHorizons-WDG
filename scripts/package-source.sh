@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repository="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-output="${1:-$repository/build/source-packages/DistantHorizons-WDG-change-005-source.zip}"
+output="${1:-$repository/build/source-packages/DistantHorizons-WDG-change-006-source.zip}"
 top_level="DistantHorizons-WDG"
 
 required=(
@@ -32,12 +32,23 @@ required=(
   buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyProductionModArtifactTask.java
   buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyWdgLwjgl3ifyCompatibilityTask.java
   buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyPublishedDependencyMetadataTask.java
+  buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/RuntimeArtifactVerifier.java
+  buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/CombinedClientSupport.java
+  buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyRuntimeArtifactTask.java
+  buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyRequiredRuntimeArtifactsTask.java
+  buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/PackageCombinedClientTask.java
+  buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyCombinedClientPackageTask.java
+  buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyCombinedClientReproducibilityTask.java
   buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/FoundationSupportTest.java
   buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/ArtifactVerifierTest.java
+  buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/RuntimeArtifactVerifierTest.java
+  buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/CombinedClientSupportTest.java
   README.md
   SETUP.md
   COMPILING.md
   docs/DEPENDENCIES.md
+  docs/COMBINED_CLIENT.md
+  scripts/build-gtnhlib-0.11.31.sh
   scripts/package-source.sh
 )
 
@@ -73,7 +84,8 @@ for raw in p.read_text().splitlines():
         '.git', '.gradle', 'build', 'run', 'eclipse', '.idea', '.vscode',
         'logs', 'crash-reports', 'config', 'saves', 'validation-logs',
         'source-packages', 'distributions', 'combined-client', 'staging',
-        'native', 'natives'
+        'native', 'natives', 'curseforge-profiles', 'external-build', 'gtnhlib-build',
+        'runtime-packages'
     }
     parts = pathlib.PurePosixPath(path).parts
     if parts and parts[0].lower() in forbidden_roots:
@@ -117,7 +129,7 @@ if grep -Ev "^${top_level}/" "$listing" >/dev/null; then
   printf 'ERROR: archive contains a path outside %s/\n' "$top_level" >&2
   exit 1
 fi
-if grep -Ei "^${top_level}/(\.git|\.gradle|build|run|eclipse|\.idea|\.vscode|logs|crash-reports|config|saves|__MACOSX)(/|$)|/buildSrc/(build|\.gradle)(/|$)|\.DS_Store$|\.(sqlite3?|db|lod|log)$" "$listing" >/dev/null; then
+if grep -Ei "^${top_level}/(\.git|\.gradle|build|run|eclipse|\.idea|\.vscode|logs|crash-reports|config|saves|curseforge-profiles|external-build|gtnhlib-build|runtime-packages|__MACOSX)(/|$)|/buildSrc/(build|\.gradle)(/|$)|\.DS_Store$|\.(sqlite3?|db|lod|log)$" "$listing" >/dev/null; then
   printf 'ERROR: archive listing contains forbidden generated/runtime data\n' >&2
   exit 1
 fi

@@ -40,7 +40,7 @@ public final class FoundationSupport {
     public static final String EARLY_LOADER = "com/seibel/distanthorizons/DistantHorizonsTweaker.class";
 
     private static final Pattern VERSION_PATTERN = Pattern.compile(
-        "[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z][0-9A-Za-z.-]*)?"
+        "[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\\+[0-9A-Za-z][0-9A-Za-z.-]*)?"
     );
     private static final List<String> TEMPLATE_MARKERS = List.of(
         "ExampleMod",
@@ -287,12 +287,47 @@ public final class FoundationSupport {
         }
 
         public byte[] bytes(String name) throws IOException {
+            try (InputStream input = openStream(name)) {
+                return input.readAllBytes();
+            }
+        }
+
+        public InputStream openStream(String name) throws IOException {
             ZipEntry entry = zip.getEntry(name);
             if (entry == null || entry.isDirectory()) {
                 throw new IllegalStateException("Artifact member is missing or not a file: " + name);
             }
-            try (InputStream input = zip.getInputStream(entry)) {
-                return input.readAllBytes();
+            return zip.getInputStream(entry);
+        }
+
+        public boolean contentEquals(String name, Path expected) throws IOException {
+            ZipEntry entry = zip.getEntry(name);
+            if (entry == null || entry.isDirectory()) {
+                throw new IllegalStateException("Artifact member is missing or not a file: " + name);
+            }
+            long expectedSize = Files.size(expected);
+            if (entry.getSize() >= 0 && entry.getSize() != expectedSize) {
+                return false;
+            }
+            try (InputStream packaged = zip.getInputStream(entry);
+                 InputStream source = Files.newInputStream(expected)) {
+                byte[] packagedBuffer = new byte[64 * 1024];
+                byte[] sourceBuffer = new byte[64 * 1024];
+                while (true) {
+                    int packagedRead = packaged.readNBytes(packagedBuffer, 0, packagedBuffer.length);
+                    int sourceRead = source.readNBytes(sourceBuffer, 0, sourceBuffer.length);
+                    if (packagedRead != sourceRead) {
+                        return false;
+                    }
+                    if (packagedRead == 0) {
+                        return true;
+                    }
+                    for (int index = 0; index < packagedRead; index++) {
+                        if (packagedBuffer[index] != sourceBuffer[index]) {
+                            return false;
+                        }
+                    }
+                }
             }
         }
 

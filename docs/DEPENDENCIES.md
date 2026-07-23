@@ -37,8 +37,15 @@ The production Distant Horizons JAR contains these private Java libraries:
 - SQLite JDBC, including its native resources;
 - Zstandard JNI, including its native resources.
 
-They are implementation details, not Forge mods. `shadowJar` packages them and `reobfJar` produces the distributable Minecraft artifact. Their versions remain unchanged in Change 005.
+They are implementation details, not Forge mods. `shadowJar` packages them and `reobfJar` produces the distributable Minecraft artifact. Their versions remain unchanged in Change 006.
 
 ## Test-only dependencies
 
 The focused build contract tests live in `buildSrc` and use JUnit 4. They create small temporary fixture JARs; no Minecraft, native, lwjgl3ify, runtime bundle, or large third-party JAR is checked into test resources.
+
+
+## Change 006 package inputs
+
+Combined-client packaging consumes exact external files through explicit Gradle properties. GTNHLib is built from the supplied 0.11.31 source ZIP with `VERSION=0.11.31`; only its verified production `reobfJar` is packaged. Angelica 2.1.54 and UniMixins All 0.1.23 are verified by exact size, SHA-256, metadata, core-plugin/Mixin structure, bytecode layout, and forbidden-content checks. The normalized six-platform Temurin Java 21 bundle is verified separately and remains under `lwjgl3ify/runtime`.
+
+No external artifact path enters publication metadata, and no external mod or runtime archive is shaded or nested into the Distant Horizons JAR.

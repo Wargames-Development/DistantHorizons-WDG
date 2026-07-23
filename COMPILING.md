@@ -66,6 +66,31 @@ To verify the exact unclassified production/reobfuscated `lwjgl3ify-wdg` artifac
 
 The development and production properties are intentionally separate. A `-dev`, `-dev-preshadow`, sources, or API JAR is rejected by the production compatibility verifier.
 
+
+## Change 006 combined-client tasks
+
+Build GTNHLib from its source ZIP first, using the supported `VERSION=0.11.31` override through `scripts/build-gtnhlib-0.11.31.sh`. Build and verify exact lwjgl3ify Change 004 outputs separately. Then supply all explicit properties described in `docs/COMBINED_CLIENT.md`.
+
+The Change 006 task sequence is:
+
+```text
+verifyGtnhLibArtifact
+verifyAngelicaArtifact
+verifyUniMixinsArtifact
+verifyNormalizedRuntimeBundle
+verifyWdgLwjgl3ifyCompatibility
+verifyRequiredRuntimeArtifacts
+packageBootstrapSmokeClient
+verifyBootstrapSmokeClient
+packageDistantHorizonsSmokeClient
+verifyDistantHorizonsSmokeClient
+packageCombinedClient
+verifyCombinedClientPackage
+verifyCombinedClientReproducibility
+```
+
+Generated packages are written below `build/combined-client/packages`. They are clean overlays, not source archives and not launcher profiles. The runtime bundle remains beneath `lwjgl3ify/runtime`, outside `mods`. No runtime smoke result is implied by a successful package build.
+
 ## Optional development runtime integrations
 
 Hodgepodge and NEI are not included in the default development runtime. They may be enabled explicitly without changing published metadata:
@@ -75,7 +100,7 @@ Hodgepodge and NEI are not included in the default development runtime. They may
 ./gradlew --no-daemon tasks -PwdgEnableNeiRuntime=true
 ```
 
-Ordinary Minecraft run tasks are still disabled in Change 005, so these flags primarily prepare later controlled integration work.
+Ordinary Minecraft run tasks are still disabled in Change 006, so these flags primarily prepare later controlled integration work.
 
 ## Production artifact verification
 

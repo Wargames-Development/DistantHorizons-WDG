@@ -39,4 +39,4 @@ Do not hand-edit or commit that generated file. The production verifier compares
 
 ## Run tasks
 
-`runClient`, `runServer`, `runClient17`, and `runServer17` remain disabled. They do not represent the intended packaged-Java runtime boundary for this fork. Change 005 performs no Minecraft launch. Use `./gradlew explainProductionLaunchContract` for the current boundary summary.
+`runClient`, `runServer`, `runClient17`, and `runServer17` remain disabled. They do not represent the intended packaged-Java runtime boundary for this fork. Change 006 packages isolated overlays but performs no Minecraft launch. Use `./gradlew explainProductionLaunchContract` and `./gradlew explainCombinedClientInputs` for the current boundary and explicit input contract. See `docs/COMBINED_CLIENT.md` before any CurseForge smoke.

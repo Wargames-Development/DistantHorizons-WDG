@@ -30,7 +30,7 @@ The intended WDG launch path is:
 3. `lwjgl3ify-wdg` relaunches the real Minecraft process under Java 21;
 4. DistantHorizons-WDG loads inside that Java 21 process.
 
-The automatic packaged-Java installer and relauncher belong to `lwjgl3ify-wdg`, not this repository. **Change 005 establishes the development, dependency, metadata, and artifact-verification foundation only. It does not create or claim a final combined WDG client package.**
+The automatic packaged-Java installer and relauncher belong to `lwjgl3ify-wdg`, not this repository. **Change 005 established the production artifact foundation. Change 006 adds deterministic Stage A, Stage B, and Stage C client overlays and their static verifiers; it does not claim runtime smoke has passed.**
 
 ## Required dependencies
 
@@ -65,8 +65,9 @@ Known upstream/runtime limitations can include stale LOD updates that recover af
 - [SETUP.md](SETUP.md) — JDK and IntelliJ IDEA import setup.
 - [COMPILING.md](COMPILING.md) — build, verification, artifact roles, local lwjgl3ify-wdg inputs, and troubleshooting.
 - [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) — required, optional, development, and shadowed dependency classifications.
+- [docs/COMBINED_CLIENT.md](docs/COMBINED_CLIENT.md) — Change 006 exact-artifact builds, staged packages, verification, CurseForge smoke, logs, and cleanup.
 
-Ordinary Gradle client/server run tasks remain deliberately disabled. The next bounded change will construct an isolated production-like client from the exact reobfuscated Distant Horizons JAR, exact reobfuscated `lwjgl3ify-wdg` JAR, required runtime mods, and packaged Java 21 runtime bundle.
+Ordinary Gradle client/server run tasks remain deliberately disabled. Change 006 constructs isolated production-like client overlays from the exact reobfuscated Distant Horizons and `lwjgl3ify-wdg` JARs, GTNHLib 0.11.31, UniMixins All 0.1.23, optional Angelica 2.1.54, and the normalized packaged Java 21 bundle. Runtime acceptance remains a separate disposable CurseForge smoke.
 
 ## Building
 
@@ -78,7 +79,10 @@ The repository uses the Gradle 9.4.0 wrapper. Gradle itself is selected through 
 ./gradlew --no-daemon clean build
 ./gradlew --no-daemon verifyProductionModArtifact
 ./gradlew --no-daemon verifyPublishedDependencyMetadata
+./gradlew --no-daemon explainCombinedClientInputs
 ```
+
+With all six explicit external artifact properties supplied, Change 006 additionally provides `verifyRequiredRuntimeArtifacts`, three staged package tasks, three package verifiers, and `verifyCombinedClientReproducibility`.
 
 The one distributable mod artifact is the unclassified output of `reobfJar`. The `-dev-preshadow`, `-dev`, sources, and API JARs are intermediate or development artifacts and must not be installed as the production mod.
 

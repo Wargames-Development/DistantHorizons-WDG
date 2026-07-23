@@ -17,7 +17,7 @@ minecraft {
 }
 
 def defaultLwjgl3ify = "com.github.GTNewHorizons:lwjgl3ify:3.0.28:dev"
-def gtnhLib = "com.github.GTNewHorizons:GTNHLib:0.9.47:dev"
+def gtnhLib = "com.github.GTNewHorizons:GTNHLib:0.11.31:dev"
 def hodgepodge = "com.github.GTNewHorizons:Hodgepodge:2.7.13:dev"
 def angelica = "com.github.GTNewHorizons:Angelica:2.1.54:dev"
 def nei = "com.github.GTNewHorizons:NotEnoughItems:2.7.4-GTNH:dev"

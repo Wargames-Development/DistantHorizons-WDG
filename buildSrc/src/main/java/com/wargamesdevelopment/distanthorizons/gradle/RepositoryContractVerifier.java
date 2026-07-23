@@ -32,7 +32,9 @@ public final class RepositoryContractVerifier {
         "SETUP.md",
         "COMPILING.md",
         "docs/DEPENDENCIES.md",
+        "docs/COMBINED_CLIENT.md",
         "scripts/package-source.sh",
+        "scripts/build-gtnhlib-0.11.31.sh",
         "src/main/resources/mcmod.info",
         "src/main/resources/" + FoundationSupport.ACCESS_TRANSFORMER,
         "src/main/resources/" + FoundationSupport.NORMAL_MIXIN_CONFIG,
@@ -46,8 +48,17 @@ public final class RepositoryContractVerifier {
         "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyProductionModArtifactTask.java",
         "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyWdgLwjgl3ifyCompatibilityTask.java",
         "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyPublishedDependencyMetadataTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/RuntimeArtifactVerifier.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/CombinedClientSupport.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyRuntimeArtifactTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyRequiredRuntimeArtifactsTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/PackageCombinedClientTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyCombinedClientPackageTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyCombinedClientReproducibilityTask.java",
         "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/FoundationSupportTest.java",
-        "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/ArtifactVerifierTest.java"
+        "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/ArtifactVerifierTest.java",
+        "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/RuntimeArtifactVerifierTest.java",
+        "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/CombinedClientSupportTest.java"
     );
 
     private static final List<String> EXPECTED_MIGRATIONS = List.of(
@@ -67,7 +78,7 @@ public final class RepositoryContractVerifier {
     private static final List<String> FORBIDDEN_TRACKED_PREFIXES = List.of(
         ".gradle/", "build/", "buildSrc/build/", "buildSrc/.gradle/", "run/", "eclipse/", ".idea/",
         ".vscode/", "logs/", "crash-reports/", "config/", "saves/", "combined-client/",
-        "validation-logs/", "native/", "natives/"
+        "validation-logs/", "native/", "natives/", "curseforge-profiles/", "external-build/"
     );
 
     private RepositoryContractVerifier() {}
@@ -141,7 +152,7 @@ public final class RepositoryContractVerifier {
 
         String dependencies = read(projectDir, "dependencies.gradle");
         requireContains(dependencies, "def defaultLwjgl3ify = \"com.github.GTNewHorizons:lwjgl3ify:3.0.28:dev\"", "default lwjgl3ify dependency");
-        requireContains(dependencies, "def gtnhLib = \"com.github.GTNewHorizons:GTNHLib:0.9.47:dev\"", "GTNHLib dependency");
+        requireContains(dependencies, "def gtnhLib = \"com.github.GTNewHorizons:GTNHLib:0.11.31:dev\"", "GTNHLib dependency");
         requireContains(dependencies, "compileOnly(hodgepodge)", "optional Hodgepodge classification");
         requireContains(dependencies, "def angelica = \"com.github.GTNewHorizons:Angelica:2.1.54:dev\"", "Angelica 2.1.54 dependency");
         requireContains(dependencies, "compileOnly(angelica)", "optional Angelica classification");
@@ -179,6 +190,34 @@ public final class RepositoryContractVerifier {
         for (String disabledRun : List.of("runClient", "runServer", "runClient17", "runServer17")) {
             requireContains(build, "tasks." + disabledRun + " { enabled = false }", "controlled " + disabledRun);
         }
+        for (String property : List.of(
+            "wdgLwjgl3ifyProductionJar",
+            "wdgLwjgl3ifyBundledClientPackage",
+            "wdgLwjgl3ifyRuntimeBundle",
+            "wdgAngelicaJar",
+            "wdgUniMixinsJar",
+            "wdgGtnhLibJar",
+            "wdgGtnhLibSourceZip"
+        )) {
+            requireContains(build, property, "Change 006 external artifact property");
+        }
+        for (String task : List.of(
+            "verifyGtnhLibArtifact",
+            "verifyAngelicaArtifact",
+            "verifyUniMixinsArtifact",
+            "verifyRequiredRuntimeArtifacts",
+            "packageBootstrapSmokeClient",
+            "verifyBootstrapSmokeClient",
+            "packageDistantHorizonsSmokeClient",
+            "verifyDistantHorizonsSmokeClient",
+            "packageCombinedClient",
+            "verifyCombinedClientPackage",
+            "verifyCombinedClientReproducibility"
+        )) {
+            requireContains(build, "\"" + task + "\"", "Change 006 task wiring");
+        }
+        requireContains(build, "tasks.reobfJar.flatMap { it.archiveFile }", "Change 006 exact Distant Horizons artifact");
+        requireContains(build, "CombinedClientSupport", "Change 006 deterministic package support");
 
         validateMixinConfig(projectDir, FoundationSupport.NORMAL_MIXIN_CONFIG, false);
         validateMixinConfig(projectDir, FoundationSupport.EARLY_MIXIN_CONFIG, true);
@@ -198,7 +237,8 @@ public final class RepositoryContractVerifier {
         String readme = read(projectDir, "README.md");
         for (String marker : List.of(
             "Wargames Development Group", "DarkShadow44/DistantHorizonsStandalone", "Java 21",
-            "lwjgl3ify-wdg", "Change 005", "Wargames-Development/DistantHorizons-WDG"
+            "lwjgl3ify-wdg", "Change 005", "Change 006", "docs/COMBINED_CLIENT.md",
+            "Wargames-Development/DistantHorizons-WDG"
         )) {
             requireContains(readme, marker, "README contract");
         }
@@ -214,13 +254,53 @@ public final class RepositoryContractVerifier {
         if (!Files.isExecutable(projectDir.resolve("scripts/package-source.sh"))) {
             throw new IllegalStateException("scripts/package-source.sh is not executable");
         }
+        if (!Files.isExecutable(projectDir.resolve("scripts/build-gtnhlib-0.11.31.sh"))) {
+            throw new IllegalStateException("scripts/build-gtnhlib-0.11.31.sh is not executable");
+        }
+        String gtnhBuildHelper = read(projectDir, "scripts/build-gtnhlib-0.11.31.sh");
+        for (String marker : List.of(
+            "VERSION=\"$expected_version\"",
+            "reobfJar wdgPrintReobfJar",
+            "expected_source_sha256",
+            "NO-GIT-TAG-SET",
+            "META-INF/versions/17"
+        )) {
+            requireContains(gtnhBuildHelper, marker, "GTNHLib source-build helper");
+        }
 
         String gitignore = read(projectDir, ".gitignore");
         for (String marker : List.of(
             "/build/", "/.gradle/", "/run/", "*.sqlite", "*.db", "/validation-logs/",
-            "/combined-client/", "wdg-lwjgl3ify", "*.jar", "*.zip"
+            "/combined-client/", "/curseforge-profiles/", "/external-build/",
+            "wdg-lwjgl3ify", "*.jar", "*.zip"
         )) {
             requireContains(gitignore, marker, ".gitignore hygiene");
+        }
+
+        String combinedClientDoc = read(projectDir, "docs/COMBINED_CLIENT.md");
+        for (String marker : List.of(
+            "VERSION=0.11.31",
+            "packageBootstrapSmokeClient",
+            "packageDistantHorizonsSmokeClient",
+            "packageCombinedClient",
+            "verifyCombinedClientReproducibility",
+            "CurseForge",
+            "Java 8",
+            "Java 21",
+            "logs/latest.log"
+        )) {
+            requireContains(combinedClientDoc, marker, "combined-client documentation");
+        }
+
+        String sourcePackaging = read(projectDir, "scripts/package-source.sh");
+        for (String marker : List.of(
+            "RuntimeArtifactVerifier.java",
+            "CombinedClientSupport.java",
+            "build-gtnhlib-0.11.31.sh",
+            "docs/COMBINED_CLIENT.md",
+            "git -C \"$repository\" ls-files --cached --others --exclude-standard"
+        )) {
+            requireContains(sourcePackaging, marker, "Change 006 source packaging");
         }
 
         validateTrackedFiles(projectDir);
@@ -241,6 +321,8 @@ public final class RepositoryContractVerifier {
         report.put("sqlMigrationCount", migrations.size());
         report.put("productionArtifactProvider", "reobfJar");
         report.put("ordinaryRunTasks", "deliberately-disabled");
+        report.put("combinedClientContract", CombinedClientSupport.CONTRACT_VERSION);
+        report.put("diagnosticPackages", 3);
         return report;
     }
 

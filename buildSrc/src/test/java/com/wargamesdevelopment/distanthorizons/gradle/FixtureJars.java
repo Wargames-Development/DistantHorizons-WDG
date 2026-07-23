@@ -124,7 +124,6 @@ final class FixtureJars {
         Manifest manifest = new Manifest();
         Attributes attrs = manifest.getMainAttributes();
         attrs.put(Attributes.Name.MANIFEST_VERSION, "1.0");
-        attrs.putValue("Lwjgl3ify-Aware", "true");
         attrs.putValue("Implementation-Version", "3.0.28-4-g7500f19");
         Map<String, byte[]> entries = new LinkedHashMap<>();
         entries.put("mcmod.info", "{\"modid\":\"lwjgl3ify\",\"version\":\"3.0.28-4-g7500f19\"}".getBytes(StandardCharsets.UTF_8));
@@ -143,7 +142,11 @@ final class FixtureJars {
         }
         entries.put("me/eigenraven/lwjgl3ify/relauncher/runtime/java21-runtime-manifest.json", "{\"distribution\":\"Temurin\",\"sha256\":\"fixture\"}".getBytes(StandardCharsets.UTF_8));
         entries.put("mixins.lwjgl3ify.json", "{\"refmap\":\"mixins.lwjgl3ify.refmap.json\"}".getBytes(StandardCharsets.UTF_8));
-        entries.put("mixins.lwjgl3ify.refmap.json", "{\"mappings\":{\"me.eigenraven.lwjgl3ify.Fixture\":{\"x\":\"y\"}}}".getBytes(StandardCharsets.UTF_8));
+        entries.put(
+            "mixins.lwjgl3ify.refmap.json",
+            "{\"mappings\":{\"me/eigenraven/lwjgl3ify/mixins/early/game/MixinMinecraft_Display\":{\"x\":\"y\"}}}"
+                .getBytes(StandardCharsets.UTF_8)
+        );
         entries.put("META-INF/rfb-plugin/lwjgl3ify.properties", "pluginClass=fixture".getBytes(StandardCharsets.UTF_8));
         entries.put("me/eigenraven/lwjgl3ify/relauncher/forgePatches.zip", new byte[] {1, 2, 3});
         entries.put("me/eigenraven/lwjgl3ify/relauncher/version.json", "{\"change\":4}".getBytes(StandardCharsets.UTF_8));
@@ -155,7 +158,7 @@ final class FixtureJars {
         String extra = optionalMarker == null ? "" : "<dependency><groupId>x</groupId><artifactId>" + optionalMarker + "</artifactId><version>1</version></dependency>";
         String pomText = "<project><version>" + VERSION + "</version><dependencies>"
             + dep("com.github.GTNewHorizons", "lwjgl3ify", "3.0.28")
-            + dep("com.github.GTNewHorizons", "GTNHLib", "0.9.47")
+            + dep("com.github.GTNewHorizons", "GTNHLib", "0.11.31")
             + dep("com.github.GTNewHorizons", "UniMixins", "0.1")
             + extra + "</dependencies></project>";
         String moduleText = "{\"component\":{\"version\": \"" + VERSION + "\"},\"dependencies\":[\"lwjgl3ify\",\"gtnhlib\",\"unimixins\"]}";

@@ -67,3 +67,11 @@ layout.json
 
 # Keep the Gradle wrapper binary despite the general JAR exclusion.
 !/gradle/wrapper/gradle-wrapper.jar
+
+# Change 006 external integration and disposable smoke state
+/curseforge-profiles/
+/external-build/
+/gtnhlib-build/
+/runtime-packages/
+java_pid*.hprof
+hs_err_pid*.log

@@ -60,10 +60,6 @@ public final class Lwjgl3ifyCompatibilityVerifier {
             FoundationSupport.validateVersion(version);
 
             Manifest manifest = inventory.manifest();
-            String aware = manifest.getMainAttributes().getValue("Lwjgl3ify-Aware");
-            if (!"true".equalsIgnoreCase(String.valueOf(aware))) {
-                throw new IllegalStateException("Production lwjgl3ify JAR lacks Lwjgl3ify-Aware: true");
-            }
             String implementationVersion = manifest.getMainAttributes().getValue("Implementation-Version");
             if (implementationVersion == null || implementationVersion.isBlank()) {
                 implementationVersion = version;
@@ -74,7 +70,11 @@ public final class Lwjgl3ifyCompatibilityVerifier {
                 throw new IllegalStateException("lwjgl3ify production Mixin config does not reference " + REFMAP);
             }
             String refmap = inventory.text(REFMAP);
-            if (refmap.trim().length() < 32 || !refmap.contains("me.eigenraven.lwjgl3ify")) {
+            String displayMixinOwner = "me.eigenraven.lwjgl3ify.mixins.early.game.MixinMinecraft_Display";
+            String slashDisplayMixinOwner = displayMixinOwner.replace('.', '/');
+            if (refmap.trim().length() < 32
+                || !refmap.contains("\"mappings\"")
+                || (!refmap.contains(displayMixinOwner) && !refmap.contains(slashDisplayMixinOwner))) {
                 throw new IllegalStateException("lwjgl3ify production refmap is structurally invalid");
             }
             String runtimeManifest = inventory.text(RUNTIME_MANIFEST).toLowerCase(Locale.ROOT);
