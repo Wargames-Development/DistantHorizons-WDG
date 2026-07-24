@@ -10,7 +10,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -202,14 +201,14 @@ public class RuntimeArtifactVerifierTest {
     }
 
     @Test
-    public void normalizedSixPlatformRuntimeBundleIsAccepted() throws Exception {
+    public void legacySplitRuntimeAuditCanStillInspectSixPlatformBundle() throws Exception {
         Path bundle = createRuntimeBundle(Files.createTempDirectory("runtime bundle").resolve("runtime.zip"), false);
         Map<String, Object> report = RuntimeArtifactVerifier.verifyRuntimeBundle(bundle.toFile());
         assertEquals("21.0.11+10-LTS", report.get("runtimeVersion"));
     }
 
     @Test
-    public void missingRuntimePlatformIsRejected() throws Exception {
+    public void legacySplitRuntimeAuditRejectsMissingPlatform() throws Exception {
         Path bundle = createRuntimeBundle(Files.createTempDirectory("runtime missing platform").resolve("runtime.zip"), true);
         assertThrows(IllegalStateException.class, () -> RuntimeArtifactVerifier.verifyRuntimeBundle(bundle.toFile()));
     }

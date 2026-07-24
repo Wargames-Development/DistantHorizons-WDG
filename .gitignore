@@ -75,3 +75,10 @@ layout.json
 /runtime-packages/
 java_pid*.hprof
 hs_err_pid*.log
+
+# Change 007 generated release and evidence state
+/release-candidates/
+/performance-reports/
+/modpack-audit-inputs/
+/server-audit-inputs/
+/change007-*-evidence/

@@ -39,4 +39,8 @@ Do not hand-edit or commit that generated file. The production verifier compares
 
 ## Run tasks
 
-`runClient`, `runServer`, `runClient17`, and `runServer17` remain disabled. They do not represent the intended packaged-Java runtime boundary for this fork. Change 006 packages isolated overlays but performs no Minecraft launch. Use `./gradlew explainProductionLaunchContract` and `./gradlew explainCombinedClientInputs` for the current boundary and explicit input contract. See `docs/COMBINED_CLIENT.md` before any CurseForge smoke.
+`runClient`, `runServer`, `runClient17`, and `runServer17` remain disabled. They do not represent the intended packaged-Java runtime boundary for this fork. Change 007 packages isolated Stage A/B/C overlays and release-candidate assets but performs no Minecraft launch. Use `./gradlew explainProductionLaunchContract` and `./gradlew explainCombinedClientInputs` for the explicit input contract, then follow `docs/COMBINED_CLIENT.md` and `docs/RELEASE_CANDIDATE.md` for disposable external smokes.
+
+## Change 007 validation inputs
+
+Release-candidate packaging requires explicit paths to the exact runtime-bearing lwjgl3ify-wdg Change 005 production JAR, GTNHLib 0.11.31, UniMixins 0.1.23, and Angelica 2.1.54. The four primary Java 21 runtimes are verified inside the lwjgl3ify JAR; no separate runtime ZIP or bundled-client overlay property is used. Keep external artifacts outside the repository. Validation mode records `UNCOMMITTED_VALIDATION`; final mode requires the exact clean Change 007 commit.

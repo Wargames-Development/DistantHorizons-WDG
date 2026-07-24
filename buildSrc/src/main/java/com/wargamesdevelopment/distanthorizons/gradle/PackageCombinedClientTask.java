@@ -34,6 +34,15 @@ public abstract class PackageCombinedClientTask extends DefaultTask {
     @Input
     public abstract Property<String> getDistantHorizonsVersion();
 
+    @Input
+    public abstract Property<String> getProvenanceMode();
+
+    @Input
+    public abstract Property<String> getExpectedCommit();
+
+    @Input
+    public abstract Property<String> getSourceTreeDigest();
+
     @Optional
     @InputFile
     @PathSensitive(PathSensitivity.NONE)
@@ -63,11 +72,6 @@ public abstract class PackageCombinedClientTask extends DefaultTask {
     @InputFile
     @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getAngelicaJar();
-
-    @Optional
-    @InputFile
-    @PathSensitive(PathSensitivity.NONE)
-    public abstract RegularFileProperty getRuntimeBundle();
 
     @OutputFile
     public abstract RegularFileProperty getOutputFile();
@@ -109,11 +113,13 @@ public abstract class PackageCombinedClientTask extends DefaultTask {
             includeDh ? require(getDistantHorizonsJar(), "Distant Horizons production JAR") : null,
             includeDh ? require(getGeneratedRefmap(), "Distant Horizons generated refmap") : null,
             getDistantHorizonsVersion().get(),
+            getProvenanceMode().get(),
+            getExpectedCommit().get(),
+            getSourceTreeDigest().get(),
             require(getLwjgl3ifyJar(), "-PwdgLwjgl3ifyProductionJar"),
             require(getGtnhLibJar(), "-PwdgGtnhLibJar"),
             require(getUniMixinsJar(), "-PwdgUniMixinsJar"),
-            includeAngelica ? require(getAngelicaJar(), "-PwdgAngelicaJar") : null,
-            require(getRuntimeBundle(), "-PwdgLwjgl3ifyRuntimeBundle")
+            includeAngelica ? require(getAngelicaJar(), "-PwdgAngelicaJar") : null
         );
     }
 

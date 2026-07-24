@@ -61,23 +61,22 @@ To verify the exact unclassified production/reobfuscated `lwjgl3ify-wdg` artifac
 
 ```bash
 ./gradlew --no-daemon verifyWdgLwjgl3ifyCompatibility \
-  -PwdgLwjgl3ifyProductionJar="/absolute/path/to/lwjgl3ify-3.0.28.jar"
+  -PwdgLwjgl3ifyProductionJar="/absolute/path/to/lwjgl3ify-3.0.28-master.5+d7e60f5a0d.jar"
 ```
 
 The development and production properties are intentionally separate. A `-dev`, `-dev-preshadow`, sources, or API JAR is rejected by the production compatibility verifier.
 
 
-## Change 006 combined-client tasks
+## Change 006 suite preserved by Change 007
 
-Build GTNHLib from its source ZIP first, using the supported `VERSION=0.11.31` override through `scripts/build-gtnhlib-0.11.31.sh`. Build and verify exact lwjgl3ify Change 004 outputs separately. Then supply all explicit properties described in `docs/COMBINED_CLIENT.md`.
+Build GTNHLib from its source ZIP first, using the supported `VERSION=0.11.31` override through `scripts/build-gtnhlib-0.11.31.sh`. Build and verify the exact lwjgl3ify Change 005 runtime-bearing production artifact separately. Then supply all explicit properties described in `docs/COMBINED_CLIENT.md`.
 
-The Change 006 task sequence is:
+The preserved Stage A/B/C task sequence is:
 
 ```text
 verifyGtnhLibArtifact
 verifyAngelicaArtifact
 verifyUniMixinsArtifact
-verifyNormalizedRuntimeBundle
 verifyWdgLwjgl3ifyCompatibility
 verifyRequiredRuntimeArtifacts
 packageBootstrapSmokeClient
@@ -89,7 +88,9 @@ verifyCombinedClientPackage
 verifyCombinedClientReproducibility
 ```
 
-Generated packages are written below `build/combined-client/packages`. They are clean overlays, not source archives and not launcher profiles. The runtime bundle remains beneath `lwjgl3ify/runtime`, outside `mods`. No runtime smoke result is implied by a successful package build.
+Change 007 accepts only four explicit external mod inputs: the exact runtime-bearing lwjgl3ify Change 005 production JAR, GTNHLib 0.11.31, UniMixins All 0.1.23, and Angelica 2.1.54. The lwjgl3ify JAR embeds the four primary Temurin Java 21 archives for Linux x86_64, macOS AArch64, macOS x86_64, and Windows x86_64. No separate runtime ZIP or bundled-client overlay is accepted.
+
+Generated Stage packages are written below `build/combined-client/packages`. They are clean overlays containing only the required mod JARs, README, and machine-readable manifest. Linux AArch64 and Windows AArch64 runtime extensions are optional manual assets and are not inputs to normal Stage or release-candidate packaging. Release-root and CurseForge testing-profile outputs are separate Change 007 tasks, and no runtime smoke result is implied by successful packaging alone.
 
 ## Optional development runtime integrations
 
@@ -100,7 +101,7 @@ Hodgepodge and NEI are not included in the default development runtime. They may
 ./gradlew --no-daemon tasks -PwdgEnableNeiRuntime=true
 ```
 
-Ordinary Minecraft run tasks are still disabled in Change 006, so these flags primarily prepare later controlled integration work.
+Ordinary Minecraft run tasks remain disabled in Change 007, so these flags primarily prepare controlled external integration work.
 
 ## Production artifact verification
 
@@ -133,3 +134,7 @@ The production artifact must include SQLite JDBC and Zstandard JNI native resour
 ### Development versus production JAR confusion
 
 Never install `-dev-preshadow`, `-dev`, `-sources`, or `-api` as the production mod. Use the unclassified `reobfJar` output identified by the verifier report.
+
+## Release-candidate builds
+
+The ordinary Change 007 candidate uses `wdgReleaseChannel=RELEASE_CANDIDATE`, version `3.0.4-b-wdg-rc.1` and `wdgProvenanceMode=VALIDATION`. Final assets must be rebuilt from a clean checkout with `-PwdgProvenanceMode=FINAL -PwdgExpectedCommit=<full-commit>`. Stable output is deliberately gated and is not produced by Change 007.

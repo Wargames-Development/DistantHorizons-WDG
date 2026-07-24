@@ -24,6 +24,9 @@ public abstract class VerifyCombinedClientPackageTask extends DefaultTask {
     @Input public abstract Property<Boolean> getIncludeDistantHorizons();
     @Input public abstract Property<Boolean> getIncludeAngelica();
     @Input public abstract Property<String> getDistantHorizonsVersion();
+    @Input public abstract Property<String> getProvenanceMode();
+    @Input public abstract Property<String> getExpectedCommit();
+    @Input public abstract Property<String> getSourceTreeDigest();
 
     @InputFile @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getPackageFile();
@@ -39,8 +42,6 @@ public abstract class VerifyCombinedClientPackageTask extends DefaultTask {
     public abstract RegularFileProperty getUniMixinsJar();
     @Optional @InputFile @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getAngelicaJar();
-    @Optional @InputFile @PathSensitive(PathSensitivity.NONE)
-    public abstract RegularFileProperty getRuntimeBundle();
 
     @OutputFile public abstract RegularFileProperty getReportFile();
 
@@ -55,11 +56,13 @@ public abstract class VerifyCombinedClientPackageTask extends DefaultTask {
             includeDh ? require(getDistantHorizonsJar(), "Distant Horizons production JAR") : null,
             includeDh ? require(getGeneratedRefmap(), "Distant Horizons generated refmap") : null,
             getDistantHorizonsVersion().get(),
+            getProvenanceMode().get(),
+            getExpectedCommit().get(),
+            getSourceTreeDigest().get(),
             require(getLwjgl3ifyJar(), "-PwdgLwjgl3ifyProductionJar"),
             require(getGtnhLibJar(), "-PwdgGtnhLibJar"),
             require(getUniMixinsJar(), "-PwdgUniMixinsJar"),
-            includeAngelica ? require(getAngelicaJar(), "-PwdgAngelicaJar") : null,
-            require(getRuntimeBundle(), "-PwdgLwjgl3ifyRuntimeBundle")
+            includeAngelica ? require(getAngelicaJar(), "-PwdgAngelicaJar") : null
         );
         Map<String, Object> report = CombinedClientSupport.verifyPackage(
             definition, inputs, getPackageFile().get().getAsFile()

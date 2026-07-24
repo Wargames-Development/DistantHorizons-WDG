@@ -31,20 +31,16 @@ public abstract class VerifyRequiredRuntimeArtifactsTask extends DefaultTask {
     @Input
     public abstract Property<String> getDistantHorizonsVersion();
 
+    @Input
+    public abstract Property<String> getProvenanceMode();
+
+    @Input
+    public abstract Property<String> getExpectedCommit();
+
     @Optional
     @InputFile
     @PathSensitive(PathSensitivity.NONE)
     public abstract RegularFileProperty getLwjgl3ifyJar();
-
-    @Optional
-    @InputFile
-    @PathSensitive(PathSensitivity.NONE)
-    public abstract RegularFileProperty getLwjgl3ifyBundledClientPackage();
-
-    @Optional
-    @InputFile
-    @PathSensitive(PathSensitivity.NONE)
-    public abstract RegularFileProperty getRuntimeBundle();
 
     @Optional
     @InputFile
@@ -67,8 +63,6 @@ public abstract class VerifyRequiredRuntimeArtifactsTask extends DefaultTask {
     @TaskAction
     public void verify() throws IOException {
         File lwjgl = require(getLwjgl3ifyJar(), "wdgLwjgl3ifyProductionJar");
-        File overlay = require(getLwjgl3ifyBundledClientPackage(), "wdgLwjgl3ifyBundledClientPackage");
-        File runtime = require(getRuntimeBundle(), "wdgLwjgl3ifyRuntimeBundle");
         File angelica = require(getAngelicaJar(), "wdgAngelicaJar");
         File uniMixins = require(getUniMixinsJar(), "wdgUniMixinsJar");
         File gtnhLib = require(getGtnhLibJar(), "wdgGtnhLibJar");
@@ -76,14 +70,14 @@ public abstract class VerifyRequiredRuntimeArtifactsTask extends DefaultTask {
         Map<String, Object> dh = DistantHorizonsArtifactVerifier.verify(
             getDistantHorizonsJar().get().getAsFile(),
             getGeneratedRefmap().get().getAsFile(),
-            getDistantHorizonsVersion().get()
+            getDistantHorizonsVersion().get(),
+            getProvenanceMode().get(),
+            getExpectedCommit().get()
         );
         Map<String, Object> lwjglReport = Lwjgl3ifyCompatibilityVerifier.verify(lwjgl);
         Map<String, Object> gtnhReport = RuntimeArtifactVerifier.verifyGtnhLib(gtnhLib);
         Map<String, Object> angelicaReport = RuntimeArtifactVerifier.verifyAngelica(angelica);
         Map<String, Object> uniReport = RuntimeArtifactVerifier.verifyUniMixins(uniMixins);
-        Map<String, Object> runtimeReport = RuntimeArtifactVerifier.verifyRuntimeBundle(runtime);
-        Map<String, Object> overlayReport = RuntimeArtifactVerifier.verifyBundledClientOverlay(overlay, lwjgl, runtime);
 
         Map<String, Object> report = new LinkedHashMap<>();
         copyIdentity(report, "distantHorizons", dh);
@@ -91,16 +85,27 @@ public abstract class VerifyRequiredRuntimeArtifactsTask extends DefaultTask {
         copyIdentity(report, "gtnhLib", gtnhReport);
         copyIdentity(report, "angelica", angelicaReport);
         copyIdentity(report, "uniMixins", uniReport);
-        copyIdentity(report, "runtimeBundle", runtimeReport);
-        copyIdentity(report, "bundledClient", overlayReport);
-        report.put("distantHorizonsCommit", CombinedClientSupport.DISTANT_HORIZONS_COMMIT);
-        report.put("lwjgl3ifyCommit", CombinedClientSupport.LWJGL3IFY_COMMIT);
+        report.put("distantHorizonsCommit", dh.get("buildInfoCommit"));
+        report.put("lwjgl3ifyCommit", Lwjgl3ifyCompatibilityVerifier.EXPECTED_COMMIT);
+        report.put("lwjgl3ify.runtimeDistributionMode", lwjglReport.get("runtimeDistributionMode"));
+        report.put("lwjgl3ify.embeddedRuntimeCount", lwjglReport.get("embeddedRuntimeCount"));
+        report.put("lwjgl3ify.javaRuntimeVersion", lwjglReport.get("javaRuntimeVersion"));
+        for (Lwjgl3ifyCompatibilityVerifier.RuntimeArchive runtime
+            : Lwjgl3ifyCompatibilityVerifier.PRIMARY_RUNTIMES) {
+            String prefix = "embeddedRuntime." + runtime.platformId();
+            report.put(prefix + ".path", lwjglReport.get(prefix + ".path"));
+            report.put(prefix + ".size", lwjglReport.get(prefix + ".size"));
+            report.put(prefix + ".sha256", lwjglReport.get(prefix + ".sha256"));
+        }
+        report.put("optionalRuntimeExtensionPlatforms", lwjglReport.get("optionalRuntimeExtensionPlatforms"));
+        report.put("externalRuntimeBundleRequired", false);
+        report.put("bundledClientOverlayRequired", false);
         report.put("verified", true);
 
         FoundationSupport.writeProperties(
             getReportFile().get().getAsFile().toPath(),
             report,
-            "Change 006 required runtime artifact verification"
+            "Change 007 required runtime-bearing one-JAR artifact verification"
         );
         report.forEach((key, value) -> getLogger().lifecycle("{}={}", key, value));
         getLogger().lifecycle("Required runtime artifact verification PASSED");
@@ -114,7 +119,10 @@ public abstract class VerifyRequiredRuntimeArtifactsTask extends DefaultTask {
     }
 
     private static void copyIdentity(Map<String, Object> target, String prefix, Map<String, Object> source) {
-        for (String key : new String[] {"artifactName", "artifactSize", "artifactSha256", "version", "implementationVersion"}) {
+        for (String key : new String[] {
+            "artifactName", "artifactSize", "artifactSha256", "version", "implementationVersion",
+            "productionIdentity"
+        }) {
             if (source.containsKey(key)) {
                 target.put(prefix + "." + key, source.get(key));
             }

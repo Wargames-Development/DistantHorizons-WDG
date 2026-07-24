@@ -44,27 +44,27 @@ import java.util.Objects;
 public class JarUtils
 {
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
-	
+
 	@Nullable
 	public static File jarFile = null;
-	
-	
-	
+
+
+
 	//=============//
 	// constructor //
 	//=============//
 	//region
-	
-	static 
+
+	static
 	{
-		try 
+		try
 		{
 			// this will fail in development environments due to how the jars are compiled
-			// this may also fail in forge production 
+			// this may also fail in forge production
 			URI jarUri = JarUtils.class.getProtectionDomain().getCodeSource().getLocation().toURI();
 			jarFile = new File(jarUri);
 		}
-		catch (Exception eGetUri) 
+		catch (Exception eGetUri)
 		{
 			try
 			{
@@ -80,16 +80,16 @@ public class JarUtils
 			}
 		}
 	}
-	
+
 	//endregion
-	
-	
-	
+
+
+
 	//=========//
 	// methods //
 	//=========//
 	//region
-	
+
 	/**
 	 * Gets the URI of a resource
 	 *
@@ -99,7 +99,7 @@ public class JarUtils
 	 */
 	public static URI accessFileURI(String resource) throws URISyntaxException
 	{ return Objects.requireNonNull(JarUtils.class.getResource(resource)).toURI(); }
-	
+
 	/**
 	 * Get a file within the mods resources
 	 *
@@ -116,17 +116,19 @@ public class JarUtils
 			// this is how we load file within editor
 			input = loader.getResourceAsStream(resource);
 		}
-		
+
 		return input;
 	}
-	
+
 	/** Convert inputStream to String. Useful for reading .txt or .json that are inside the jar file */
 	public static String convertInputStreamToString(InputStream inputStream)
 	{
+		if (inputStream == null)
+		{
+			throw new IllegalArgumentException("inputStream is null");
+		}
 		final char[] buffer = new char[8192];
 		final StringBuilder result = new StringBuilder();
-		
-		// InputStream -> Reader
 		try (Reader reader = new InputStreamReader(inputStream, StandardCharsets.UTF_8))
 		{
 			int charsRead;
@@ -135,14 +137,13 @@ public class JarUtils
 				result.append(buffer, 0, charsRead);
 			}
 		}
-		catch (Exception e)
+		catch (IOException e)
 		{
-			e.printStackTrace();
+			throw new UncheckedIOException("Unable to read classpath resource", e);
 		}
-		
 		return result.toString();
 	}
-	
+
 	/**
 	 * Checks the checksum of a file given an algorithm <br>
 	 * source: https://howtodoinjava.com/java/java-security/sha-md5-file-checksum-hash/
@@ -158,23 +159,23 @@ public class JarUtils
 	{
 		//Get file input stream for reading the file content
 		FileInputStream fis = new FileInputStream(file);
-		
+
 		//Create byte array to read data in chunks
 		byte[] byteArray = new byte[1024];
 		int bytesCount = 0;
-		
+
 		//Read file data and update in message digest
 		while ((bytesCount = fis.read(byteArray)) != -1)
 		{
 			digest.update(byteArray, 0, bytesCount);
 		}
-		
+
 		//close the stream; We don't need it now.
 		fis.close();
-		
+
 		//Get the hash's bytes
 		byte[] bytes = digest.digest();
-		
+
 		//This bytes[] has bytes in decimal format;
 		//Convert it to hexadecimal format
 		StringBuilder sb = new StringBuilder();
@@ -182,13 +183,13 @@ public class JarUtils
 		{
 			sb.append(Integer.toString((bytes[i] & 0xff) + 0x100, 16).substring(1));
 		}
-		
+
 		//return complete hash
 		return sb.toString();
 	}
-	
+
 	//endregion
-	
-	
-	
+
+
+
 }

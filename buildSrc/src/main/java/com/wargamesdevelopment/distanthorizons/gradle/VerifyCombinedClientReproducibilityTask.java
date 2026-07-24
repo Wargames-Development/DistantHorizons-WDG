@@ -20,13 +20,15 @@ import org.gradle.work.DisableCachingByDefault;
 public abstract class VerifyCombinedClientReproducibilityTask extends DefaultTask {
 
     @Input public abstract Property<String> getDistantHorizonsVersion();
+    @Input public abstract Property<String> getProvenanceMode();
+    @Input public abstract Property<String> getExpectedCommit();
+    @Input public abstract Property<String> getSourceTreeDigest();
     @InputFile @PathSensitive(PathSensitivity.NONE) public abstract RegularFileProperty getDistantHorizonsJar();
     @InputFile @PathSensitive(PathSensitivity.NONE) public abstract RegularFileProperty getGeneratedRefmap();
     @Optional @InputFile @PathSensitive(PathSensitivity.NONE) public abstract RegularFileProperty getLwjgl3ifyJar();
     @Optional @InputFile @PathSensitive(PathSensitivity.NONE) public abstract RegularFileProperty getGtnhLibJar();
     @Optional @InputFile @PathSensitive(PathSensitivity.NONE) public abstract RegularFileProperty getUniMixinsJar();
     @Optional @InputFile @PathSensitive(PathSensitivity.NONE) public abstract RegularFileProperty getAngelicaJar();
-    @Optional @InputFile @PathSensitive(PathSensitivity.NONE) public abstract RegularFileProperty getRuntimeBundle();
     @OutputFile public abstract RegularFileProperty getFirstPackage();
     @OutputFile public abstract RegularFileProperty getSecondPackage();
     @OutputFile public abstract RegularFileProperty getReportFile();
@@ -40,11 +42,13 @@ public abstract class VerifyCombinedClientReproducibilityTask extends DefaultTas
             getDistantHorizonsJar().get().getAsFile(),
             getGeneratedRefmap().get().getAsFile(),
             getDistantHorizonsVersion().get(),
+            getProvenanceMode().get(),
+            getExpectedCommit().get(),
+            getSourceTreeDigest().get(),
             require(getLwjgl3ifyJar(), "-PwdgLwjgl3ifyProductionJar"),
             require(getGtnhLibJar(), "-PwdgGtnhLibJar"),
             require(getUniMixinsJar(), "-PwdgUniMixinsJar"),
-            require(getAngelicaJar(), "-PwdgAngelicaJar"),
-            require(getRuntimeBundle(), "-PwdgLwjgl3ifyRuntimeBundle")
+            require(getAngelicaJar(), "-PwdgAngelicaJar")
         );
         Map<String, Object> report = CombinedClientSupport.verifyReproducibility(
             definition,

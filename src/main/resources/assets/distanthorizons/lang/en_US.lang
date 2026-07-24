@@ -11,6 +11,8 @@ distanthorizons.general.next=Next
 distanthorizons.general.done=Done
 distanthorizons.general.cancel=Cancel
 distanthorizons.general.reset=Reset
+distanthorizons.general.managedDisabled=Locked off
+distanthorizons.general.managedInactive=Inactive
 distanthorizons.general.spacer=
 distanthorizons.general.apiOverride=API LOCK
 distanthorizons.general.disabledByApi.@tooltip=This option is controlled by another mod via DH's API \nso it cannot be changed via the UI or config file.
@@ -160,7 +162,7 @@ distanthorizons.config.client.advanced.graphics.fog.farFogMax.@tooltip=What is t
 distanthorizons.config.client.advanced.graphics.fog.farFogFalloff=Fog Falloff
 distanthorizons.config.client.advanced.graphics.fog.farFogFalloff.@tooltip=How should the fog thickness should be calculated? \n\nLINEAR: Linear based on distance (will ignore 'density')\nEXPONENTIAL: 1/(e^(distance*density)) \nEXPONENTIAL_SQUARED: 1/(e^((distance*density)^2)) \n
 distanthorizons.config.client.advanced.graphics.fog.farFogDensity=Fog Density
-distanthorizons.config.client.advanced.graphics.fog.farFogDensity.@tooltip=What is the fog's density? 
+distanthorizons.config.client.advanced.graphics.fog.farFogDensity.@tooltip=What is the fog's density?
 
 
 
@@ -171,7 +173,7 @@ distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogMixMode.@
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogDirection=Height Fog Direction
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogDirection.@tooltip=Where should the height fog be located? \n\nABOVE_CAMERA: Height fog starts from camera to the sky \nBELOW_CAMERA: Height fog starts from camera to the void \nABOVE_AND_BELOW_CAMERA: Height fog starts from camera to both the sky and the void \nABOVE_SET_HEIGHT: Height fog starts from a set height to the sky \nBELOW_SET_HEIGHT: Height fog starts from a set height to the void \nABOVE_AND_BELOW_SET_HEIGHT: Height fog starts from a set height to both the sky and the void \n
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogBaseHeight=Height Fog Base Height
-distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogBaseHeight.@tooltip=If the height fog is calculated around a set height, what is that height position? 
+distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogBaseHeight.@tooltip=If the height fog is calculated around a set height, what is that height position?
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogStart=Height Fog Start
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogStart.@tooltip=How far the start of height fog should offset? \n\n  '0.0': Fog start with no offset.\n  '1.0': Fog start with offset of the entire world's height. (Include depth)\n
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogEnd=Height Fog End
@@ -183,7 +185,7 @@ distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogMax.@tool
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogFalloff=Height Fog Falloff
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogFalloff.@tooltip=How should the height fog thickness should be calculated? \n\nLINEAR: Linear based on height (will ignore 'density')\nEXPONENTIAL: 1/(e^(height*density)) \nEXPONENTIAL_SQUARED: 1/(e^((height*density)^2)) \n
 distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogDensity=Height Fog Density
-distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogDensity.@tooltip=What is the height fog's density? 
+distanthorizons.config.client.advanced.graphics.fog.heightFog.heightFogDensity.@tooltip=What is the height fog's density?
 
 
 
@@ -243,11 +245,12 @@ distanthorizons.config.client.advanced.graphics.experimental.renderingApi.@toolt
 
 distanthorizons.config.client.advanced.autoUpdater=Auto Updater
 
-distanthorizons.config.client.advanced.autoUpdater.enableAutoUpdater=Enable automatic updates
-distanthorizons.config.client.advanced.autoUpdater.enableSilentUpdates=Enable Silent Updates
-distanthorizons.config.client.advanced.autoUpdater.enableSilentUpdates.@tooltip=Automatically updates the mod when an update is available
-distanthorizons.config.client.advanced.autoUpdater.updateBranch=Update Branch
-distanthorizons.config.client.advanced.autoUpdater.updateBranch.@tooltip=Where to download the latest update from. \n\nAuto: Downloads either stable or nightly builds based on the current jar. \nStable: Stable builds from Modrinth. \nNightly: Nightly builds from Gitlab.
+distanthorizons.config.client.advanced.autoUpdater.enableAutoUpdater=Upstream automatic updates (WDG managed: disabled)
+distanthorizons.config.client.advanced.autoUpdater.enableAutoUpdater.@tooltip=Normally checks upstream services and offers newer Distant Horizons versions.\nWDG release assets manage this package, so this control is locked off.
+distanthorizons.config.client.advanced.autoUpdater.enableSilentUpdates=Silent updates (WDG managed: disabled)
+distanthorizons.config.client.advanced.autoUpdater.enableSilentUpdates.@tooltip=Normally downloads and replaces Distant Horizons without prompting.\nWDG managed builds never do this, so this control is locked off.
+distanthorizons.config.client.advanced.autoUpdater.updateBranch=Upstream update branch (inactive for WDG)
+distanthorizons.config.client.advanced.autoUpdater.updateBranch.@tooltip=Normally chooses which upstream release channel to check.\nWDG managed builds do not contact upstream update services, so this control is inactive.
 
 
 
@@ -274,7 +277,7 @@ distanthorizons.config.client.advanced.debugging.enableWhiteWorld.@tooltip=If en
 distanthorizons.config.client.advanced.debugging.showOverlappingQuadErrors=Show overlapping quad errors
 distanthorizons.config.client.advanced.debugging.showOverlappingQuadErrors.@tooltip=If true overlapping quads will be rendered as bright red for easy identification. \nIf false the quads will be rendered normally.
 distanthorizons.config.client.advanced.debugging.logBufferGarbageCollection=Log Buffer Garbage Collection
-distanthorizons.config.client.advanced.debugging.logBufferGarbageCollection.@tooltip=If true OpenGL Buffer garbage collection will be logged \nthis also includes the number of live buffers. 
+distanthorizons.config.client.advanced.debugging.logBufferGarbageCollection.@tooltip=If true OpenGL Buffer garbage collection will be logged \nthis also includes the number of live buffers.
 distanthorizons.config.client.advanced.debugging.allowUnsafeValues=Allow Unsafe UI Values
 distanthorizons.config.client.advanced.debugging.allowUnsafeValues.@tooltip=If enabled, very limited config input validation will be performed. \n\nWarning: enabling this can cause instability or crashing, use at your own risk. \nNote: this option isn't saved between sessions.
 

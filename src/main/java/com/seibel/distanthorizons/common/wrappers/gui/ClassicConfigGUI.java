@@ -26,6 +26,7 @@ import org.apache.logging.log4j.Logger;
 
 import com.mojang.realmsclient.gui.ChatFormatting;
 import com.seibel.distanthorizons.api.enums.config.DisallowSelectingViaConfigGui;
+import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.config.ConfigHandler;
 import com.seibel.distanthorizons.core.config.gui.IConfigGuiInfo;
 import com.seibel.distanthorizons.core.config.types.AbstractConfigBase;
@@ -36,6 +37,7 @@ import com.seibel.distanthorizons.core.config.types.ConfigUIComment;
 import com.seibel.distanthorizons.core.config.types.ConfigUiLinkedEntry;
 import com.seibel.distanthorizons.core.config.types.enums.EConfigValidity;
 import com.seibel.distanthorizons.core.jar.updater.SelfUpdater;
+import com.seibel.distanthorizons.core.jar.updater.UpdaterPolicyManager;
 import com.seibel.distanthorizons.core.util.AnnotationUtil;
 import com.seibel.distanthorizons.core.wrapperInterfaces.config.IConfigGui;
 import com.seibel.distanthorizons.coreapi.ModInfo;
@@ -366,6 +368,7 @@ public class ClassicConfigGUI {
         private void addMenuItem(AbstractConfigBase info) {
             initEntry(info, this.translationPrefix);
             String name = Translatable(translationPrefix + info.getNameAndCategory());
+            boolean managedUpdaterEntry = isManagedUpdaterEntry(info);
 
             if (ConfigEntry.class.isAssignableFrom(info.getClass())) {
                 OnPressed btnAction = button -> {
@@ -388,6 +391,7 @@ public class ClassicConfigGUI {
                     ConfigScreenConfigs.ResetButtonWidth,
                     ConfigScreenConfigs.ResetButtonHeight,
                     btnAction);
+                resetButton.enabled = !managedUpdaterEntry;
 
                 if (((EntryInfo) info.guiValue).widget instanceof Map.Entry) {
                     Map.Entry<OnPressed, Function<Object, String>> widget = (Map.Entry<OnPressed, Function<Object, String>>) ((EntryInfo) info.guiValue).widget;
@@ -402,18 +406,19 @@ public class ClassicConfigGUI {
                                     + info.get()
                                         .toString()));
                     }
-                    this.list.addButton(
-                        MakeBtn(
-                            widget.getValue()
-                                .apply(info.get()),
-                            this.width - 150 - ConfigScreenConfigs.SpaceFromRightScreen,
-                            0,
-                            150,
-                            20,
-                            widget.getKey()),
-                        resetButton,
-                        null,
-                        name);
+                    GuiButton valueButton = MakeBtn(
+                        widget.getValue()
+                            .apply(info.get()),
+                        this.width - 150 - ConfigScreenConfigs.SpaceFromRightScreen,
+                        0,
+                        150,
+                        20,
+                        widget.getKey());
+                    if (managedUpdaterEntry) {
+                        valueButton.enabled = false;
+                        valueButton.displayString = managedUpdaterDisplayString(info);
+                    }
+                    this.list.addButton(valueButton, resetButton, null, name);
                     return;
                 } else if (((EntryInfo) info.guiValue).widget != null) {
                     GuiTextField widget = new GuiTextField(
@@ -465,6 +470,22 @@ public class ClassicConfigGUI {
             LOGGER.warn(
                 "Config [" + info.getNameAndCategory()
                     + "] failed to show. Please try something like changing its type.");
+        }
+
+        private static boolean isManagedUpdaterEntry(AbstractConfigBase info) {
+            if (UpdaterPolicyManager.allowsUpstreamUpdater()) {
+                return false;
+            }
+            return info == Config.Client.Advanced.AutoUpdater.enableAutoUpdater
+                || info == Config.Client.Advanced.AutoUpdater.enableSilentUpdates
+                || info == Config.Client.Advanced.AutoUpdater.updateBranch;
+        }
+
+        private static String managedUpdaterDisplayString(AbstractConfigBase info) {
+            String key = info == Config.Client.Advanced.AutoUpdater.updateBranch
+                ? "distanthorizons.general.managedInactive"
+                : "distanthorizons.general.managedDisabled";
+            return Translatable(key);
         }
 
         @Override
@@ -622,11 +643,11 @@ public class ClassicConfigGUI {
 
         public Optional<Gui> getHoveredButton(double mouseX, double mouseY) {
             for (ButtonEntry buttonEntry : this.children) {
-                if (buttonEntry.button instanceof GuiButton guiButton) {
-                    int hoverState = guiButton.getHoverState(guiButton.field_146123_n);
-                    if (hoverState == 2) {
-                        return Optional.of(buttonEntry.button);
-                    }
+                if (buttonEntry.button instanceof GuiButton guiButton && mouseX >= guiButton.xPosition
+                    && mouseY >= guiButton.yPosition
+                    && mouseX < guiButton.xPosition + guiButton.width
+                    && mouseY < guiButton.yPosition + guiButton.height) {
+                    return Optional.of(buttonEntry.button);
                 }
             }
             return Optional.empty();

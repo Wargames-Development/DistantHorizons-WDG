@@ -21,6 +21,23 @@ import org.junit.Test;
 public class CombinedClientSupportTest {
 
     @Test
+    public void activeInputContractsRequireNoLegacySplitRuntimeProperties() {
+        Set<String> combinedComponents = java.util.Arrays
+            .stream(CombinedClientSupport.Inputs.class.getRecordComponents())
+            .map(java.lang.reflect.RecordComponent::getName)
+            .collect(java.util.stream.Collectors.toSet());
+        Set<String> releaseComponents = java.util.Arrays
+            .stream(ReleaseCandidateSupport.Inputs.class.getRecordComponents())
+            .map(java.lang.reflect.RecordComponent::getName)
+            .collect(java.util.stream.Collectors.toSet());
+
+        assertEquals(false, combinedComponents.contains("runtimeBundle"));
+        assertEquals(false, combinedComponents.contains("bundledClientPackage"));
+        assertEquals(false, releaseComponents.contains("runtimeBundle"));
+        assertEquals(false, releaseComponents.contains("bundledClientPackage"));
+    }
+
+    @Test
     public void correctBootstrapFixturePackageIsAcceptedAndReproducible() throws Exception {
         Path directory = Files.createTempDirectory("combined client fixture with spaces ");
         CombinedClientSupport.Inputs inputs = fixtureInputs(directory, false);
@@ -33,6 +50,8 @@ public class CombinedClientSupportTest {
         Path packageFile = directory.resolve("stage-a.zip");
         Map<String, Object> report = CombinedClientSupport.createPackageForTesting(definition, inputs, packageFile);
         assertEquals(3, report.get("modJarCount"));
+        assertEquals(5, report.get("memberCount"));
+        assertEquals(false, report.get("externalRuntimeBundlePresent"));
         Map<String, Object> reproducibility = CombinedClientSupport.verifyReproducibilityForTesting(
             definition,
             inputs,
@@ -40,6 +59,42 @@ public class CombinedClientSupportTest {
             directory.resolve("second.zip")
         );
         assertEquals(true, reproducibility.get("reproducible"));
+    }
+
+    @Test
+    public void stageBAndStageCMembershipUseOnlyModJars() throws Exception {
+        Path directory = Files.createTempDirectory("stage membership fixtures");
+        CombinedClientSupport.Inputs inputs = fullFixtureInputs(directory);
+
+        CombinedClientSupport.PackageDefinition stageB = new CombinedClientSupport.PackageDefinition(
+            "distant-horizons-required-smoke",
+            "DistantHorizons-WDG-Stage-B",
+            true,
+            false
+        );
+        Map<String, Object> stageBReport = CombinedClientSupport.createPackageForTesting(
+            stageB,
+            inputs,
+            directory.resolve("stage-b.zip")
+        );
+        assertEquals(4, stageBReport.get("modJarCount"));
+        assertEquals(6, stageBReport.get("memberCount"));
+        assertEquals(false, stageBReport.get("externalRuntimeBundlePresent"));
+
+        CombinedClientSupport.PackageDefinition stageC = new CombinedClientSupport.PackageDefinition(
+            "combined-client",
+            "DistantHorizons-WDG-Stage-C",
+            true,
+            true
+        );
+        Map<String, Object> stageCReport = CombinedClientSupport.createPackageForTesting(
+            stageC,
+            inputs,
+            directory.resolve("stage-c.zip")
+        );
+        assertEquals(5, stageCReport.get("modJarCount"));
+        assertEquals(7, stageCReport.get("memberCount"));
+        assertEquals(false, stageCReport.get("externalRuntimeBundlePresent"));
     }
 
     @Test
@@ -78,6 +133,55 @@ public class CombinedClientSupportTest {
         );
     }
 
+    @Test
+    public void obsoleteExternalRuntimeZipMemberIsRejected() throws Exception {
+        Path directory = Files.createTempDirectory("obsolete external runtime package");
+        CombinedClientSupport.Inputs inputs = fixtureInputs(directory, false);
+        CombinedClientSupport.PackageDefinition definition = new CombinedClientSupport.PackageDefinition(
+            "bootstrap-smoke",
+            "DistantHorizons-WDG-Bootstrap-Smoke",
+            false,
+            false
+        );
+        Path valid = directory.resolve("valid.zip");
+        CombinedClientSupport.createPackageForTesting(definition, inputs, valid);
+        Path invalid = directory.resolve("invalid.zip");
+        addMember(
+            valid,
+            invalid,
+            "DistantHorizons-WDG-Bootstrap-Smoke/lwjgl3ify/runtime/lwjgl3ify-wdg-java21-runtimes.zip",
+            new byte[] {1}
+        );
+        assertThrows(
+            IllegalStateException.class,
+            () -> CombinedClientSupport.verifyPackageForTesting(definition, inputs, invalid.toFile())
+        );
+    }
+
+    private static CombinedClientSupport.Inputs fullFixtureInputs(Path directory) throws Exception {
+        Path dh = FixtureJars.createDistantHorizonsJar(
+            directory.resolve("distanthorizons-3.0.4-b-wdg-rc.1.jar"),
+            Set.of(),
+            65
+        );
+        Path refmap = directory.resolve(FoundationSupport.REFMAP);
+        try (FoundationSupport.ArchiveInventory inventory = FoundationSupport.ArchiveInventory.open(dh.toFile())) {
+            Files.write(refmap, inventory.bytes(FoundationSupport.REFMAP));
+        }
+        return new CombinedClientSupport.Inputs(
+            dh.toFile(),
+            refmap.toFile(),
+            FixtureJars.VERSION,
+            FixtureJars.createLwjgl3ifyJar(
+                directory.resolve(Lwjgl3ifyCompatibilityVerifier.EXPECTED_FILENAME),
+                Set.of()
+            ).toFile(),
+            FixtureJars.createGtnhLibJar(directory.resolve(RuntimeArtifactVerifier.GTNHLIB_FILENAME)).toFile(),
+            FixtureJars.createUniMixinsJar(directory.resolve(RuntimeArtifactVerifier.UNIMIXINS_FILENAME)).toFile(),
+            FixtureJars.createAngelicaJar(directory.resolve(RuntimeArtifactVerifier.ANGELICA_FILENAME)).toFile()
+        );
+    }
+
     private static CombinedClientSupport.Inputs fixtureInputs(Path directory, boolean duplicateGtnhLibId)
         throws Exception {
         Path lwjgl = FixtureJars.createLwjgl3ifyJar(directory.resolve("lwjgl3ify-3.0.28.jar"), Set.of());
@@ -86,7 +190,6 @@ public class CombinedClientSupportTest {
             directory.resolve("+unimixins-all-1.7.10-0.1.23.jar"),
             duplicateGtnhLibId
         );
-        Path runtime = createRuntimeBundle(directory.resolve("lwjgl3ify-wdg-java21-runtimes.zip"));
         return new CombinedClientSupport.Inputs(
             null,
             null,
@@ -94,8 +197,7 @@ public class CombinedClientSupportTest {
             lwjgl.toFile(),
             gtnh.toFile(),
             uni.toFile(),
-            null,
-            runtime.toFile()
+            null
         );
     }
 
@@ -152,25 +254,6 @@ public class CombinedClientSupportTest {
         return jar;
     }
 
-    private static Path createRuntimeBundle(Path output) throws Exception {
-        String root = "lwjgl3ify-wdg-java21-runtimes";
-        StringBuilder json = new StringBuilder("{\"javaRuntimeVersion\": \"21.0.11+10-LTS\",\"platforms\":[");
-        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(output))) {
-            for (int index = 0; index < RuntimeArtifactVerifier.RUNTIME_PLATFORMS.size(); index++) {
-                String platform = RuntimeArtifactVerifier.RUNTIME_PLATFORMS.get(index);
-                if (index > 0) json.append(',');
-                json.append("{\"id\": \"").append(platform).append("\"}");
-            }
-            json.append("]}");
-            put(zip, root + "/manifest.json", json.toString().getBytes(StandardCharsets.UTF_8));
-            for (String platform : RuntimeArtifactVerifier.RUNTIME_PLATFORMS) {
-                String suffix = platform.startsWith("windows-") ? ".zip" : ".tar.gz";
-                put(zip, root + "/runtimes/" + platform + suffix, new byte[] {1});
-            }
-        }
-        return output;
-    }
-
     private static Manifest manifest(Map<String, String> values) {
         Manifest manifest = new Manifest();
         manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
@@ -185,6 +268,22 @@ public class CombinedClientSupportTest {
                 output.write(entry.getValue());
                 output.closeEntry();
             }
+        }
+    }
+
+    private static void addMember(Path source, Path output, String name, byte[] content) throws Exception {
+        try (
+            java.util.zip.ZipFile input = new java.util.zip.ZipFile(source.toFile());
+            ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(output))
+        ) {
+            var entries = input.entries();
+            while (entries.hasMoreElements()) {
+                ZipEntry original = entries.nextElement();
+                try (var stream = input.getInputStream(original)) {
+                    put(zip, original.getName(), stream.readAllBytes());
+                }
+            }
+            put(zip, name, content);
         }
     }
 

@@ -28,6 +28,13 @@ public abstract class VerifyProductionModArtifactTask extends DefaultTask {
     @Input
     public abstract Property<String> getExpectedVersion();
 
+    @Input
+    public abstract Property<String> getExpectedProvenanceMode();
+
+    @org.gradle.api.tasks.Optional
+    @Input
+    public abstract Property<String> getExpectedCommit();
+
     @OutputFile
     public abstract RegularFileProperty getReportFile();
 
@@ -36,7 +43,9 @@ public abstract class VerifyProductionModArtifactTask extends DefaultTask {
         Map<String, Object> report = DistantHorizonsArtifactVerifier.verify(
             getArtifactFile().get().getAsFile(),
             getGeneratedRefmap().get().getAsFile(),
-            getExpectedVersion().get()
+            getExpectedVersion().get(),
+            getExpectedProvenanceMode().get(),
+            getExpectedCommit().getOrNull()
         );
         FoundationSupport.writeProperties(getReportFile().get().getAsFile().toPath(), report, "Distant Horizons production artifact verification");
         report.forEach((key, value) -> getLogger().lifecycle("{}={}", key, value));

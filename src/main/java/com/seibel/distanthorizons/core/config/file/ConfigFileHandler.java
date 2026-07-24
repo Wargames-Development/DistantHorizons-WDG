@@ -46,26 +46,26 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ConfigFileHandler
 {
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
-	
-	
+
+
 	public final Path configPath;
-	
+
 	/** This is the object for night-config */
 	private final CommentedFileConfig nightConfig;
-	
+
 	/** prevents readers/writers from overlapping and causing the config file from being duplicated or corrupted */
 	private final ReentrantLock readWriteLock = new ReentrantLock();
-	
-	
-	
+
+
+
 	//=============//
 	// constructor //
 	//=============//
-	
+
 	public ConfigFileHandler(Path configPath)
 	{
 		this.configPath = configPath;
-		
+
 		this.nightConfig = CommentedFileConfig
 				.builder(this.configPath.toFile())
 				// sync is needed so file reading/writing only happens during locked sections,
@@ -73,13 +73,13 @@ public class ConfigFileHandler
 				.sync()
 				.build();
 	}
-	
-	
-	
+
+
+
 	//====================//
 	// entire config file //
 	//====================//
-	
+
 	/** Saves the entire config to the file */
 	public void saveToFile() { this.saveToFile(this.nightConfig); }
 	/** Saves the entire config to the file */
@@ -88,18 +88,18 @@ public class ConfigFileHandler
 		try
 		{
 			this.readWriteLock.lock();
-			
-			
-			
+
+
+
 			if (!Files.exists(this.configPath)) // Try to check if the config exists
 			{
 				reCreateFile(this.configPath);
 			}
-			
-			
+
+
 			this.loadNightConfig(nightConfig);
-			
-			
+
+
 			for (AbstractConfigBase<?> entry : ConfigHandler.INSTANCE.configBaseList)
 			{
 				if (ConfigEntry.class.isAssignableFrom(entry.getClass()))
@@ -108,8 +108,8 @@ public class ConfigFileHandler
 					this.saveEntry((ConfigEntry<?>) entry, nightConfig);
 				}
 			}
-			
-			
+
+
 			try
 			{
 				nightConfig.save();
@@ -119,14 +119,14 @@ public class ConfigFileHandler
 				// If it fails to save, crash game
 				SingletonInjector.INSTANCE.get(IMinecraftClientWrapper.class).crashMinecraft("Failed to save config at [" + this.configPath + "]", e);
 			}
-			
+
 		}
 		finally
 		{
 			this.readWriteLock.unlock();
 		}
 	}
-	
+
 	/**
 	 * Loads the entire config from the file
 	 *
@@ -137,7 +137,7 @@ public class ConfigFileHandler
 		try
 		{
 			this.readWriteLock.lock();
-			
+
 			int currentCfgVersion = ModInfo.CONFIG_FILE_VERSION;
 			try
 			{
@@ -149,16 +149,13 @@ public class ConfigFileHandler
 				tmpNightConfig.close();
 			}
 			catch (Exception ignored) { }
-			
-			if (currentCfgVersion == ModInfo.CONFIG_FILE_VERSION)
-			{
-				// handle normally
-			}
-			else if (currentCfgVersion > ModInfo.CONFIG_FILE_VERSION)
+
+			ConfigVersionPolicy.Action versionAction = ConfigVersionPolicy.actionFor(currentCfgVersion, ModInfo.CONFIG_FILE_VERSION);
+			if (versionAction == ConfigVersionPolicy.Action.LOAD_NEWER_WITH_WARNING)
 			{
 				LOGGER.warn("Found config version [" + currentCfgVersion + "] which is newer than current mods config version of [" + ModInfo.CONFIG_FILE_VERSION + "]. You may have downgraded the mod and items may have been moved, you have been warned");
 			}
-			else // if (currentCfgVersion < configBase.configVersion)
+			else if (versionAction == ConfigVersionPolicy.Action.RESET_OLDER)
 			{
 				LOGGER.warn(ModInfo.NAME + " config is of an older version, currently there is no config updater... so resetting config");
 				try
@@ -170,7 +167,7 @@ public class ConfigFileHandler
 					LOGGER.error("Unable to delete outdated config file at: ["+this.configPath+"], error: ["+e.getMessage()+"].", e);
 				}
 			}
-			
+
 			this.loadFromFile(this.nightConfig);
 			this.nightConfig.set("_version", ModInfo.CONFIG_FILE_VERSION);
 		}
@@ -195,8 +192,8 @@ public class ConfigFileHandler
 		{
 			reCreateFile(this.configPath);
 		}
-		
-		
+
+
 		// Load all the entries
 		for (AbstractConfigBase<?> entry : ConfigHandler.INSTANCE.configBaseList)
 		{
@@ -207,8 +204,8 @@ public class ConfigFileHandler
 				this.loadEntry((ConfigEntry<?>) entry, nightConfig);
 			}
 		}
-		
-		
+
+
 		try
 		{
 			nightConfig.save();
@@ -219,13 +216,13 @@ public class ConfigFileHandler
 			SingletonInjector.INSTANCE.get(IMinecraftClientWrapper.class).crashMinecraft("Failed to save config at [" + this.configPath + "]", e);
 		}
 	}
-	
-	
-	
+
+
+
 	//=======================//
 	// single config entries //
 	//=======================//
-	
+
 	// Save an entry when only given the entry
 	public void saveEntry(ConfigEntry<?> entry)
 	{
@@ -244,10 +241,10 @@ public class ConfigFileHandler
 			// shouldn't happen, but just in case
 			throw new IllegalArgumentException("ConfigEntry [" + entry.getNameAndCategory() + "] is null, how did this happen?");
 		}
-		
+
 		workConfig.set(entry.getNameAndCategory(), ConfigTypeConverters.attemptToConvertToString(entry.getType(), entry.getTrueValue()));
 	}
-	
+
 	/** Loads an entry when only given the entry */
 	public void loadEntry(ConfigEntry<?> entry) { this.loadEntry(entry, this.nightConfig); }
 	/** Loads an entry */
@@ -258,14 +255,14 @@ public class ConfigFileHandler
 		{
 			return;
 		}
-		
+
 		if (!nightConfig.contains(entry.getNameAndCategory()))
 		{
 			this.saveEntry(entry, nightConfig);
 			return;
 		}
-		
-		
+
+
 		try
 		{
 			if (entry.getType().isEnum())
@@ -273,7 +270,7 @@ public class ConfigFileHandler
 				entry.setWithoutFiringEvents((T) (nightConfig.getEnum(entry.getNameAndCategory(), (Class<? extends Enum>) entry.getType())));
 				return;
 			}
-			
+
 			// try converting the value if necessary
 			Class<?> expectedValueClass = entry.getType();
 			Object value = nightConfig.get(entry.getNameAndCategory());
@@ -286,8 +283,8 @@ public class ConfigFileHandler
 				convertedValue = entry.getDefaultValue();
 			}
 			entry.setWithoutFiringEvents((T) convertedValue);
-			
-			if (entry.getTrueValue() == null) 
+
+			if (entry.getTrueValue() == null)
 			{
 				LOGGER.warn("BlockBiomeWrapperPair [" + entry.getNameAndCategory() + "] returned as null from the config. Using default value.");
 				entry.setWithoutFiringEvents(entry.getDefaultValue());
@@ -299,33 +296,33 @@ public class ConfigFileHandler
 			entry.setWithoutFiringEvents(entry.getDefaultValue());
 		}
 	}
-	
+
 	// Creates the comment for an entry when only given the entry
 	public void createComment(ConfigEntry<?> entry) { this.createComment(entry, this.nightConfig); }
 	// Creates a comment for an entry
 	public void createComment(ConfigEntry<?> entry, CommentedFileConfig nightConfig)
 	{
-		if (!entry.getAppearance().showInFile 
+		if (!entry.getAppearance().showInFile
 			|| entry.getComment() == null)
 		{
 			return;
 		}
-		
-		
-		
+
+
+
 		String comment = entry.getComment().replaceAll("\n", "\n ").trim();
 		// the new line makes it easier to read and separate configs
-		// the space makes sure the first word of a comment isn't directly in line with the "#" 
+		// the space makes sure the first word of a comment isn't directly in line with the "#"
 		comment = "\n " + comment;
 		nightConfig.setComment(entry.getNameAndCategory(), comment);
 	}
-	
-	
-	
+
+
+
 	//=============//
 	// nightconfig //
 	//=============//
-	
+
 	/**
 	 * Uses {@link ConfigFileHandler#nightConfig} to do {@link CommentedFileConfig#load()} but with error checking
 	 *
@@ -350,35 +347,35 @@ public class ConfigFileHandler
 			catch (Exception e)
 			{
 				LOGGER.warn("Loading file failed because of this expectation:\n" + e);
-				
+
 				reCreateFile(this.configPath);
-				
+
 				nightConfig.load();
 			}
 		}
 		catch (Exception e)
 		{
 			LOGGER.error("File creation failed at ["+this.configPath+"], error: ["+e.getMessage()+"].", e);
-			
+
 			// delayed MC getter since this object may be created before
 			// the singleton has been bound
 			IMinecraftClientWrapper mc = SingletonInjector.INSTANCE.get(IMinecraftClientWrapper.class);
 			mc.crashMinecraft("Loading file and resetting config file failed at path [" + this.configPath + "]. Please check the file is ok and you have the permissions", e);
 		}
 	}
-	
-	
-	
+
+
+
 	//===============//
 	// file handling //
 	//===============//
-	
+
 	public static void reCreateFile(Path path)
 	{
 		try
 		{
 			Files.deleteIfExists(path);
-			
+
 			if (!path.getParent().toFile().exists())
 			{
 				Files.createDirectory(path.getParent());
@@ -390,7 +387,7 @@ public class ConfigFileHandler
 			LOGGER.error("Unable to recreate config file, error: ["+e.getMessage()+"].", e);
 		}
 	}
-	
-	
-	
+
+
+
 }

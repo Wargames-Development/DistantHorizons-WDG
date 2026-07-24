@@ -16,6 +16,7 @@
 package com.seibel.distanthorizons.common.wrappers.minecraft;
 
 import java.io.File;
+import java.util.List;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
@@ -41,6 +42,7 @@ import com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IProfilerWrap
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IClientLevelWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IServerLevelWrapper;
 import com.seibel.distanthorizons.coreapi.ModInfo;
+import com.seibel.distanthorizons.coreapi.SingleLineChatMessages;
 
 /**
  * A singleton that wraps the Minecraft object.
@@ -174,6 +176,15 @@ public class MinecraftClientWrapper extends AbstractMinecraftSharedWrapper
             return;
         }
         player.addChatMessage(new ChatComponentText(string));
+    }
+
+    @Override
+    public void sendChatMessages(List<String> lines) {
+        EntityPlayerSP player = this.getPlayer();
+        if (player == null || lines == null) {
+            return;
+        }
+        SingleLineChatMessages.submit(lines, line -> player.addChatMessage(new ChatComponentText(line)));
     }
 
     @Override

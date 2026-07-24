@@ -15,7 +15,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
@@ -23,11 +22,9 @@ import java.util.zip.ZipOutputStream;
 
 public final class CombinedClientSupport {
 
-    public static final String DISTANT_HORIZONS_COMMIT = "1bcabae75b3ae3160995355e1c46d94659146d0e";
-    public static final String LWJGL3IFY_COMMIT = "7500f19e88a47e6ecc587f33789766bbac365d19";
-    public static final String CONTRACT_VERSION = "change-006-v1";
+    public static final String LWJGL3IFY_COMMIT = "d7e60f5a0dea4aa348e3c06b8f0a87c171522a37";
+    public static final String CONTRACT_VERSION = ProvenanceSupport.PACKAGE_CONTRACT;
     public static final String MANIFEST_NAME = "wdg-combined-client-manifest.json";
-    public static final String RUNTIME_PACKAGED_NAME = "lwjgl3ify-wdg-java21-runtimes.zip";
     private static final LocalDateTime FIXED_ZIP_TIME = LocalDateTime.of(1980, 1, 1, 0, 0);
 
     private CombinedClientSupport() {}
@@ -56,12 +53,55 @@ public final class CombinedClientSupport {
         File distantHorizons,
         File generatedRefmap,
         String distantHorizonsVersion,
+        String provenanceMode,
+        String expectedCommit,
+        String sourceTreeDigest,
         File lwjgl3ify,
         File gtnhLib,
         File uniMixins,
-        File angelica,
-        File runtimeBundle
-    ) {}
+        File angelica
+    ) {
+        public Inputs(
+            File distantHorizons,
+            File generatedRefmap,
+            String distantHorizonsVersion,
+            File lwjgl3ify,
+            File gtnhLib,
+            File uniMixins,
+            File angelica
+        ) {
+            this(
+                distantHorizons,
+                generatedRefmap,
+                distantHorizonsVersion,
+                "VALIDATION",
+                ProvenanceSupport.BASE_COMMIT,
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                lwjgl3ify,
+                gtnhLib,
+                uniMixins,
+                angelica
+            );
+        }
+
+        public Inputs {
+            provenanceMode = provenanceMode == null ? "VALIDATION" : provenanceMode;
+            expectedCommit = expectedCommit == null ? ProvenanceSupport.BASE_COMMIT : expectedCommit;
+            if (sourceTreeDigest == null || !sourceTreeDigest.matches("[0-9a-f]{64}")) {
+                throw new IllegalArgumentException("sourceTreeDigest must be a lowercase SHA-256");
+            }
+        }
+
+        public String buildSource() {
+            return provenanceMode.equalsIgnoreCase("FINAL")
+                ? ProvenanceSupport.FINAL_SOURCE
+                : ProvenanceSupport.VALIDATION_SOURCE;
+        }
+
+        public String treeState() {
+            return provenanceMode.equalsIgnoreCase("FINAL") ? "clean" : "modified";
+        }
+    }
 
     public record ArtifactSpec(
         String role,
@@ -73,7 +113,8 @@ public final class CombinedClientSupport {
         List<String> modIds,
         File file,
         long size,
-        String sha256
+        String sha256,
+        Map<String, Object> verification
     ) {}
 
     private record MemberSource(byte[] inlineBytes, Path sourceFile) {
@@ -116,11 +157,10 @@ public final class CombinedClientSupport {
         boolean requireExactThirdPartyIdentity
     ) throws IOException {
         List<ArtifactSpec> artifacts = verifyAndDescribe(definition, inputs, requireExactThirdPartyIdentity);
-        RuntimeArtifactVerifier.verifyRuntimeBundle(inputs.runtimeBundle());
         validateCrossJarModIds(artifacts);
 
-        String manifest = manifestJson(definition, artifacts, inputs.runtimeBundle());
-        String readme = readmeText(definition, artifacts);
+        String manifest = manifestJson(definition, artifacts, inputs);
+        String readme = readmeText(definition, artifacts, inputs);
         Map<String, MemberSource> members = new TreeMap<>();
         String root = definition.rootDirectory() + "/";
         members.put(root + "README.txt", MemberSource.inline(readme.getBytes(StandardCharsets.UTF_8)));
@@ -131,11 +171,6 @@ public final class CombinedClientSupport {
                 MemberSource.file(artifact.file().toPath())
             );
         }
-        members.put(
-            root + "lwjgl3ify/runtime/" + RUNTIME_PACKAGED_NAME,
-            MemberSource.file(inputs.runtimeBundle().toPath())
-        );
-
         Files.createDirectories(output.toAbsolutePath().normalize().getParent());
         Files.deleteIfExists(output);
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(output))) {
@@ -185,7 +220,6 @@ public final class CombinedClientSupport {
         for (ArtifactSpec artifact : artifacts) {
             expectedByMember.put(root + "mods/" + artifact.packagedFilename(), artifact);
         }
-        String runtimeMember = root + "lwjgl3ify/runtime/" + RUNTIME_PACKAGED_NAME;
 
         try (FoundationSupport.ArchiveInventory inventory = FoundationSupport.ArchiveInventory.open(packageFile)) {
             RuntimeArtifactVerifier.validateSafeArchive(inventory);
@@ -197,7 +231,6 @@ public final class CombinedClientSupport {
             }
             inventory.require(root + "README.txt");
             inventory.require(root + MANIFEST_NAME);
-            inventory.require(runtimeMember);
 
             List<String> modMembers = inventory.names().stream()
                 .filter(name -> name.startsWith(root + "mods/") && name.endsWith(".jar"))
@@ -219,9 +252,6 @@ public final class CombinedClientSupport {
                     );
                 }
             }
-            if (!inventory.contentEquals(runtimeMember, inputs.runtimeBundle().toPath())) {
-                throw new IllegalStateException("Packaged runtime bundle differs from the normalized lwjgl3ify output");
-            }
             for (String name : inventory.names()) {
                 String lower = name.toLowerCase(Locale.ROOT);
                 if (lower.contains("distanthorizons-alpha18.jar")
@@ -229,6 +259,8 @@ public final class CombinedClientSupport {
                     || lower.contains("gtnhmixins.jar")
                     || lower.contains("-sources.jar")
                     || lower.contains("-api.jar")
+                    || lower.contains("lwjgl3ify-wdg-java21-runtimes.zip")
+                    || lower.startsWith(root.toLowerCase(Locale.ROOT) + "lwjgl3ify/runtime/")
                     || (lower.startsWith(root.toLowerCase(Locale.ROOT) + "mods/")
                         && (lower.endsWith(".zip") || lower.endsWith(".tar.gz")))) {
                     throw new IllegalStateException("Forbidden package member: " + name);
@@ -249,12 +281,33 @@ public final class CombinedClientSupport {
             requireManifestField(manifest, "\"schemaVersion\": 1");
             requireManifestField(manifest, "\"packageType\": \"" + definition.packageType() + "\"");
             requireManifestField(manifest, "\"packageRoot\": \"" + definition.rootDirectory() + "\"");
-            requireManifestField(manifest, "\"distantHorizonsCommit\": \"" + DISTANT_HORIZONS_COMMIT + "\"");
+            requireManifestField(manifest, "\"releaseChannel\": \"RELEASE_CANDIDATE\"");
+            requireManifestField(manifest, "\"modVersion\": \"" + inputs.distantHorizonsVersion() + "\"");
+            requireManifestField(manifest, "\"sourceTreeState\": \"" + inputs.treeState() + "\"");
+            requireManifestField(manifest, "\"sourceTreeDigest\": \"" + inputs.sourceTreeDigest() + "\"");
+            requireManifestField(manifest, "\"buildSource\": \"" + inputs.buildSource() + "\"");
+            requireManifestField(manifest, "\"updaterPolicy\": \"MANAGED_DISABLED\"");
+            if (definition.includeDistantHorizons()) {
+                requireManifestField(manifest, "\"distantHorizonsCommit\": \"" + distantHorizonsCommit(inputs.distantHorizons()) + "\"");
+            }
             requireManifestField(manifest, "\"lwjgl3ifyCommit\": \"" + LWJGL3IFY_COMMIT + "\"");
-            requireManifestField(
-                manifest,
-                "\"runtimeBundleSha256\": \"" + FoundationSupport.sha256(inputs.runtimeBundle().toPath()) + "\""
-            );
+            Map<String, Object> lwjglReport = lwjgl3ifyReport(artifacts);
+            requireManifestField(manifest, "\"runtimeDistributionMode\": \""
+                + lwjglReport.get("runtimeDistributionMode") + "\"");
+            requireManifestField(manifest, "\"javaRuntimeVersion\": \""
+                + lwjglReport.get("javaRuntimeVersion") + "\"");
+            for (Lwjgl3ifyCompatibilityVerifier.RuntimeArchive runtime
+                : Lwjgl3ifyCompatibilityVerifier.PRIMARY_RUNTIMES) {
+                requireManifestField(manifest, "\"id\": \"" + runtime.platformId() + "\"");
+                requireManifestField(manifest, "\"path\": \"" + runtime.path() + "\"");
+                requireManifestField(manifest, "\"sha256\": \""
+                    + lwjglReport.get("embeddedRuntime." + runtime.platformId() + ".sha256") + "\"");
+            }
+            if (manifest.contains("runtimeBundleFilename")
+                || manifest.contains("runtimeBundleSha256")
+                || manifest.contains("lwjgl3ify-wdg-java21-runtimes.zip")) {
+                throw new IllegalStateException("Package manifest still describes the obsolete split-runtime contract");
+            }
             for (ArtifactSpec artifact : artifacts) {
                 requireManifestField(manifest, "\"packagedFilename\": \"" + artifact.packagedFilename() + "\"");
                 requireManifestField(manifest, "\"sha256\": \"" + artifact.sha256() + "\"");
@@ -279,7 +332,10 @@ public final class CombinedClientSupport {
             report.put("memberCount", inventory.names().size());
             report.put("modJarCount", modMembers.size());
             report.put("modJarMembers", String.join(",", modMembers));
-            report.put("runtimeMember", runtimeMember);
+            report.put("runtimeDistributionMode", lwjglReport.get("runtimeDistributionMode"));
+            report.put("embeddedRuntimeCount", lwjglReport.get("embeddedRuntimeCount"));
+            report.put("javaRuntimeVersion", lwjglReport.get("javaRuntimeVersion"));
+            report.put("externalRuntimeBundlePresent", false);
             report.put("verified", true);
             return report;
         }
@@ -336,6 +392,11 @@ public final class CombinedClientSupport {
         return verifyAndDescribe(definition, inputs, true);
     }
 
+    static List<ArtifactSpec> verifyAndDescribeForTesting(PackageDefinition definition, Inputs inputs)
+        throws IOException {
+        return verifyAndDescribe(definition, inputs, false);
+    }
+
     private static List<ArtifactSpec> verifyAndDescribe(
         PackageDefinition definition,
         Inputs inputs,
@@ -349,7 +410,9 @@ public final class CombinedClientSupport {
             Map<String, Object> report = DistantHorizonsArtifactVerifier.verify(
                 inputs.distantHorizons(),
                 inputs.generatedRefmap(),
-                inputs.distantHorizonsVersion()
+                inputs.distantHorizonsVersion(),
+                inputs.provenanceMode(),
+                inputs.expectedCommit()
             );
             artifacts.add(spec(
                 "distant-horizons",
@@ -363,7 +426,9 @@ public final class CombinedClientSupport {
             ));
         }
 
-        Map<String, Object> lwjglReport = Lwjgl3ifyCompatibilityVerifier.verify(inputs.lwjgl3ify());
+        Map<String, Object> lwjglReport = requireExactThirdPartyIdentity
+            ? Lwjgl3ifyCompatibilityVerifier.verify(inputs.lwjgl3ify())
+            : Lwjgl3ifyCompatibilityVerifier.verifyFixture(inputs.lwjgl3ify());
         artifacts.add(spec(
             "lwjgl3ify",
             "external-production-reobf",
@@ -445,8 +510,19 @@ public final class CombinedClientSupport {
             List.copyOf(modIds),
             file,
             Long.parseLong(String.valueOf(report.get("artifactSize"))),
-            String.valueOf(report.get("artifactSha256"))
+            String.valueOf(report.get("artifactSha256")),
+            Map.copyOf(report)
         );
+    }
+
+
+    private static String distantHorizonsCommit(File artifact) throws IOException {
+        if (artifact == null) {
+            throw new IllegalStateException("Distant Horizons artifact is required to resolve package provenance");
+        }
+        try (FoundationSupport.ArchiveInventory inventory = FoundationSupport.ArchiveInventory.open(artifact)) {
+            return FoundationSupport.extractJsonString(inventory.text("build_info.json"), "commit");
+        }
     }
 
     private static List<String> splitModIds(Map<String, Object> report) {
@@ -474,7 +550,7 @@ public final class CombinedClientSupport {
     private static String manifestJson(
         PackageDefinition definition,
         List<ArtifactSpec> artifacts,
-        File runtimeBundle
+        Inputs inputs
     ) throws IOException {
         StringBuilder json = new StringBuilder();
         json.append("{\n");
@@ -482,7 +558,19 @@ public final class CombinedClientSupport {
         json.append("  \"packageType\": \"").append(json(definition.packageType())).append("\",\n");
         json.append("  \"minecraftVersion\": \"1.7.10\",\n");
         json.append("  \"forgeVersion\": \"10.13.4.1614\",\n");
-        json.append("  \"distantHorizonsCommit\": \"").append(DISTANT_HORIZONS_COMMIT).append("\",\n");
+        json.append("  \"releaseContractVersion\": \"change-007-rc-v1\",\n");
+        json.append("  \"releaseChannel\": \"RELEASE_CANDIDATE\",\n");
+        json.append("  \"modVersion\": \"").append(json(inputs.distantHorizonsVersion())).append("\",\n");
+        json.append("  \"repository\": \"Wargames-Development/DistantHorizons-WDG\",\n");
+        json.append("  \"sourceTreeState\": \"").append(inputs.treeState()).append("\",\n");
+        json.append("  \"sourceTreeDigest\": \"").append(inputs.sourceTreeDigest()).append("\",\n");
+        json.append("  \"buildSource\": \"").append(inputs.buildSource()).append("\",\n");
+        json.append("  \"updaterPolicy\": \"MANAGED_DISABLED\",\n");
+        if (definition.includeDistantHorizons()) {
+            json.append("  \"distantHorizonsCommit\": \"").append(distantHorizonsCommit(inputs.distantHorizons())).append("\",\n");
+        } else {
+            json.append("  \"distantHorizonsCommit\": null,\n");
+        }
         json.append("  \"lwjgl3ifyCommit\": \"").append(LWJGL3IFY_COMMIT).append("\",\n");
         json.append("  \"packageCreationContract\": \"").append(CONTRACT_VERSION).append("\",\n");
         json.append("  \"packageRoot\": \"").append(json(definition.rootDirectory())).append("\",\n");
@@ -509,25 +597,20 @@ public final class CombinedClientSupport {
             json.append("    }").append(index + 1 < artifacts.size() ? "," : "").append("\n");
         }
         json.append("  ],\n");
-        json.append("  \"runtimeBundleFilename\": \"").append(RUNTIME_PACKAGED_NAME).append("\",\n");
-        json.append("  \"runtimeBundleSha256\": \"")
-            .append(FoundationSupport.sha256(runtimeBundle.toPath()))
-            .append("\",\n");
-        json.append("  \"supportedJavaRuntimePlatforms\": [");
-        for (int index = 0; index < RuntimeArtifactVerifier.RUNTIME_PLATFORMS.size(); index++) {
-            if (index > 0) {
-                json.append(", ");
-            }
-            json.append("\"").append(RuntimeArtifactVerifier.RUNTIME_PLATFORMS.get(index)).append("\"");
-        }
-        json.append("]\n");
+        appendRuntimeDistributionJson(json, lwjgl3ifyReport(artifacts), "  ");
+        json.append("\n");
         json.append("}\n");
         return json.toString();
     }
 
-    private static String readmeText(PackageDefinition definition, List<ArtifactSpec> artifacts) {
+    private static String readmeText(PackageDefinition definition, List<ArtifactSpec> artifacts, Inputs inputs) {
         StringBuilder text = new StringBuilder();
-        text.append("DistantHorizons-WDG Change 006 - ").append(definition.packageType()).append("\n\n");
+        text.append("DistantHorizons-WDG Change 007 - ").append(definition.packageType()).append("\n\n");
+        text.append("Version: ").append(inputs.distantHorizonsVersion()).append("\n");
+        text.append("Release channel: ").append(ProvenanceSupport.RELEASE_CHANNEL).append("\n");
+        text.append("Build source: ").append(inputs.buildSource()).append("\n");
+        text.append("Source state: ").append(inputs.treeState()).append("\n");
+        text.append("Source commit: ").append(inputs.expectedCommit()).append("\n\n");
         text.append("This is a clean overlay for a disposable CurseForge Minecraft 1.7.10 / Forge 10.13.4.1614 profile.\n");
         text.append("It contains no accounts, worlds, configs, logs, options, resource packs, or shader packs.\n");
         text.append("Apply this package to a fresh profile and do not use --delete when copying it.\n\n");
@@ -537,9 +620,71 @@ public final class CombinedClientSupport {
                 .append(" (role=").append(artifact.role())
                 .append(", version=").append(artifact.version()).append(")\n");
         }
-        text.append("\nPackaged Java bundle: lwjgl3ify/runtime/").append(RUNTIME_PACKAGED_NAME).append("\n");
-        text.append("Review ").append(MANIFEST_NAME).append(" for exact SHA-256 identities.\n");
+        text.append("\nPackaged Java distribution: embedded in ")
+            .append(Lwjgl3ifyCompatibilityVerifier.EXPECTED_FILENAME).append("\n");
+        text.append("Primary platforms: Linux x86_64, macOS AArch64, macOS x86_64, Windows x86_64.\n");
+        text.append("Linux AArch64 and Windows AArch64 are optional manual extension assets and are not included.\n");
+        text.append("Review ").append(MANIFEST_NAME).append(" for exact embedded-runtime SHA-256 identities.\n");
         return text.toString();
+    }
+
+    static Map<String, Object> lwjgl3ifyReport(List<ArtifactSpec> artifacts) {
+        return artifacts.stream()
+            .filter(artifact -> "lwjgl3ify".equals(artifact.role()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("Verified lwjgl3ify artifact is missing"))
+            .verification();
+    }
+
+    static void appendRuntimeDistributionJson(
+        StringBuilder json,
+        Map<String, Object> report,
+        String indent
+    ) {
+        json.append(indent).append("\"lwjgl3ifyRuntimeDistribution\": {\n");
+        json.append(indent).append("  \"commit\": \"")
+            .append(LWJGL3IFY_COMMIT).append("\",\n");
+        json.append(indent).append("  \"artifactFilename\": \"")
+            .append(json(String.valueOf(report.get("artifactName")))).append("\",\n");
+        json.append(indent).append("  \"artifactSize\": ")
+            .append(report.get("artifactSize")).append(",\n");
+        json.append(indent).append("  \"artifactSha256\": \"")
+            .append(report.get("artifactSha256")).append("\",\n");
+        json.append(indent).append("  \"productionIdentity\": \"")
+            .append(report.get("productionIdentity")).append("\",\n");
+        json.append(indent).append("  \"runtimeDistributionMode\": \"")
+            .append(report.get("runtimeDistributionMode")).append("\",\n");
+        json.append(indent).append("  \"javaRuntimeVersion\": \"")
+            .append(report.get("javaRuntimeVersion")).append("\",\n");
+        json.append(indent).append("  \"embeddedPrimaryPlatforms\": [\n");
+        for (int index = 0; index < Lwjgl3ifyCompatibilityVerifier.PRIMARY_RUNTIMES.size(); index++) {
+            Lwjgl3ifyCompatibilityVerifier.RuntimeArchive runtime =
+                Lwjgl3ifyCompatibilityVerifier.PRIMARY_RUNTIMES.get(index);
+            json.append(indent).append("    {\"id\": \"").append(runtime.platformId())
+                .append("\", \"path\": \"").append(runtime.path())
+                .append("\", \"size\": ")
+                .append(report.get("embeddedRuntime." + runtime.platformId() + ".size"))
+                .append(", \"sha256\": \"")
+                .append(report.get("embeddedRuntime." + runtime.platformId() + ".sha256"))
+                .append("\"}")
+                .append(index + 1 < Lwjgl3ifyCompatibilityVerifier.PRIMARY_RUNTIMES.size() ? "," : "")
+                .append("\n");
+        }
+        json.append(indent).append("  ],\n");
+        json.append(indent).append("  \"optionalManualExtensions\": [\n");
+        for (int index = 0; index < Lwjgl3ifyCompatibilityVerifier.OPTIONAL_EXTENSIONS.size(); index++) {
+            Lwjgl3ifyCompatibilityVerifier.OptionalRuntimeExtension extension =
+                Lwjgl3ifyCompatibilityVerifier.OPTIONAL_EXTENSIONS.get(index);
+            json.append(indent).append("    {\"id\": \"").append(extension.platformId())
+                .append("\", \"filename\": \"").append(extension.filename())
+                .append("\", \"size\": ").append(extension.size())
+                .append(", \"sha256\": \"").append(extension.sha256())
+                .append("\", \"included\": false, \"required\": false}")
+                .append(index + 1 < Lwjgl3ifyCompatibilityVerifier.OPTIONAL_EXTENSIONS.size() ? "," : "")
+                .append("\n");
+        }
+        json.append(indent).append("  ]\n");
+        json.append(indent).append("}");
     }
 
     private static void writeStored(ZipOutputStream zip, String name, MemberSource source) throws IOException {

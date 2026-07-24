@@ -19,6 +19,7 @@ import com.seibel.distanthorizons.core.dependencyInjection.ModAccessorInjector;
 import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
 import com.seibel.distanthorizons.core.jar.ModJarInfo;
 import com.seibel.distanthorizons.core.jar.updater.SelfUpdater;
+import com.seibel.distanthorizons.core.jar.updater.UpdaterPolicyManager;
 import com.seibel.distanthorizons.core.logging.DhLogger;
 import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
 import com.seibel.distanthorizons.core.render.renderer.AbstractDebugWireframeRenderer;
@@ -132,12 +133,14 @@ public abstract class AbstractModInitializer {
     private void logBuildInfo() {
         LOGGER.info(ModInfo.READABLE_NAME + ", Version: " + ModInfo.VERSION);
 
-        // if the build is stable the branch/commit/etc shouldn't be needed
-        if (ModInfo.IS_DEV_BUILD) {
-            LOGGER.info("DH Branch: " + ModJarInfo.Git_Branch);
-            LOGGER.info("DH Commit: " + ModJarInfo.Git_Commit);
-            LOGGER.info("DH Jar Build Source: " + ModJarInfo.Build_Source);
-        }
+        LOGGER.info("DH Release Channel: " + ModJarInfo.Release_Channel);
+        LOGGER.info("DH Repository: " + ModJarInfo.Repository);
+        LOGGER.info("DH Branch/Channel: " + ModJarInfo.Git_Branch);
+        LOGGER.info("DH Commit: " + ModJarInfo.Git_Commit);
+        LOGGER.info("DH Source Tree State: " + ModJarInfo.Tree_State);
+        LOGGER.info("DH Source Tree Digest: " + ModJarInfo.Source_Tree_Digest);
+        LOGGER.info("DH Jar Build Source: " + ModJarInfo.Build_Source);
+        LOGGER.info("DH Updater Policy: " + ModJarInfo.Updater_Policy);
     }
 
     protected <T extends IModAccessor> void tryCreateModCompatAccessor(String modId, Class<? super T> accessorClass,
@@ -155,8 +158,14 @@ public abstract class AbstractModInitializer {
     }
 
     private void checkForUpdates() {
-        if (Config.Client.Advanced.AutoUpdater.enableAutoUpdater.get()) {
-            if (Config.Client.Advanced.AutoUpdater.enableSilentUpdates.get()) {
+        if (!UpdaterPolicyManager.allowsUpstreamUpdater()) {
+            LOGGER.info(UpdaterPolicyManager.managedDisabledMessage());
+            return;
+        }
+        if (UpdaterPolicyManager
+            .effectiveAutoUpdaterEnabled(Config.Client.Advanced.AutoUpdater.enableAutoUpdater.get())) {
+            if (UpdaterPolicyManager
+                .effectiveSilentUpdaterEnabled(Config.Client.Advanced.AutoUpdater.enableSilentUpdates.get())) {
                 LOGGER.info("Silent updates are not allowed for dedicated servers; force disabling.");
                 Config.Client.Advanced.AutoUpdater.enableSilentUpdates.set(false);
             }

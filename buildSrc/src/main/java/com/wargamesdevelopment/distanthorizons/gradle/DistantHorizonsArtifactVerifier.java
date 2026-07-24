@@ -18,6 +18,7 @@ public final class DistantHorizonsArtifactVerifier {
 
     private static final List<String> REQUIRED_MEMBERS = List.of(
         "mcmod.info",
+        "build_info.json",
         FoundationSupport.ACCESS_TRANSFORMER,
         FoundationSupport.NORMAL_MIXIN_CONFIG,
         FoundationSupport.EARLY_MIXIN_CONFIG,
@@ -62,8 +63,13 @@ public final class DistantHorizonsArtifactVerifier {
 
     private DistantHorizonsArtifactVerifier() {}
 
-    public static Map<String, Object> verify(File artifact, File generatedRefmap, String expectedVersion)
-        throws IOException {
+    public static Map<String, Object> verify(
+        File artifact,
+        File generatedRefmap,
+        String expectedVersion,
+        String expectedMode,
+        String expectedCommit
+    ) throws IOException {
         expectedVersion = FoundationSupport.validateVersion(expectedVersion);
         validateCandidateName(artifact.getName(), expectedVersion);
         FoundationSupport.requireReadableRegularFile(artifact, "Production Distant Horizons JAR");
@@ -155,6 +161,19 @@ public final class DistantHorizonsArtifactVerifier {
                 }
             }
 
+            List<String> buildInfoMembers = inventory.names().stream()
+                .filter(name -> name.equals("build_info.json"))
+                .toList();
+            if (buildInfoMembers.size() != 1) {
+                throw new IllegalStateException("Production artifact must contain exactly one build_info.json");
+            }
+            BuildInfoArtifactVerifier.Result buildInfo = BuildInfoArtifactVerifier.verify(
+                inventory.text("build_info.json"),
+                expectedVersion,
+                expectedMode,
+                expectedCommit
+            );
+
             Manifest manifest = inventory.manifest();
             requireManifest(manifest, "Lwjgl3ify-Aware", "true");
             requireManifest(manifest, "FMLCorePlugin", "com.seibel.distanthorizons.DistantHorizonsTweaker");
@@ -163,6 +182,12 @@ public final class DistantHorizonsArtifactVerifier {
             requireManifest(manifest, "TweakClass", "org.spongepowered.asm.launch.MixinTweaker");
             requireManifest(manifest, "MixinConfigs", FoundationSupport.NORMAL_MIXIN_CONFIG);
             requireManifest(manifest, "Implementation-Version", expectedVersion);
+            requireManifest(manifest, "Distant-Horizons-Release-Channel", buildInfo.releaseChannel());
+            requireManifest(manifest, "Distant-Horizons-Updater-Policy", buildInfo.updaterPolicy());
+            requireManifest(manifest, "Distant-Horizons-Git-Commit", buildInfo.commit());
+            requireManifest(manifest, "Distant-Horizons-Tree-State", buildInfo.treeState());
+            requireManifest(manifest, "Distant-Horizons-Build-Source", buildInfo.buildSource());
+            requireManifest(manifest, "Distant-Horizons-Source-Digest", buildInfo.sourceTreeDigest());
 
             String sqlList = inventory.text("sqlScripts/scriptList.txt");
             List<String> migrations = sqlList.lines().map(String::trim).filter(line -> !line.isEmpty()).toList();
@@ -237,6 +262,7 @@ public final class DistantHorizonsArtifactVerifier {
             report.put("sqliteNativeResourceCount", sqliteNatives.size());
             report.put("zstdNativeResourceCount", zstdNatives.size());
             report.put("productionIdentity", "reobfuscated-shadow");
+            report.putAll(buildInfo.report());
             return report;
         }
     }
@@ -318,19 +344,51 @@ public final class DistantHorizonsArtifactVerifier {
                 continue;
             }
             String text = new String(bytes, StandardCharsets.ISO_8859_1);
-            String lower = text.toLowerCase(Locale.ROOT);
-            boolean windowsUserPath = false;
-            for (char drive = 'a'; drive <= 'z'; drive++) {
-                if (lower.contains(drive + ":\\users\\")) {
-                    windowsUserPath = true;
-                    break;
-                }
-            }
-            if (text.contains("/Users/")
-                || lower.contains("/home/")
-                || windowsUserPath) {
+            if (containsLocalFilesystemPath(text)) {
                 throw new IllegalStateException("Production artifact leaks a local filesystem path in " + name);
             }
+        }
+    }
+
+    static boolean containsLocalFilesystemPath(String text) {
+        String lower = text.toLowerCase(Locale.ROOT);
+        return containsPathSegmentAfterPrefix(lower, "/users/", '/')
+            || containsPathSegmentAfterPrefix(lower, "/home/", '/')
+            || containsWindowsUserPath(lower);
+    }
+
+    private static boolean containsWindowsUserPath(String lower) {
+        for (char drive = 'a'; drive <= 'z'; drive++) {
+            if (containsPathSegmentAfterPrefix(lower, drive + ":\\users\\", '\\')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsPathSegmentAfterPrefix(String text, String prefix, char separator) {
+        int searchFrom = 0;
+        while (true) {
+            int prefixIndex = text.indexOf(prefix, searchFrom);
+            if (prefixIndex < 0) {
+                return false;
+            }
+            int segmentStart = prefixIndex + prefix.length();
+            int segmentEnd = text.indexOf(separator, segmentStart);
+            if (segmentEnd > segmentStart && segmentEnd - segmentStart <= 128) {
+                boolean validSegment = true;
+                for (int index = segmentStart; index < segmentEnd; index++) {
+                    char value = text.charAt(index);
+                    if (Character.isWhitespace(value) || Character.isISOControl(value) || value == '/' || value == '\\') {
+                        validSegment = false;
+                        break;
+                    }
+                }
+                if (validSegment) {
+                    return true;
+                }
+            }
+            searchFrom = segmentStart;
         }
     }
 

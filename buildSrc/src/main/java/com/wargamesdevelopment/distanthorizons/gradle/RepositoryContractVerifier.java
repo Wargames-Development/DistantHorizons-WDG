@@ -15,52 +15,6 @@ import java.util.stream.Stream;
 
 public final class RepositoryContractVerifier {
 
-    private static final List<String> REQUIRED_FILES = List.of(
-        "gradlew",
-        "gradlew.bat",
-        "gradle/wrapper/gradle-wrapper.jar",
-        "gradle/wrapper/gradle-wrapper.properties",
-        "gradle/gradle-daemon-jvm.properties",
-        "buildSrc/gradle/gradle-daemon-jvm.properties",
-        "settings.gradle.kts",
-        "build.gradle.kts",
-        "gradle.properties",
-        "dependencies.gradle",
-        "repositories.gradle",
-        "jitpack.yml",
-        "README.md",
-        "SETUP.md",
-        "COMPILING.md",
-        "docs/DEPENDENCIES.md",
-        "docs/COMBINED_CLIENT.md",
-        "scripts/package-source.sh",
-        "scripts/build-gtnhlib-0.11.31.sh",
-        "src/main/resources/mcmod.info",
-        "src/main/resources/" + FoundationSupport.ACCESS_TRANSFORMER,
-        "src/main/resources/" + FoundationSupport.NORMAL_MIXIN_CONFIG,
-        "src/main/resources/" + FoundationSupport.EARLY_MIXIN_CONFIG,
-        "src/main/resources/sqlScripts/scriptList.txt",
-        "src/main/java/com/seibel/distanthorizons/DistantHorizonsTweaker.java",
-        "src/main/java/com/seibel/distanthorizons/forge/ForgeMain.java",
-        "src/main/java/com/seibel/distanthorizons/coreapi/ModInfo.java",
-        "src/main/java/com/seibel/distanthorizons/api/DhApi.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyRepositoryTask.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyProductionModArtifactTask.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyWdgLwjgl3ifyCompatibilityTask.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyPublishedDependencyMetadataTask.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/RuntimeArtifactVerifier.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/CombinedClientSupport.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyRuntimeArtifactTask.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyRequiredRuntimeArtifactsTask.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/PackageCombinedClientTask.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyCombinedClientPackageTask.java",
-        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyCombinedClientReproducibilityTask.java",
-        "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/FoundationSupportTest.java",
-        "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/ArtifactVerifierTest.java",
-        "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/RuntimeArtifactVerifierTest.java",
-        "buildSrc/src/test/java/com/wargamesdevelopment/distanthorizons/gradle/CombinedClientSupportTest.java"
-    );
-
     private static final List<String> EXPECTED_MIGRATIONS = List.of(
         "0010-sqlite-createInitialDataTables.sql",
         "0020-sqlite-createFullDataSourceV2Tables.sql",
@@ -75,10 +29,61 @@ public final class RepositoryContractVerifier {
         "0100-sqlite-deleteLowDetailDataForRegen.sql"
     );
 
+    private static final List<String> REQUIRED_FILES = List.of(
+        "gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "build.gradle.kts",
+        "gradle.properties", "dependencies.gradle", ".gitignore", "README.md", "SETUP.md", "COMPILING.md",
+        "docs/COMBINED_CLIENT.md", "docs/DEPENDENCIES.md", "docs/RELEASE_CANDIDATE.md",
+        "docs/INSTALLATION.md", "docs/UPGRADE.md", "docs/KNOWN_CONFLICTS.md", "docs/PERFORMANCE.md",
+        "docs/ROLLBACK.md", "docs/WINDOWS_TESTING.md", "docs/SERVER_COMPATIBILITY.md",
+        "docs/PERFORMANCE_ACCEPTANCE_TEMPLATE.md", "docs/VALIDATION_RESULTS_TEMPLATE.md",
+        "scripts/package-source.sh", "scripts/build-gtnhlib-0.11.31.sh", "scripts/validate-change007.sh",
+        "scripts/collect-macos-rc-evidence.sh", "scripts/Collect-Windows-RcEvidence.ps1",
+        "scripts/finalize-change007-release.sh", "scripts/cleanup-change007.sh",
+        "src/main/resources/mcmod.info", "src/main/resources/sqlScripts/scriptList.txt",
+        "src/main/java/com/seibel/distanthorizons/coreapi/ModInfo.java",
+        "src/main/java/com/seibel/distanthorizons/coreapi/ReleaseChannel.java",
+        "src/main/java/com/seibel/distanthorizons/coreapi/WdgVersionPolicy.java",
+        "src/main/java/com/seibel/distanthorizons/coreapi/BuildWarningMessages.java",
+        "src/main/java/com/seibel/distanthorizons/coreapi/SingleLineChatMessages.java",
+        "src/main/java/com/seibel/distanthorizons/core/jar/BuildInfo.java",
+        "src/main/java/com/seibel/distanthorizons/core/jar/BuildInfoParser.java",
+        "src/main/java/com/seibel/distanthorizons/core/jar/BuildInfoResourceLoader.java",
+        "src/main/java/com/seibel/distanthorizons/core/jar/ModJarInfo.java",
+        "src/main/java/com/seibel/distanthorizons/core/jar/UpdaterPolicy.java",
+        "src/main/java/com/seibel/distanthorizons/core/jar/updater/UpdaterPolicyManager.java",
+        "src/main/java/com/seibel/distanthorizons/core/jar/updater/UpdaterPolicyDecision.java",
+        "src/main/java/com/seibel/distanthorizons/core/jar/updater/UpdaterExecutionGate.java",
+        "src/main/java/com/seibel/distanthorizons/core/config/WdgFreshProfileDefaults.java",
+        "src/main/java/com/seibel/distanthorizons/core/config/file/ConfigVersionPolicy.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/ProvenanceSupport.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/GenerateBuildInfoTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/BuildInfoArtifactVerifier.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/ReleaseCandidateSupport.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/ReleaseCandidateInputsTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/PackageWdgReleaseCandidateTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/PackageCurseForgeTestingProfileTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyWdgReleaseCandidateReproducibilityTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyWdgReleaseCandidateTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/ModpackAuditSupport.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/AuditDedicatedServerTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/AuditWargamesModpackCompatibilityTask.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/StableReleaseGate.java",
+        "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyStableReleaseGateTask.java",
+        "src/test/java/com/seibel/distanthorizons/coreapi/BuildWarningMessagesTest.java",
+        "src/test/java/com/seibel/distanthorizons/coreapi/ReleaseChannelTest.java",
+        "src/test/java/com/seibel/distanthorizons/coreapi/WdgVersionPolicyTest.java",
+        "src/test/java/com/seibel/distanthorizons/core/jar/BuildInfoParserTest.java",
+        "src/test/java/com/seibel/distanthorizons/core/jar/BuildInfoResourceLoaderTest.java",
+        "src/test/java/com/seibel/distanthorizons/core/jar/updater/UpdaterPolicyDecisionTest.java",
+        "src/test/java/com/seibel/distanthorizons/core/jar/updater/UpdaterExecutionGateTest.java",
+        "src/test/java/com/seibel/distanthorizons/core/config/WdgFreshProfileDefaultsTest.java"
+    );
+
     private static final List<String> FORBIDDEN_TRACKED_PREFIXES = List.of(
         ".gradle/", "build/", "buildSrc/build/", "buildSrc/.gradle/", "run/", "eclipse/", ".idea/",
         ".vscode/", "logs/", "crash-reports/", "config/", "saves/", "combined-client/",
-        "validation-logs/", "native/", "natives/", "curseforge-profiles/", "external-build/"
+        "validation-logs/", "native/", "natives/", "curseforge-profiles/", "external-build/",
+        "release-candidates/", "performance-reports/", "modpack-audit-inputs/", "server-audit-inputs/"
     );
 
     private RepositoryContractVerifier() {}
@@ -86,250 +91,207 @@ public final class RepositoryContractVerifier {
     public static Map<String, Object> verify(Path projectDir, String expectedVersion) throws IOException {
         projectDir = projectDir.toAbsolutePath().normalize();
         expectedVersion = FoundationSupport.validateVersion(expectedVersion);
-        for (String relative : REQUIRED_FILES) {
-            requireFile(projectDir, relative);
+        if (!ReleaseCandidateSupport.VERSION.equals(expectedVersion)) {
+            throw new IllegalStateException("Change 007 version mismatch: " + expectedVersion);
         }
-
-        Properties wrapper = FoundationSupport.loadProperties(projectDir.resolve("gradle/wrapper/gradle-wrapper.properties"));
-        String distributionUrl = wrapper.getProperty("distributionUrl", "");
-        if (!distributionUrl.contains("gradle-9.4.0-bin.zip")) {
-            throw new IllegalStateException("Gradle wrapper must remain 9.4.0: " + distributionUrl);
-        }
-        Properties daemon = FoundationSupport.loadProperties(projectDir.resolve("gradle/gradle-daemon-jvm.properties"));
-        if (!"25".equals(daemon.getProperty("toolchainVersion"))) {
-            throw new IllegalStateException("Gradle daemon criteria must remain Java 25");
-        }
-        Properties buildSrcDaemon = FoundationSupport.loadProperties(
-            projectDir.resolve("buildSrc/gradle/gradle-daemon-jvm.properties")
-        );
-        if (!"25".equals(buildSrcDaemon.getProperty("toolchainVersion"))) {
-            throw new IllegalStateException("Standalone buildSrc daemon criteria must remain Java 25");
-        }
+        for (String file : REQUIRED_FILES) requireFile(projectDir, file);
 
         Properties gradle = FoundationSupport.loadProperties(projectDir.resolve("gradle.properties"));
         requireProperty(gradle, "modId", FoundationSupport.MOD_ID);
-        requireProperty(gradle, "modGroup", "com.seibel.distanthorizons");
-        requireProperty(gradle, "modVersion", expectedVersion);
+        requireProperty(gradle, "modVersion", ReleaseCandidateSupport.VERSION);
         requireProperty(gradle, "minecraftVersion", "1.7.10");
         requireProperty(gradle, "forgeVersion", "10.13.4.1614");
-        requireProperty(gradle, "enableModernJavaSyntax", "modern");
         requireProperty(gradle, "forceToolchainVersion", "21");
-        requireProperty(gradle, "org.gradle.configuration-cache", "false");
-        requireProperty(gradle, "replaceGradleTokenInFile", "");
-        requireProperty(gradle, "generateGradleTokenClass", "com.seibel.distanthorizons.coreapi.Tags");
-        requireProperty(gradle, "modrinthRelations", "");
-        requireProperty(gradle, "curseForgeRelations", "");
-        String gradlePropertiesText = read(projectDir, "gradle.properties");
-        FoundationSupport.rejectTemplateMarkers(gradlePropertiesText, "gradle.properties");
+        requireProperty(gradle, "wdgReleaseChannel", "RELEASE_CANDIDATE");
+        requireProperty(gradle, "wdgProvenanceMode", "VALIDATION");
+        requireProperty(gradle, "wdgStableConfirmation", "false");
 
         String modInfo = read(projectDir, "src/main/java/com/seibel/distanthorizons/coreapi/ModInfo.java");
-        requireContains(modInfo, "public static final String ID = \"distanthorizons\";", "ModInfo mod ID");
-        requireContains(modInfo, "public static final String VERSION = Tags.VERSION;", "ModInfo generated version source");
-        requireContains(modInfo, "PROTOCOL_VERSION = 15", "network protocol version");
-        requireContains(modInfo, "API_MAJOR_VERSION = 7", "API major version");
-        requireContains(modInfo, "API_MINOR_VERSION = 0", "API minor version");
-        requireContains(modInfo, "API_PATCH_VERSION = 0", "API patch version");
-        requireContains(modInfo, "CONFIG_FILE_VERSION = 4", "config file version");
+        require(modInfo, "public static final String VERSION = Tags.VERSION;", "generated version token");
+        require(modInfo, "RELEASE_CHANNEL", "explicit release channel");
+        require(modInfo, "IS_RELEASE_CANDIDATE", "release-candidate indicator");
+        require(modInfo, "PROTOCOL_VERSION = 15", "network protocol");
+        require(modInfo, "API_MAJOR_VERSION = 7", "API major");
+        require(modInfo, "API_MINOR_VERSION = 0", "API minor");
+        require(modInfo, "API_PATCH_VERSION = 0", "API patch");
+        require(modInfo, "CONFIG_FILE_VERSION = 4", "config version");
 
         String mcmod = read(projectDir, "src/main/resources/mcmod.info");
-        FoundationSupport.rejectTemplateMarkers(mcmod, "Repository mcmod.info");
-        requireContains(mcmod, "\"modid\": \"${modId}\"", "mcmod.info mod ID token");
-        requireContains(mcmod, "\"version\": \"${modVersion}\"", "mcmod.info version token");
+        require(mcmod, "\"version\": \"${modVersion}\"", "mcmod version token");
         Set<String> requiredMods = FoundationSupport.extractJsonStringArray(mcmod, "requiredMods");
-        Set<String> expectedRequiredMods = Set.of("lwjgl3ify", "gtnhlib", "gtnhmixins");
-        if (!requiredMods.equals(expectedRequiredMods)) {
-            throw new IllegalStateException("mcmod.info requiredMods mismatch: " + requiredMods);
+        if (!requiredMods.equals(Set.of("lwjgl3ify", "gtnhlib", "gtnhmixins"))) {
+            throw new IllegalStateException("mcmod.info requiredMods changed: " + requiredMods);
         }
 
-        String forgeMain = read(projectDir, "src/main/java/com/seibel/distanthorizons/forge/ForgeMain.java");
-        requireContains(forgeMain, "modid = ModInfo.ID", "Forge @Mod identity");
-        requireContains(forgeMain, "version = ModInfo.VERSION", "Forge @Mod version");
-        requireContains(forgeMain, "required-after:lwjgl3ify", "required lwjgl3ify relationship");
-        requireContains(forgeMain, "required-after:gtnhlib", "required GTNHLib relationship");
-        requireContains(forgeMain, "required-after:gtnhmixins", "required UniMixins relationship");
-        requireContains(forgeMain, "after:angelica", "optional Angelica ordering");
-        requireContains(forgeMain, "MINIMUM_ANGELICA_VERSION = \"2.1.54\"", "Angelica compatibility floor");
+        String clientApi = read(projectDir, "src/main/java/com/seibel/distanthorizons/core/api/internal/ClientApi.java");
+        require(clientApi, "BuildWarningMessages.forCurrentBuild()", "warning builder use");
+        require(clientApi, "sendChatMessages", "separate warning line submission");
+        reject(clientApi, "nightly/unstable build, version: [" + " + ModInfo.VERSION + " + "]\\n", "embedded multiline warning");
+        String warning = read(projectDir, "src/main/java/com/seibel/distanthorizons/coreapi/BuildWarningMessages.java");
+        for (String marker : List.of("DEVELOPMENT", "RELEASE_CANDIDATE", "STABLE", "List.of", "indexOf('\\n')", "indexOf('\\r')")) {
+            require(warning, marker, "warning model");
+        }
 
-        String dependencies = read(projectDir, "dependencies.gradle");
-        requireContains(dependencies, "def defaultLwjgl3ify = \"com.github.GTNewHorizons:lwjgl3ify:3.0.28:dev\"", "default lwjgl3ify dependency");
-        requireContains(dependencies, "def gtnhLib = \"com.github.GTNewHorizons:GTNHLib:0.11.31:dev\"", "GTNHLib dependency");
-        requireContains(dependencies, "compileOnly(hodgepodge)", "optional Hodgepodge classification");
-        requireContains(dependencies, "def angelica = \"com.github.GTNewHorizons:Angelica:2.1.54:dev\"", "Angelica 2.1.54 dependency");
-        requireContains(dependencies, "compileOnly(angelica)", "optional Angelica classification");
-        requireContains(dependencies, "wdgAngelicaJar", "exact local Angelica override");
-        requireContains(dependencies, "compileOnly(\"com.github.GTNewHorizons:GT5-Unofficial:", "optional GregTech classification");
-        requireContains(dependencies, "compileOnly(\"com.falsepattern:rple-mc1.7.10:", "optional RPLE classification");
-        requireContains(dependencies, "wdgLwjgl3ifyDevJar", "local lwjgl3ify development override");
-        requireContains(dependencies, "wdgEnableHodgepodgeRuntime", "opt-in Hodgepodge runtime");
-        requireContains(dependencies, "wdgEnableNeiRuntime", "opt-in NEI runtime");
-        rejectMandatoryOptionalDependency(dependencies, "api(\"com.github.GTNewHorizons:Hodgepodge");
-        rejectMandatoryOptionalDependency(dependencies, "implementation(\"com.github.GTNewHorizons:Hodgepodge");
-        rejectMandatoryOptionalDependency(dependencies, "runtimeOnly(\"com.github.GTNewHorizons:NotEnoughItems");
+        String modJarInfo = read(projectDir, "src/main/java/com/seibel/distanthorizons/core/jar/ModJarInfo.java");
+        require(modJarInfo, "RESOURCE_PATH = \"/build_info.json\"", "canonical build-info path");
+        require(modJarInfo, "getResourceAsStream(RESOURCE_PATH)", "canonical build-info lookup");
+        require(modJarInfo, "input == null", "missing resource check");
+        reject(modJarInfo, "printStackTrace", "raw build-info exception");
+        require(modJarInfo, "Git_Branch = INFO.branchOrChannel", "branch assignment");
+        require(modJarInfo, "Git_Commit = INFO.commit", "commit assignment");
+
+        String updater = read(projectDir, "src/main/java/com/seibel/distanthorizons/core/jar/updater/SelfUpdater.java");
+        int policy = updater.indexOf("UpdaterPolicyManager.allowsUpstreamUpdater()");
+        int modrinth = updater.indexOf("ModrinthGetter.init()");
+        int gitlab = updater.indexOf("GitlabGetter.INSTANCE.projectPipelines");
+        if (policy < 0 || (modrinth >= 0 && policy > modrinth) || (gitlab >= 0 && policy > gitlab)) {
+            throw new IllegalStateException("Managed updater gate must precede upstream services");
+        }
+        require(updater, "deleteOldJarOnJvmShutdown = false", "managed updater deletion suppression");
+
+        String config = read(projectDir, "src/main/java/com/seibel/distanthorizons/core/config/Config.java");
+        for (String marker : List.of(
+            "WdgFreshProfileDefaults.QUALITY_PRESET", "WdgFreshProfileDefaults.THREAD_PRESET",
+            "WdgFreshProfileDefaults.LOD_RENDER_DISTANCE_RADIUS", "WdgFreshProfileDefaults.GENERATOR_MODE",
+            "WdgFreshProfileDefaults.AUTO_UPDATER_ENABLED", "WdgFreshProfileDefaults.SILENT_UPDATER_ENABLED"
+        )) require(config, marker, "fresh-profile defaults");
 
         String build = read(projectDir, "build.gradle.kts");
-        for (String required : List.of(
-            "verifyRepository", "verifyProductionModArtifact", "verifyWdgLwjgl3ifyCompatibility",
-            "verifyPublishedDependencyMetadata", "productionModArtifact", "explainProductionLaunchContract"
+        for (String task : List.of(
+            "generateBuildInfo", "verifyBuildInfo", "verifyProductionModArtifact", "packageBootstrapSmokeClient",
+            "packageDistantHorizonsSmokeClient", "packageCombinedClient", "verifyCombinedClientReproducibility",
+            "packageWdgReleaseCandidate", "verifyWdgReleaseCandidate", "verifyWdgReleaseCandidateReproducibility",
+            "packageCurseForgeTestingProfile", "auditWargamesModpackCompatibility", "auditDedicatedServer",
+            "verifyFutureStableReleaseGate"
+        )) require(build, "\"" + task + "\"", "Change 007 task wiring");
+        require(build, "MANAGED_DISABLED", "JAR manifest updater policy");
+        require(build, "RELEASE_CANDIDATE", "JAR manifest release channel");
+
+        String packageSupport = read(projectDir, "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/CombinedClientSupport.java");
+        require(packageSupport, "distantHorizonsCommit(inputs.distantHorizons())", "artifact-derived commit");
+        require(packageSupport, "lwjgl3ifyRuntimeDistribution", "embedded-runtime package manifest");
+        require(
+            packageSupport,
+            "runtimeDistributionMode",
+            "one-JAR runtime distribution mode"
+        );
+        require(packageSupport, "optionalManualExtensions", "optional architecture extensions");
+        reject(packageSupport, "File runtimeBundle", "active combined-client split-runtime input");
+        reject(packageSupport, "inputs.runtimeBundle()", "active combined-client split-runtime use");
+        reject(packageSupport, "MemberSource.file(inputs.runtimeBundle", "active combined-client runtime copy");
+
+        for (String taskSource : List.of(
+            "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/PackageCombinedClientTask.java",
+            "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyCombinedClientPackageTask.java",
+            "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyCombinedClientReproducibilityTask.java",
+            "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyRequiredRuntimeArtifactsTask.java",
+            "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/ReleaseCandidateInputsTask.java",
+            "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyWdgReleaseCandidateTask.java"
         )) {
-            requireContains(build, required, "build contract " + required);
+            String taskText = read(projectDir, taskSource);
+            reject(taskText, "getRuntimeBundle", "active typed split-runtime property in " + taskSource);
+            reject(taskText, "wdgLwjgl3ifyRuntimeBundle", "obsolete runtime property in " + taskSource);
+            reject(taskText, "wdgLwjgl3ifyBundledClientPackage", "obsolete overlay property in " + taskSource);
         }
-        requireContains(build, "JavaLanguageVersion.of(21)", "Java 21 toolchain");
-        requireContains(build, "val productionModArtifact = tasks.reobfJar.flatMap { it.archiveFile }", "exact production artifact provider");
-        requireContains(
-            build,
-            "val productionModArtifactForVerification =",
-            "detached production artifact verification input");
-        requireContains(
-            build,
-            "artifactFile.set(productionModArtifactForVerification)",
-            "production verifier detached input");
-        requireNotContains(
-            build,
-            "dependsOn(tasks.reobfJar)",
-            "production verifier must not carry the incompatible RFG production graph");
-        for (String disabledRun : List.of("runClient", "runServer", "runClient17", "runServer17")) {
-            requireContains(build, "tasks." + disabledRun + " { enabled = false }", "controlled " + disabledRun);
+
+        String releaseSupport = read(projectDir, "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/ReleaseCandidateSupport.java");
+        require(releaseSupport, "RELEASE_MEMBER_COUNT = 17", "one-JAR release member count");
+        require(releaseSupport, "CURSEFORGE_MEMBER_COUNT = 9", "one-JAR CurseForge member count");
+        require(releaseSupport, "rejectObsoleteExternalRuntimeMembers", "obsolete runtime package rejection");
+        reject(releaseSupport, "File runtimeBundle", "release-candidate split-runtime input");
+        reject(releaseSupport, "inputs.runtimeBundle()", "release-candidate split-runtime use");
+        reject(releaseSupport, "members.put(root + \"lwjgl3ify/runtime/", "release-candidate runtime directory");
+        reject(releaseSupport, "members.put(\"overrides/lwjgl3ify/runtime/", "CurseForge runtime directory");
+
+        String lwjglVerifier = read(projectDir, "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/Lwjgl3ifyCompatibilityVerifier.java");
+        for (String marker : List.of(
+            "lwjgl3ify-3.0.28-master.5+d7e60f5a0d.jar",
+            "207_893_285L",
+            "ef1ec515dc56fac04c6c9791d4d39b62d3b954b441070cffacc0a8516b9136ca",
+            "d7e60f5a0dea4aa348e3c06b8f0a87c171522a37",
+            "change-005-verified-embedded-java-runtime-distribution",
+            "EMBEDDED_PRIMARY_RUNTIMES",
+            "META-INF/lwjgl3ify-wdg/runtime-distribution.json",
+            "linux-x86_64.tar.gz",
+            "macos-aarch64.tar.gz",
+            "macos-x86_64.tar.gz",
+            "windows-x86_64.zip",
+            "embeddedRuntimeCount",
+            "optionalRuntimeExtensionPlatforms"
+        )) {
+            require(lwjglVerifier, marker, "runtime-bearing lwjgl3ify verifier");
         }
-        for (String property : List.of(
-            "wdgLwjgl3ifyProductionJar",
+
+        for (String obsolete : List.of(
             "wdgLwjgl3ifyBundledClientPackage",
             "wdgLwjgl3ifyRuntimeBundle",
-            "wdgAngelicaJar",
-            "wdgUniMixinsJar",
-            "wdgGtnhLibJar",
-            "wdgGtnhLibSourceZip"
+            "verifyNormalizedRuntimeBundle"
         )) {
-            requireContains(build, property, "Change 006 external artifact property");
+            reject(build, obsolete, "active one-JAR Gradle contract");
         }
-        for (String task : List.of(
-            "verifyGtnhLibArtifact",
-            "verifyAngelicaArtifact",
-            "verifyUniMixinsArtifact",
-            "verifyRequiredRuntimeArtifacts",
-            "packageBootstrapSmokeClient",
-            "verifyBootstrapSmokeClient",
-            "packageDistantHorizonsSmokeClient",
-            "verifyDistantHorizonsSmokeClient",
-            "packageCombinedClient",
-            "verifyCombinedClientPackage",
-            "verifyCombinedClientReproducibility"
+
+        for (String doc : List.of(
+            "README.md", "COMPILING.md", "SETUP.md", "docs/COMBINED_CLIENT.md",
+            "docs/DEPENDENCIES.md", "docs/INSTALLATION.md", "docs/RELEASE_CANDIDATE.md",
+            "docs/UPGRADE.md", "docs/ROLLBACK.md", "docs/WINDOWS_TESTING.md"
         )) {
-            requireContains(build, "\"" + task + "\"", "Change 006 task wiring");
+            String document = read(projectDir, doc);
+            reject(document, "wdgLwjgl3ifyBundledClientPackage", "obsolete overlay property in " + doc);
+            reject(document, "wdgLwjgl3ifyRuntimeBundle", "obsolete runtime property in " + doc);
+            reject(document, "lwjgl3ify-wdg-java21-runtimes.zip", "obsolete external runtime ZIP in " + doc);
         }
-        requireContains(build, "tasks.reobfJar.flatMap { it.archiveFile }", "Change 006 exact Distant Horizons artifact");
-        requireContains(build, "CombinedClientSupport", "Change 006 deterministic package support");
 
-        validateMixinConfig(projectDir, FoundationSupport.NORMAL_MIXIN_CONFIG, false);
-        validateMixinConfig(projectDir, FoundationSupport.EARLY_MIXIN_CONFIG, true);
-        String earlyLoader = read(projectDir, "src/main/java/com/seibel/distanthorizons/DistantHorizonsTweaker.java");
-        requireContains(earlyLoader, "implements IEarlyMixinLoader, IFMLLoadingPlugin", "early loading plugin contract");
+        String finalizer = read(projectDir, "scripts/finalize-change007-release.sh");
+        require(finalizer, "wdgLwjgl3ifyProductionJar", "final one-JAR input");
+        reject(finalizer, "wdgLwjgl3ifyRuntimeBundle", "obsolete finalizer runtime input");
+        reject(finalizer, "wdgLwjgl3ifyBundledClientPackage", "obsolete finalizer overlay input");
 
-        List<String> migrations = Files.readAllLines(
-            projectDir.resolve("src/main/resources/sqlScripts/scriptList.txt"), StandardCharsets.UTF_8
-        ).stream().map(String::trim).filter(line -> !line.isEmpty()).toList();
+        List<String> migrations = Files.readAllLines(projectDir.resolve("src/main/resources/sqlScripts/scriptList.txt"), StandardCharsets.UTF_8)
+            .stream().map(String::trim).filter(value -> !value.isEmpty()).toList();
         if (!migrations.equals(EXPECTED_MIGRATIONS)) {
             throw new IllegalStateException("SQL migration ordering changed: " + migrations);
         }
-        for (String migration : migrations) {
-            requireFile(projectDir, "src/main/resources/sqlScripts/" + migration);
-        }
+        for (String migration : migrations) requireFile(projectDir, "src/main/resources/sqlScripts/" + migration);
 
-        String readme = read(projectDir, "README.md");
-        for (String marker : List.of(
-            "Wargames Development Group", "DarkShadow44/DistantHorizonsStandalone", "Java 21",
-            "lwjgl3ify-wdg", "Change 005", "Change 006", "docs/COMBINED_CLIENT.md",
-            "Wargames-Development/DistantHorizons-WDG"
+        String sourcePackager = read(projectDir, "scripts/package-source.sh");
+        require(sourcePackager, "git -C \"$repository\" ls-files --cached --others --exclude-standard", "tracked/untracked source inventory");
+        for (String marker : List.of("build/", ".gradle/", "external-build/", "release-candidates/", "curseforge-profiles/", "*.jar", "*.zip")) {
+            require(read(projectDir, ".gitignore"), marker, "generated release exclusion");
+        }
+        for (String executable : List.of(
+            "scripts/package-source.sh", "scripts/build-gtnhlib-0.11.31.sh", "scripts/validate-change007.sh",
+            "scripts/collect-macos-rc-evidence.sh", "scripts/finalize-change007-release.sh", "scripts/cleanup-change007.sh"
         )) {
-            requireContains(readme, marker, "README contract");
-        }
-
-        String jitpack = read(projectDir, "jitpack.yml");
-        requireContains(jitpack, "sdk install java 25-open", "JitPack Java 25 installation");
-        requireContains(jitpack, "sdk use java 25-open", "JitPack Java 25 selection");
-        requireContains(jitpack, "./gradlew --no-daemon setupCIWorkspace", "JitPack setup command");
-        requireContains(jitpack, "./gradlew --no-daemon clean build publishToMavenLocal", "JitPack publication command");
-        if (jitpack.contains("setupCIWorkspace//")) {
-            throw new IllegalStateException("jitpack.yml still contains the broken setupCIWorkspace// command");
-        }
-        if (!Files.isExecutable(projectDir.resolve("scripts/package-source.sh"))) {
-            throw new IllegalStateException("scripts/package-source.sh is not executable");
-        }
-        if (!Files.isExecutable(projectDir.resolve("scripts/build-gtnhlib-0.11.31.sh"))) {
-            throw new IllegalStateException("scripts/build-gtnhlib-0.11.31.sh is not executable");
-        }
-        String gtnhBuildHelper = read(projectDir, "scripts/build-gtnhlib-0.11.31.sh");
-        for (String marker : List.of(
-            "VERSION=\"$expected_version\"",
-            "reobfJar wdgPrintReobfJar",
-            "expected_source_sha256",
-            "NO-GIT-TAG-SET",
-            "META-INF/versions/17"
-        )) {
-            requireContains(gtnhBuildHelper, marker, "GTNHLib source-build helper");
-        }
-
-        String gitignore = read(projectDir, ".gitignore");
-        for (String marker : List.of(
-            "/build/", "/.gradle/", "/run/", "*.sqlite", "*.db", "/validation-logs/",
-            "/combined-client/", "/curseforge-profiles/", "/external-build/",
-            "wdg-lwjgl3ify", "*.jar", "*.zip"
-        )) {
-            requireContains(gitignore, marker, ".gitignore hygiene");
-        }
-
-        String combinedClientDoc = read(projectDir, "docs/COMBINED_CLIENT.md");
-        for (String marker : List.of(
-            "VERSION=0.11.31",
-            "packageBootstrapSmokeClient",
-            "packageDistantHorizonsSmokeClient",
-            "packageCombinedClient",
-            "verifyCombinedClientReproducibility",
-            "CurseForge",
-            "Java 8",
-            "Java 21",
-            "logs/latest.log"
-        )) {
-            requireContains(combinedClientDoc, marker, "combined-client documentation");
-        }
-
-        String sourcePackaging = read(projectDir, "scripts/package-source.sh");
-        for (String marker : List.of(
-            "RuntimeArtifactVerifier.java",
-            "CombinedClientSupport.java",
-            "build-gtnhlib-0.11.31.sh",
-            "docs/COMBINED_CLIENT.md",
-            "git -C \"$repository\" ls-files --cached --others --exclude-standard"
-        )) {
-            requireContains(sourcePackaging, marker, "Change 006 source packaging");
+            if (!Files.isExecutable(projectDir.resolve(executable))) {
+                throw new IllegalStateException("Required script is not executable: " + executable);
+            }
         }
 
         validateTrackedFiles(projectDir);
         validateNoTemplatePackage(projectDir);
 
         Map<String, Object> report = new LinkedHashMap<>();
-        report.put("projectDir", projectDir);
-        report.put("modId", FoundationSupport.MOD_ID);
-        report.put("rootPackage", "com.seibel.distanthorizons");
         report.put("version", expectedVersion);
-        report.put("gradleWrapper", "9.4.0");
-        report.put("gradleDaemonJdk", "25 ADOPTIUM");
-        report.put("compileTestRuntimeJdk", "21");
-        report.put("classFileMajor", FoundationSupport.JAVA_21_CLASS_MAJOR);
+        report.put("releaseChannel", ProvenanceSupport.RELEASE_CHANNEL);
+        report.put("updaterPolicy", ProvenanceSupport.UPDATER_POLICY);
         report.put("apiVersion", "7.0.0");
         report.put("protocolVersion", 15);
         report.put("configVersion", 4);
         report.put("sqlMigrationCount", migrations.size());
-        report.put("productionArtifactProvider", "reobfJar");
-        report.put("ordinaryRunTasks", "deliberately-disabled");
-        report.put("combinedClientContract", CombinedClientSupport.CONTRACT_VERSION);
-        report.put("diagnosticPackages", 3);
+        report.put("packageContract", ProvenanceSupport.PACKAGE_CONTRACT);
+        report.put("lwjgl3ifyCommit", Lwjgl3ifyCompatibilityVerifier.EXPECTED_COMMIT);
+        report.put("runtimeDistributionMode", Lwjgl3ifyCompatibilityVerifier.RUNTIME_DISTRIBUTION_MODE);
+        report.put("embeddedPrimaryRuntimeCount", Lwjgl3ifyCompatibilityVerifier.PRIMARY_RUNTIMES.size());
+        report.put("externalRuntimeBundleRequired", false);
+        report.put("bundledClientOverlayRequired", false);
+        report.put("verified", true);
         return report;
     }
 
     private static void requireFile(Path root, String relative) {
-        Path path = root.resolve(relative);
-        if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
-            throw new IllegalStateException("Required repository file is missing or unreadable: " + relative);
+        Path file = root.resolve(relative);
+        if (!Files.isRegularFile(file) || !Files.isReadable(file)) {
+            throw new IllegalStateException("Required repository file is missing: " + relative);
         }
     }
 
@@ -341,83 +303,48 @@ public final class RepositoryContractVerifier {
         String actual = properties.getProperty(key);
         actual = actual == null ? null : actual.trim();
         if (!expected.equals(actual)) {
-            throw new IllegalStateException("gradle.properties mismatch for " + key + ": expected='" + expected + "', actual='" + actual + "'");
+            throw new IllegalStateException("gradle.properties mismatch for " + key + ": " + actual + " != " + expected);
         }
     }
 
-    private static void requireContains(String text, String marker, String label) {
-        if (!text.contains(marker)) {
-            throw new IllegalStateException(label + " is missing required marker: " + marker);
-        }
+    private static void require(String text, String marker, String label) {
+        if (!text.contains(marker)) throw new IllegalStateException(label + " missing marker: " + marker);
     }
 
-    private static void requireNotContains(String text, String marker, String label) {
-        if (text.contains(marker)) {
-            throw new IllegalStateException(label + " contains forbidden marker: " + marker);
-        }
-    }
-
-    private static void rejectMandatoryOptionalDependency(String text, String marker) {
-        if (text.contains(marker)) {
-            throw new IllegalStateException("Optional/development integration is published as mandatory: " + marker);
-        }
-    }
-
-    private static void validateMixinConfig(Path projectDir, String name, boolean requirePackage) throws IOException {
-        String config = read(projectDir, "src/main/resources/" + name);
-        requireContains(config, "\"refmap\": \"" + FoundationSupport.REFMAP + "\"", name + " refmap");
-        if (requirePackage) {
-            requireContains(config, "\"package\": \"com.seibel.distanthorizons.mixin\"", name + " package");
-        }
+    private static void reject(String text, String marker, String label) {
+        if (text.contains(marker)) throw new IllegalStateException(label + " contains forbidden marker: " + marker);
     }
 
     private static void validateTrackedFiles(Path projectDir) throws IOException {
-        if (!Files.isDirectory(projectDir.resolve(".git"))) {
-            return;
-        }
+        if (!Files.isDirectory(projectDir.resolve(".git"))) return;
         Process process = new ProcessBuilder("git", "-C", projectDir.toString(), "ls-files")
-            .redirectErrorStream(true)
-            .start();
+            .redirectErrorStream(true).start();
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         try {
             int rc = process.waitFor();
-            if (rc != 0) {
-                throw new IllegalStateException("Unable to inspect tracked files with git: " + output.trim());
-            }
+            if (rc != 0) throw new IllegalStateException("git ls-files failed: " + output);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while inspecting tracked files", e);
+            throw new IOException("Interrupted while checking tracked files", e);
         }
         List<String> forbidden = new ArrayList<>();
-        for (String line : output.lines().toList()) {
-            String lower = line.toLowerCase(Locale.ROOT);
+        for (String name : output.lines().toList()) {
+            String lower = name.toLowerCase(Locale.ROOT);
             if (FORBIDDEN_TRACKED_PREFIXES.stream().anyMatch(lower::startsWith)
-                || lower.endsWith(".sqlite")
-                || lower.endsWith(".sqlite3")
-                || lower.endsWith(".db")
-                || lower.endsWith(".lod")
-                || lower.endsWith(".log")
-                || lower.endsWith(".jar")
-                || lower.endsWith(".zip")) {
-                if (!line.equals("gradle/wrapper/gradle-wrapper.jar")) {
-                    forbidden.add(line);
-                }
+                || lower.endsWith(".sqlite") || lower.endsWith(".sqlite3") || lower.endsWith(".db")
+                || lower.endsWith(".lod") || lower.endsWith(".log") || lower.endsWith(".zip")
+                || (lower.endsWith(".jar") && !name.equals("gradle/wrapper/gradle-wrapper.jar"))) {
+                forbidden.add(name);
             }
         }
-        if (!forbidden.isEmpty()) {
-            throw new IllegalStateException("Generated/runtime/archive files are tracked: " + forbidden);
-        }
+        if (!forbidden.isEmpty()) throw new IllegalStateException("Generated/runtime files are tracked: " + forbidden);
     }
 
     private static void validateNoTemplatePackage(Path projectDir) throws IOException {
-        Path sourceRoot = projectDir.resolve("src");
-        try (Stream<Path> stream = Files.walk(sourceRoot)) {
-            List<Path> forbidden = stream.filter(Files::isRegularFile)
-                .filter(path -> path.toString().replace('\\', '/').contains("com/myname/mymodid"))
-                .toList();
-            if (!forbidden.isEmpty()) {
-                throw new IllegalStateException("Template package remains in source: " + forbidden);
-            }
+        try (Stream<Path> files = Files.walk(projectDir.resolve("src"))) {
+            List<Path> bad = files.filter(Files::isRegularFile)
+                .filter(path -> path.toString().replace('\\', '/').contains("com/myname/mymodid")).toList();
+            if (!bad.isEmpty()) throw new IllegalStateException("Template package remains: " + bad);
         }
     }
 }

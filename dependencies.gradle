@@ -35,6 +35,8 @@ def enableNeiRuntime = providers.gradleProperty("wdgEnableNeiRuntime")
     .orElse(false)
 
 dependencies {
+    testImplementation("junit:junit:4.13.2")
+
     // Keep a reproducible external coordinate in published metadata.
     implementation(defaultLwjgl3ify)
     implementation(gtnhLib)

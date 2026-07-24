@@ -30,7 +30,7 @@ The intended WDG launch path is:
 3. `lwjgl3ify-wdg` relaunches the real Minecraft process under Java 21;
 4. DistantHorizons-WDG loads inside that Java 21 process.
 
-The automatic packaged-Java installer and relauncher belong to `lwjgl3ify-wdg`, not this repository. **Change 005 established the production artifact foundation. Change 006 adds deterministic Stage A, Stage B, and Stage C client overlays and their static verifiers; it does not claim runtime smoke has passed.**
+The automatic packaged-Java installer and relauncher belong to `lwjgl3ify-wdg`, not this repository. Change 005 established the production artifact foundation; Change 006 added deterministic Stage A/B/C client overlays; Change 007 turns that verified integration into a provenance-bearing WDG release candidate without changing the public mod identity or compatibility formats.
 
 ## Required dependencies
 
@@ -56,18 +56,21 @@ The optional compatibility classes remain guarded by mod-presence checks. Angeli
 
 ## Client and server status
 
-The client is the primary supported environment for this 1.7.10 backport. Dedicated-server code remains present and its public behavior is preserved, but server-side operation has known stability limitations, including reported long-running memory growth. Change 005 does not claim improved server stability and does not run a dedicated-server smoke test.
+The release-candidate package is client-side. Do not copy DistantHorizons-WDG, the runtime-bearing lwjgl3ify-wdg JAR, or Angelica to a dedicated server solely for this feature. GTNHLib and UniMixins may still be independently required by other server mods and must be audited rather than removed blindly.
 
-Known upstream/runtime limitations can include stale LOD updates that recover after changing the render distance. Real-world database migrations, world loading, LOD rendering, shaders, and server behavior remain deferred to later production-like runtime validation.
+The supported Change 007 lwjgl3ify dependency is the single verified Change 005 production JAR. It embeds the four primary Java 21 runtimes for Linux x86_64, macOS AArch64, macOS x86_64, and Windows x86_64. Normal installation copies only the exact JAR set to `mods/`; there is no separate Java runtime ZIP or client overlay. Linux AArch64 and Windows AArch64 are optional manual extension assets.
+
+Known upstream/runtime limitations can include stale LOD updates that recover after changing the render distance. Change 006 evidence established successful database migration, world save/reopen, renderer, and LOD activity on macOS; Change 007 still requires its own macOS, Windows, normal-modpack, and copied-server connection gates before commit.
 
 ## Development
 
 - [SETUP.md](SETUP.md) — JDK and IntelliJ IDEA import setup.
 - [COMPILING.md](COMPILING.md) — build, verification, artifact roles, local lwjgl3ify-wdg inputs, and troubleshooting.
 - [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md) — required, optional, development, and shadowed dependency classifications.
-- [docs/COMBINED_CLIENT.md](docs/COMBINED_CLIENT.md) — Change 006 exact-artifact builds, staged packages, verification, CurseForge smoke, logs, and cleanup.
+- [docs/COMBINED_CLIENT.md](docs/COMBINED_CLIENT.md) — exact-artifact Stage A/B/C packages, release-candidate packaging, verification, and external smoke procedures.
+- [docs/RELEASE_CANDIDATE.md](docs/RELEASE_CANDIDATE.md) — two-phase provenance, stable-release gate, and acceptance status.
 
-Ordinary Gradle client/server run tasks remain deliberately disabled. Change 006 constructs isolated production-like client overlays from the exact reobfuscated Distant Horizons and `lwjgl3ify-wdg` JARs, GTNHLib 0.11.31, UniMixins All 0.1.23, optional Angelica 2.1.54, and the normalized packaged Java 21 bundle. Runtime acceptance remains a separate disposable CurseForge smoke.
+Ordinary Gradle client/server run tasks remain deliberately disabled. Change 007 constructs isolated production-like overlays and release assets from the exact reobfuscated Distant Horizons and `lwjgl3ify-wdg` JARs, GTNHLib 0.11.31, UniMixins All 0.1.23, Angelica 2.1.54, and the normalized packaged Java 21 bundle. Runtime acceptance remains an explicit external gate.
 
 ## Building
 
@@ -82,10 +85,14 @@ The repository uses the Gradle 9.4.0 wrapper. Gradle itself is selected through 
 ./gradlew --no-daemon explainCombinedClientInputs
 ```
 
-With all six explicit external artifact properties supplied, Change 006 additionally provides `verifyRequiredRuntimeArtifacts`, three staged package tasks, three package verifiers, and `verifyCombinedClientReproducibility`.
+With all explicit external artifact properties supplied, Change 007 preserves the Change 006 Stage A/B/C tasks and adds `packageWdgReleaseCandidate`, `verifyWdgReleaseCandidate`, `verifyWdgReleaseCandidateReproducibility`, `packageCurseForgeTestingProfile`, `auditWargamesModpackCompatibility`, and `auditDedicatedServer`.
 
 The one distributable mod artifact is the unclassified output of `reobfJar`. The `-dev-preshadow`, `-dev`, sources, and API JARs are intermediate or development artifacts and must not be installed as the production mod.
 
 ## Licence and attribution
 
 Distant Horizons source remains licensed under the GNU Lesser General Public License v3.0. Existing file-level copyright notices and upstream attribution are preserved. No statement in this README replaces the repository licence or the attribution in individual source files.
+
+## WDG release-candidate status
+
+Change 007 targets `3.0.4-b-wdg-rc.1`, not a public stable release. WDG builds embed deterministic provenance, submit development/RC warnings as separate single-line chat components, use managed-disabled upstream updating, and apply conservative defaults only to fresh profiles. See `docs/RELEASE_CANDIDATE.md` and the deployment documents under `docs/`.

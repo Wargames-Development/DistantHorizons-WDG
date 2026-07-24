@@ -1,0 +1,23 @@
+# Performance acceptance report
+
+- System profile:
+- Profile stage (A/B/C/normal modpack):
+- Runtime fresh or reused:
+- LOD database fresh or existing:
+- LOD render distance:
+- Quality preset:
+- Thread preset:
+- Observed DH worker count:
+- Generation mode:
+- Java allocation:
+- Idle menu FPS:
+- In-world FPS:
+- Frame-time notes:
+- CPU observations:
+- GPU observations:
+- First-generation duration:
+- Generated-LOD reload duration:
+- Save duration:
+- Reopen result:
+- Known warnings:
+- Severe stalls, unresponsiveness or thermal concerns:

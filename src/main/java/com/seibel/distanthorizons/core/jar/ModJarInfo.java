@@ -1,72 +1,91 @@
 /*
  *    This file is part of the Distant Horizons mod
  *    licensed under the GNU LGPL v3 License.
- *
- *    Copyright (C) 2020 James Seibel
- *
- *    This program is free software: you can redistribute it and/or modify
- *    it under the terms of the GNU Lesser General Public License as published by
- *    the Free Software Foundation, version 3.
- *
- *    This program is distributed in the hope that it will be useful,
- *    but WITHOUT ANY WARRANTY; without even the implied warranty of
- *    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *    GNU Lesser General Public License for more details.
- *
- *    You should have received a copy of the GNU Lesser General Public License
- *    along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 package com.seibel.distanthorizons.core.jar;
 
-import com.electronwill.nightconfig.core.Config;
-import com.electronwill.nightconfig.core.io.ParsingMode;
-import com.electronwill.nightconfig.json.JsonFormat;
-import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
-import org.apache.logging.log4j.LogManager;
 import com.seibel.distanthorizons.core.logging.DhLogger;
+import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
+import com.seibel.distanthorizons.coreapi.ModInfo;
+import com.seibel.distanthorizons.coreapi.ReleaseChannel;
 
-/**
- * Get info on the git for the mod <br>
- * Warning: Gets generated on runtime
- *
- * @author coolGi
- */
+import java.io.IOException;
+import java.io.InputStream;
+
+/** Runtime access to validated embedded build provenance. */
 public final class ModJarInfo
 {
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
-	private static final String FILE_NAME = "build_info.json";
-	
-	static
+	private static final String RESOURCE_PATH = "/build_info.json";
+	private static final BuildInfo INFO = load();
+
+	public static final String Repository = INFO.repository;
+	public static final String Git_Branch = INFO.branchOrChannel;
+	public static final String Git_Commit = INFO.commit;
+	public static final String Build_Source = INFO.buildSource;
+	public static final String Release_Channel = INFO.releaseChannel.name();
+	public static final String Updater_Policy = INFO.updaterPolicy.name();
+	public static final String Tree_State = INFO.treeState;
+	public static final String Source_Tree_Digest = INFO.sourceTreeDigest;
+
+	private ModJarInfo() { }
+
+	public static BuildInfo getBuildInfo() { return INFO; }
+
+	private static BuildInfo load()
 	{
-		String gitBranch = "UNKNOWN";
-		String gitCommit = "UNKNOWN";
-		String buildSource = "UNKNOWN";
-		
-		try
+		try (InputStream input = ModJarInfo.class.getResourceAsStream(RESOURCE_PATH))
 		{
-			// Warning: Atm, this file is in the common subproject as the processResources task in gradle doesn't work for core
-			String jsonString = JarUtils.convertInputStreamToString(JarUtils.accessFile(FILE_NAME));
-			
-			Config jsonObject = Config.inMemory();
-			JsonFormat.minimalInstance().createParser().parse(jsonString, jsonObject, ParsingMode.REPLACE);
-			
-			gitBranch = jsonObject.get("info_git_branch");
-			gitCommit = jsonObject.get("info_git_commit");
-			buildSource = jsonObject.get("info_build_source");
+			if (input == null)
+			{
+				return missingResource();
+			}
+			return BuildInfoResourceLoader.load(input, ModInfo.VERSION);
 		}
-		catch (Exception | Error e)
+		catch (IOException | RuntimeException e)
 		{
-			LOGGER.warn("Unable to get the Git information from " + FILE_NAME);
+			if (ModInfo.RELEASE_CHANNEL == ReleaseChannel.DEVELOPMENT)
+			{
+				LOGGER.warn("Unable to load valid build provenance from [{}]; using a development fallback: {}", RESOURCE_PATH, e.getMessage());
+				return developmentFallback();
+			}
+			LOGGER.error("Production Distant Horizons build provenance is invalid: {}", e.getMessage());
+			throw new IllegalStateException("Production build requires valid " + RESOURCE_PATH, e);
 		}
-		
-		Git_Commit = gitBranch;
-		Git_Branch = gitCommit;
-		Build_Source = buildSource;
 	}
-	
-	public static final String Git_Branch;
-	public static final String Git_Commit;
-	public static final String Build_Source;
-	
+
+	private static BuildInfo missingResource()
+	{
+		if (ModInfo.RELEASE_CHANNEL == ReleaseChannel.DEVELOPMENT)
+		{
+			LOGGER.warn("Build provenance resource [{}] is absent; using a development fallback.", RESOURCE_PATH);
+			return developmentFallback();
+		}
+		throw new IllegalStateException("Production build provenance resource is missing: " + RESOURCE_PATH);
+	}
+
+	private static BuildInfo developmentFallback()
+	{
+		return new BuildInfo(
+			BuildInfo.CURRENT_SCHEMA_VERSION,
+			ModInfo.ID,
+			ModInfo.VERSION,
+			ReleaseChannel.DEVELOPMENT,
+			"upstream-development-environment",
+			"Distant-Horizons-Team/DistantHorizons",
+			"development",
+			"0000000000000000000000000000000000000000",
+			"0000000",
+			"modified",
+			"0000000000000000000000000000000000000000000000000000000000000000",
+			"DEVELOPMENT_FALLBACK",
+			"1.7.10",
+			"10.13.4.1614",
+			65,
+			"development",
+			UpdaterPolicy.UPSTREAM,
+			false
+		);
+	}
 }

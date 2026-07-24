@@ -55,18 +55,18 @@ import java.util.zip.ZipFile;
 public class SelfUpdater
 {
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
-	
+
 	private static final IMinecraftClientWrapper MC_CLIENT = SingletonInjector.INSTANCE.get(IMinecraftClientWrapper.class);
 	private static final IVersionConstants VERSION_CONSTANTS = SingletonInjector.INSTANCE.get(IVersionConstants.class);
-	
+
 	private static final String MC_VERSION = VERSION_CONSTANTS.getMinecraftVersion();
-	
+
 	/** As we cannot delete(or replace) the jar while the mod is running, we just have this to delete it once the game closes */
 	public static boolean deleteOldJarOnJvmShutdown = false;
-	
+
 	public static File newFileLocation;
-	
-	
+
+
 	/**
 	 * Should be called on the game starting.
 	 * (After the config has been initialised)
@@ -75,27 +75,33 @@ public class SelfUpdater
 	 */
 	public static boolean onStart()
 	{
+		if (!UpdaterPolicyManager.allowsUpstreamUpdater())
+		{
+			LOGGER.info(UpdaterPolicyManager.managedDisabledMessage());
+			deleteOldJarOnJvmShutdown = false;
+			newFileLocation = null;
+			return false;
+		}
 		if (!Config.Client.Advanced.AutoUpdater.enableAutoUpdater.get())
 		{
 			LOGGER.info("Distant Horizons auto update disabled.");
 			return false;
 		}
-		
-		
+
+
 		try
 		{
 			EDhApiUpdateBranch updateBranch = EDhApiUpdateBranch.convertAutoToStableOrNightly(Config.Client.Advanced.AutoUpdater.updateBranch.get());
-			
+
 			LOGGER.info("Checking for Distant Horizons ["+updateBranch+"] update for MC ["+MC_VERSION+"]...");
-			
-			if (updateBranch == EDhApiUpdateBranch.STABLE)
-			{
-				return onStableStart();
-			}
-			else
-			{
-				return onNightlyStart();
-			}
+
+			return UpdaterExecutionGate.execute(
+				UpdaterPolicyManager.getPolicy(),
+				true,
+				updateBranch == EDhApiUpdateBranch.STABLE,
+				SelfUpdater::onStableStart,
+				SelfUpdater::onNightlyStart
+			);
 		}
 		catch (Exception e) // Shouldn't be needed, but just in case
 		{
@@ -117,7 +123,7 @@ public class SelfUpdater
 			LOGGER.warn("Minecraft version ["+ MC_VERSION +"] is not findable on Modrinth, only findable versions are ["+ StringUtil.join(", ", ModrinthGetter.mcVersions) +"]");
 			return false;
 		}
-		
+
 		try
 		{
 			newFileLocation = JarUtils.jarFile
@@ -131,7 +137,7 @@ public class SelfUpdater
 			LOGGER.warn("Unable to get file location to download auto updated file to.", e);
 			return false;
 		}
-		
+
 		String currentJarSha;
 		try
 		{
@@ -142,7 +148,7 @@ public class SelfUpdater
 			LOGGER.error("Unable to get existing jar checksum, error: ["+e.getMessage()+"].", e);
 			return false;
 		}
-		
+
 		// Check the sha's of both our stuff
 		if (currentJarSha.equals(ModrinthGetter.getLatestShaForVersion(MC_VERSION)))
 		{
@@ -154,8 +160,8 @@ public class SelfUpdater
 			LOGGER.warn("Unable to get the Distant Horizons jar file, self updating disabled.");
 			return false;
 		}
-		
-		
+
+
 		LOGGER.info("New version (" + ModrinthGetter.getLatestNameForVersion(MC_VERSION) + ") of Distant Horizons is available");
 		if (Config.Client.Advanced.AutoUpdater.enableSilentUpdates.get())
 		{
@@ -172,32 +178,32 @@ public class SelfUpdater
 	private static boolean onNightlyStart()
 	{
 		LOGGER.info("Checking for Distant Horizons Nightly update...");
-		
+
 		if (GitlabGetter.INSTANCE.projectPipelines.size() == 0)
 		{
 			LOGGER.info("Unable to find any nightly build pipelines, auto update will be unavailable.");
 			return false;
 		}
 		com.electronwill.nightconfig.core.Config pipeline = GitlabGetter.INSTANCE.projectPipelines.get(0);
-		
+
 		if (!pipeline.get("ref").equals(ModJarInfo.Git_Branch))
 		{
 			LOGGER.warn("Latest pipeline was found for branch ["+ pipeline.get("ref") +"], but we are on branch ["+ ModJarInfo.Git_Branch +"].");
 			return false;
 		}
-		
+
 		if (!pipeline.get("status").equals("success"))
 		{
 			LOGGER.warn("Pipeline for branch ["+ ModJarInfo.Git_Branch +"], pipeline ID ["+ pipeline.get("id") +"], has either failed to build, or is still building.");
 			return false;
 		}
-		
+
 		if (!GitlabGetter.INSTANCE.getDownloads(pipeline.get("id")).containsKey(MC_VERSION))
 		{
 			LOGGER.warn("Minecraft version ["+ MC_VERSION +"] is not findable on Gitlab, findable versions are ["+ StringUtil.join(", ", GitlabGetter.INSTANCE.getDownloads(pipeline.get("id")).keySet().toArray()) +"].");
 			return false;
 		}
-		
+
 		String latestCommit = pipeline.get("sha");
 		try
 		{
@@ -208,15 +214,15 @@ public class SelfUpdater
 			LOGGER.warn("Unable to get file location to download auto updated file to.", e);
 			return false;
 		}
-		
-		
+
+
 		if (ModJarInfo.Git_Commit.equals(latestCommit)) // If we are already on the latest commit, then dont update
 		{
 			LOGGER.info("Distant Horizons already up to date.");
 			return false;
 		}
-		
-		
+
+
 		LOGGER.info("New version [" + latestCommit + "] of Distant Horizons is available");
 		if (Config.Client.Advanced.AutoUpdater.enableSilentUpdates.get())
 		{
@@ -230,10 +236,10 @@ public class SelfUpdater
 		}
 		return true;
 	}
-	
-	
-	
-	
+
+
+
+
 	public static boolean updateMod()
 	{
 		String mcVer = SingletonInjector.INSTANCE.get(IVersionConstants.class).getMinecraftVersion();
@@ -244,6 +250,12 @@ public class SelfUpdater
 	}
 	public static boolean updateMod(String minecraftVersion, File file)
 	{
+		if (!UpdaterPolicyManager.allowsUpstreamUpdater())
+		{
+			LOGGER.info(UpdaterPolicyManager.managedDisabledMessage());
+			deleteOldJarOnJvmShutdown = false;
+			return false;
+		}
 		EDhApiUpdateBranch updateBranch = EDhApiUpdateBranch.convertAutoToStableOrNightly(Config.Client.Advanced.AutoUpdater.updateBranch.get());
 		if (updateBranch == EDhApiUpdateBranch.STABLE)
 		{
@@ -259,28 +271,34 @@ public class SelfUpdater
 			return false;
 		}
 	}
-	
+
 	public static boolean updateStableMod(String minecraftVersion, File file)
 	{
+		if (!UpdaterPolicyManager.allowsUpstreamUpdater())
+		{
+			LOGGER.info(UpdaterPolicyManager.managedDisabledMessage());
+			deleteOldJarOnJvmShutdown = false;
+			return false;
+		}
 		try
 		{
 			LOGGER.info("Attempting to auto update Distant Horizons");
-			
+
 			Files.createDirectories(file.getParentFile().toPath());
 			WebDownloader.downloadAsFile(ModrinthGetter.getLatestDownloadForVersion(minecraftVersion), file);
-			
+
 			// Check if the checksum of the downloaded jar is correct (not required, but good to have to prevent corruption or interception)
 			if (!JarUtils.getFileChecksum(MessageDigest.getInstance("SHA"), file).equals(ModrinthGetter.getLatestShaForVersion(minecraftVersion)))
 			{
 				LOGGER.warn("Distant Horizons update checksum failed, aborting install");
 				throw new Exception("Checksum failed");
 			}
-			
+
 			deleteOldJarOnJvmShutdown = true;
-			
-			String successMessage = "Distant Horizons successfully updated. It will apply on game`s relaunch"; 
+
+			String successMessage = "Distant Horizons successfully updated. It will apply on game`s relaunch";
 			LOGGER.info(successMessage);
-			new Thread(() -> 
+			new Thread(() ->
 			{
 				try
 				{
@@ -301,8 +319,8 @@ public class SelfUpdater
 			{
 				LOGGER.error("Unable to delete corrupted update file at ["+file.toPath()+"], error: ["+deleteCorruptFileException.getMessage()+"].", deleteCorruptFileException);
 			}
-			
-			
+
+
 			String failMessage = "Failed to update Distant Horizons to version [" + ModrinthGetter.getLatestNameForVersion(minecraftVersion) + "], error: ["+e.getMessage()+"].";
 			LOGGER.error(failMessage, e);
 			try
@@ -310,53 +328,59 @@ public class SelfUpdater
 				MC_CLIENT.showDialog(ModInfo.READABLE_NAME, failMessage, "ok", "error");
 			}
 			catch (Exception ignore) { }
-			
+
 			return false;
 		}
 	}
-	
+
 	public static boolean updateNightlyMod(String minecraftVersion, File file)
 	{
+		if (!UpdaterPolicyManager.allowsUpstreamUpdater())
+		{
+			LOGGER.info(UpdaterPolicyManager.managedDisabledMessage());
+			deleteOldJarOnJvmShutdown = false;
+			return false;
+		}
 		if (GitlabGetter.INSTANCE.projectPipelines.isEmpty())
 		{
 			LOGGER.warn("Failed to find any nightly builds for the minecraft version ["+minecraftVersion+"] update canceled.");
 			return false;
 		}
-		
-		
+
+
 		Path mergedZipPath = null;
 		try
 		{
 			LOGGER.info("Attempting to auto update Distant Horizons.");
-			
+
 			Files.createDirectories(file.getParentFile().toPath());
-			
+
 			mergedZipPath = file.getParentFile().toPath().resolve("merged.zip");
 			WebDownloader.downloadAsFile(GitlabGetter.INSTANCE.getDownloads(GitlabGetter.INSTANCE.projectPipelines.get(0).get("id")).get(minecraftVersion), mergedZipPath.toFile());
-			
+
 			try (ZipFile zipFile = new ZipFile(mergedZipPath.toFile()))
 			{
-				ZipEntry zipEntry = 
+				ZipEntry zipEntry =
 						Collections.list(zipFile.entries()).stream()
 						.max(Comparator.comparingInt(entry -> entry.getName().length()))
 						// shouldn't happen, but just in case
 						.orElseThrow(() -> new Exception("Unable to find jar in zip. Is the downloaded zip empty?"));
-				
+
 				// expected values as defined by the zip
 				long expectedCheckSum = zipEntry.getCrc();
 				int expectedSize = (int)zipEntry.getSize();
-				
-				
+
+
 				// read in the file content
 				byte[] buffer = new byte[expectedSize];
 				CRC32 crcCheckSumGenerator = new CRC32();
 				InputStream inputStream = zipFile.getInputStream(zipEntry);
-				
+
 				int byteReadIndex = 0;
 				try
 				{
 					NumberFormat outputFormat = NumberFormat.getNumberInstance();
-					
+
 					int nextByte = inputStream.read();
 					while (nextByte != -1)
 					{
@@ -364,10 +388,10 @@ public class SelfUpdater
 						crcCheckSumGenerator.update(nextByte);
 						nextByte = inputStream.read();
 						byteReadIndex++;
-						
+
 						// It would be better to change this divisor based on the expected size,
 						// so it would always be split up into 100 1% increments
-						// but this works well enough. 
+						// but this works well enough.
 						// When the expected size is about 17 MB, this will log about 170 times
 						if (byteReadIndex % 100_000 == 0)
 						{
@@ -376,14 +400,14 @@ public class SelfUpdater
 					}
 				}
 				catch (EOFException ignore) { /* shouldn't happen, but just in case */ }
-				
+
 				// confirm we read the whole file
 				if (byteReadIndex != expectedSize) // +1 on the index isn't necessary since the readIndex will always end +1 from where it started
 				{
 					LOGGER.warn("Distant Horizons update decompression failed, aborting install");
 					throw new Exception("Decompression failed");
 				}
-				
+
 				// confirm the checksum is correct (IE we decompressed correctly)
 				long actualChecksum = crcCheckSumGenerator.getValue();
 				if (actualChecksum != expectedCheckSum)
@@ -391,15 +415,15 @@ public class SelfUpdater
 					LOGGER.warn("Distant Horizons checksum mismatch, aborting install");
 					throw new Exception("Checksum Mismatch");
 				}
-				
+
 				Files.write(file.toPath(), buffer);
 			}
-			
+
 			Files.deleteIfExists(mergedZipPath);
-			
+
 			deleteOldJarOnJvmShutdown = true;
-			
-			
+
+
 			String successMessage = "Distant Horizons updated, this will be applied on game restart.";
 			LOGGER.info(successMessage);
 			new Thread(() ->
@@ -410,7 +434,7 @@ public class SelfUpdater
 				}
 				catch (Exception ignore) { }
 			}).start();
-			
+
 			return true;
 		}
 		catch (Exception e)
@@ -424,7 +448,7 @@ public class SelfUpdater
 			{
 				LOGGER.error("Unable to delete corrupted update jar file at ["+file.toPath()+"], error: ["+deleteCorruptFileException.getMessage()+"].", deleteCorruptFileException);
 			}
-			
+
 			// delete the update zip so we can clean up
 			try
 			{
@@ -437,8 +461,8 @@ public class SelfUpdater
 			{
 				LOGGER.error("Unable to delete corrupted update zip file at ["+mergedZipPath+"], error: ["+deleteCorruptFileException.getMessage()+"].", deleteCorruptFileException);
 			}
-			
-			
+
+
 			String versionHash = GitlabGetter.INSTANCE.projectPipelines.get(0).get("sha");
 			String failMessage = "Failed to update [" + ModInfo.READABLE_NAME + "] to version [" + versionHash + "], error: ["+e.getMessage()+"].";
 			LOGGER.error(failMessage, e);
@@ -447,15 +471,15 @@ public class SelfUpdater
 				MC_CLIENT.showDialog(ModInfo.READABLE_NAME, failMessage, "ok", "error");
 			}
 			catch (Exception ignore) { }
-			
+
 			return false;
 		}
 	}
-	
-	
-	
-	
-	
+
+
+
+
+
 	/**
 	 * Should be called when the game is closed.
 	 * This is ued to delete the previous file if it is required at the end.
@@ -470,17 +494,17 @@ public class SelfUpdater
 		{
 			return;
 		}
-		
-		
-		
+
+
+
 		Path newJarPath = newFileLocation.toPath();
 		Path finalJarPath = JarUtils.jarFile.getParentFile().toPath().resolve(newFileLocation.getName());
-		
+
 		try
 		{
 			// if a jar with the same already exists in the final location, delete it first (otherwise file move issues will occur)
 			Files.deleteIfExists(finalJarPath);
-			
+
 			// move the new jar...
 			Files.move(newJarPath, finalJarPath);
 			// ...and delete the temp folder
@@ -492,22 +516,22 @@ public class SelfUpdater
 					"to [" + JarUtils.jarFile.getParentFile().getAbsolutePath() + "], " +
 					"please move it manually", e);
 		}
-		
-		
+
+
 		try
 		{
 			// Get the Java binary
 			String javaHome = System.getProperty("java.home");
 			String javaBin = javaHome + File.separator + "bin" + File.separator + "java";
-			
-			// Run the file deletion jar in a new OS process, 
+
+			// Run the file deletion jar in a new OS process,
 			// this is done to allow for deleting the current jar if the OS has a lock on it
 			String execCommand = "\""+ javaBin +"\" -cp \""+
 					finalJarPath.toAbsolutePath()+"\" " // run the deletion code from the new jar
 					+DeleteOnUnlock.class.getCanonicalName()+" "+
 					URLEncoder.encode(JarUtils.jarFile.getAbsolutePath(), "UTF-8"); // Encode the file location to prevent issues with special characters and spaces
 			Process deleteProcess = Runtime.getRuntime().exec(execCommand);
-			
+
 			// check if the pro
 			if (deleteProcess.isAlive())
 			{
@@ -517,10 +541,10 @@ public class SelfUpdater
 			{
 				LOGGER.error(DeleteOnUnlock.class.getSimpleName()+" process failed to start.");
 			}
-			
+
 			// wait a moment so we can catch if there are any immediate issues with the process
 			Thread.sleep(250);
-			
+
 			if (deleteProcess.isAlive())
 			{
 				LOGGER.info(DeleteOnUnlock.class.getSimpleName()+" running, old jar file at ["+JarUtils.jarFile.getAbsolutePath()+"] should be deleted after Minecraft's JVM shutdown has completed.");
@@ -530,14 +554,14 @@ public class SelfUpdater
 				int processExitCode = deleteProcess.exitValue();
 				if (processExitCode != DeleteOnUnlock.SUCCESS_EXIT_CODE)
 				{
-					String failReason = (processExitCode == DeleteOnUnlock.FAIL_EXIT_CODE) ? "Timed out and was unable to delete the file." : "Ran into an unexpected error."; 
+					String failReason = (processExitCode == DeleteOnUnlock.FAIL_EXIT_CODE) ? "Timed out and was unable to delete the file." : "Ran into an unexpected error.";
 					LOGGER.error(DeleteOnUnlock.class.getSimpleName() + " " + failReason);
 					LOGGER.error(DeleteOnUnlock.class.getSimpleName() + " Logs are listed below:");
-					
-					// record the process' logs 
+
+					// record the process' logs
 					String normalOutput = convertInputStreamToString(deleteProcess.getInputStream());
 					LOGGER.info("process output: \n\n" + normalOutput);
-					
+
 					// record the process' error logs
 					String errorOutput = convertInputStreamToString(deleteProcess.getInputStream());
 					LOGGER.error("process error output: \n\n" + errorOutput);
@@ -555,7 +579,7 @@ public class SelfUpdater
 			LOGGER.warn("If the old Distant Horizons file didn't delete, delete it manually at [" + JarUtils.jarFile + "]");
 		}
 	}
-	
+
 	private static String convertInputStreamToString(InputStream inputStream)
 	{
 		try
@@ -570,6 +594,6 @@ public class SelfUpdater
 			return e.getMessage();
 		}
 	}
-	
-	
+
+
 }

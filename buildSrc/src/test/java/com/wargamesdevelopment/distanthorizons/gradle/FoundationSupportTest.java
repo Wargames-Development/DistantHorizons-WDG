@@ -17,14 +17,14 @@ public class FoundationSupportTest {
 
     @Test
     public void unifiedVersionParsingAcceptsCurrentVersion() {
-        assertEquals("3.0.4-b-dev", FoundationSupport.validateVersion(" 3.0.4-b-dev "));
+        assertEquals("3.0.4-b-wdg-rc.1", FoundationSupport.validateVersion(" 3.0.4-b-wdg-rc.1 "));
     }
 
     @Test
     public void unifiedVersionParsingAcceptsWdgPrereleaseAndBuildMetadata() {
         assertEquals(
-            "3.0.28-master.4+7500f19e88",
-            FoundationSupport.validateVersion("3.0.28-master.4+7500f19e88")
+            "3.0.28-master.5+d7e60f5a0d",
+            FoundationSupport.validateVersion("3.0.28-master.5+d7e60f5a0d")
         );
     }
 
@@ -37,7 +37,7 @@ public class FoundationSupportTest {
     public void versionMismatchIsRejected() {
         IllegalStateException failure = assertThrows(
             IllegalStateException.class,
-            () -> FoundationSupport.requireVersionMatch("3.0.4-b-dev", "3.0.3", "fixture")
+            () -> FoundationSupport.requireVersionMatch("3.0.4-b-wdg-rc.1", "3.0.3", "fixture")
         );
         assertTrue(failure.getMessage().contains("version mismatch"));
     }
