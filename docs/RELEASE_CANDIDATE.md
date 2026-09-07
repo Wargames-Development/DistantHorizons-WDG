@@ -6,7 +6,7 @@
 
 The Change 007 validation workflow has two provenance modes:
 
-- `VALIDATION`: source commit is the Change 006 base `b6070591b151e7853da458162186b3939f6f3384`, source state is `modified`, and build source is `UNCOMMITTED_VALIDATION`.
+- `VALIDATION`: source commit is the Change 007 base `170c809b2befbb3c54bd143ac68f8a9329e41f07`, source state is `modified`, and build source is `UNCOMMITTED_VALIDATION`.
 - `FINAL`: source commit is the explicitly supplied clean Change 007 commit, source state is `clean`, and build source is `CLEAN_GIT_CHECKOUT`.
 
 An uncommitted validation archive is never a final release asset. After commit and push, rebuild from a clean checkout with `-PwdgProvenanceMode=FINAL -PwdgExpectedCommit=<full-change-007-commit>`.

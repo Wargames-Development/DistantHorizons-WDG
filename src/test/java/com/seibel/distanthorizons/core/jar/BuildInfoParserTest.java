@@ -19,7 +19,7 @@ public class BuildInfoParserTest
 	{
 		BuildInfo info = BuildInfoParser.parse(validJson(), VERSION);
 		assertEquals("master", info.branchOrChannel);
-		assertEquals("b6070591b151e7853da458162186b3939f6f3384", info.commit);
+		assertEquals("170c809b2befbb3c54bd143ac68f8a9329e41f07", info.commit);
 		assertEquals(UpdaterPolicy.MANAGED_DISABLED, info.updaterPolicy);
 		assertTrue(info.isWdgManaged());
 	}
@@ -82,8 +82,8 @@ public class BuildInfoParserTest
 			+ "\"repository\": \"Wargames-Development/DistantHorizons-WDG\",\n"
 			+ "\"upstreamRepository\": \"DarkShadow44/DistantHorizonsStandalone\",\n"
 			+ "\"branchOrChannel\": \"master\",\n"
-			+ "\"commit\": \"b6070591b151e7853da458162186b3939f6f3384\",\n"
-			+ "\"shortCommit\": \"b6070591b151\",\n"
+			+ "\"commit\": \"170c809b2befbb3c54bd143ac68f8a9329e41f07\",\n"
+			+ "\"shortCommit\": \"170c809b2bef\",\n"
 			+ "\"treeState\": \"modified\",\n"
 			+ "\"sourceTreeDigest\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n"
 			+ "\"buildSource\": \"UNCOMMITTED_VALIDATION\",\n"

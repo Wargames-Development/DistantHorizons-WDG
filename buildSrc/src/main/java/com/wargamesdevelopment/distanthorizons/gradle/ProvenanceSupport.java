@@ -19,7 +19,7 @@ public final class ProvenanceSupport {
     public static final String REPOSITORY = "Wargames-Development/DistantHorizons-WDG";
     public static final String EXPECTED_BRANCH = "master";
     public static final String UPSTREAM_REPOSITORY = "DarkShadow44/DistantHorizonsStandalone";
-    public static final String BASE_COMMIT = "b6070591b151e7853da458162186b3939f6f3384";
+    public static final String BASE_COMMIT = "170c809b2befbb3c54bd143ac68f8a9329e41f07";
     public static final String RELEASE_CHANNEL = "RELEASE_CANDIDATE";
     public static final String UPDATER_POLICY = "MANAGED_DISABLED";
     public static final String PACKAGE_CONTRACT = "change-007-rc-v1";
@@ -95,7 +95,7 @@ public final class ProvenanceSupport {
         if (normalizedMode.equals("VALIDATION")) {
             if (!commit.equals(BASE_COMMIT)) {
                 throw new IllegalStateException(
-                    "Validation provenance must identify Change 006 base commit " + BASE_COMMIT + ", found " + commit
+                    "Validation provenance must identify Change 007 base commit " + BASE_COMMIT + ", found " + commit
                 );
             }
             if (!treeState.equals("modified")) {

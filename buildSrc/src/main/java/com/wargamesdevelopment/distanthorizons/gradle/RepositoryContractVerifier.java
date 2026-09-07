@@ -70,6 +70,7 @@ public final class RepositoryContractVerifier {
         "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/StableReleaseGate.java",
         "buildSrc/src/main/java/com/wargamesdevelopment/distanthorizons/gradle/VerifyStableReleaseGateTask.java",
         "src/test/java/com/seibel/distanthorizons/coreapi/BuildWarningMessagesTest.java",
+        "src/test/java/com/seibel/distanthorizons/coreapi/SingleLineChatMessagesTest.java",
         "src/test/java/com/seibel/distanthorizons/coreapi/ReleaseChannelTest.java",
         "src/test/java/com/seibel/distanthorizons/coreapi/WdgVersionPolicyTest.java",
         "src/test/java/com/seibel/distanthorizons/core/jar/BuildInfoParserTest.java",
@@ -131,6 +132,13 @@ public final class RepositoryContractVerifier {
         for (String marker : List.of("DEVELOPMENT", "RELEASE_CANDIDATE", "STABLE", "List.of", "indexOf('\\n')", "indexOf('\\r')")) {
             require(warning, marker, "warning model");
         }
+
+        String chatMessages = read(projectDir, "src/main/java/com/seibel/distanthorizons/coreapi/SingleLineChatMessages.java");
+        require(chatMessages, "submitText(String text", "legacy multiline chat splitter");
+        require(chatMessages, "split(\"\\n\", -1)", "line-feed splitting");
+        String minecraftClientWrapper = read(projectDir, "src/main/java/com/seibel/distanthorizons/common/wrappers/minecraft/MinecraftClientWrapper.java");
+        require(minecraftClientWrapper, "SingleLineChatMessages.submitText(string", "central chat line-safe submission");
+        reject(minecraftClientWrapper, "new ChatComponentText(string)", "unsplit multiline chat component");
 
         String modJarInfo = read(projectDir, "src/main/java/com/seibel/distanthorizons/core/jar/ModJarInfo.java");
         require(modJarInfo, "RESOURCE_PATH = \"/build_info.json\"", "canonical build-info path");

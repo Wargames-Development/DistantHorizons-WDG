@@ -175,7 +175,7 @@ public class MinecraftClientWrapper extends AbstractMinecraftSharedWrapper
         if (player == null) {
             return;
         }
-        player.addChatMessage(new ChatComponentText(string));
+        SingleLineChatMessages.submitText(string, line -> player.addChatMessage(new ChatComponentText(line)));
     }
 
     @Override
@@ -194,7 +194,7 @@ public class MinecraftClientWrapper extends AbstractMinecraftSharedWrapper
             return;
         }
 
-        player.addChatMessage(new ChatComponentText(string)); // TODO
+        SingleLineChatMessages.submitText(string, line -> player.addChatMessage(new ChatComponentText(line))); // TODO
     }
 
     @Override
