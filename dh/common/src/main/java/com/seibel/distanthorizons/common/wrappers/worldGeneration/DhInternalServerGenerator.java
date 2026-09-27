@@ -370,10 +370,11 @@ public class DhInternalServerGenerator
 					// but we want to avoid an endless loop.
 					int remainingDrainAttemptCount = MAX_UNLOAD_DRAIN_ATTEMPT_COUNT;
 					#if MC_VER <= MC_1_7_10
-					while (!provider.droppedChunksSet.isEmpty() && remainingDrainAttemptCount-- > 0)
-					{
-						provider.unloadQueuedChunks();
-					}
+					// 1.7.10 server forks such as Crucible replace the vanilla unload queue
+					// field with a different runtime type. Calling the public unload API avoids
+					// linking against that implementation detail while still draining this
+					// generation event's queued chunks.
+					provider.unloadQueuedChunks();
 					#else
 					while (!provider.droppedChunks.isEmpty() && remainingDrainAttemptCount-- > 0)
 					{
