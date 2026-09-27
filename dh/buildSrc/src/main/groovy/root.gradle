@@ -60,8 +60,16 @@ gradle.projectsEvaluated {
             return
         }
         
-        it.tasks.downgradeJar.inputFile = it.tasks.remapJar.archiveFile
         it.tasks.jar.finalizedBy(it.tasks.remapJar)
-        it.tasks.remapJar.finalizedBy(it.tasks.shadeDowngradedApi)
+
+        // Only wire JVMDowngrader into the archive pipeline for versions that
+        // actually compile above their target runtime. 1.7.10 is compiled
+        // directly for Java 8, so forcing shadeDowngradedApi here is both
+        // unnecessary and can fail independently of the real Forge 1.7.10 jar.
+        if (it.ext.has('needsDowngrade') && it.ext.needsDowngrade)
+        {
+            it.tasks.downgradeJar.inputFile = it.tasks.remapJar.archiveFile
+            it.tasks.remapJar.finalizedBy(it.tasks.shadeDowngradedApi)
+        }
     }
 }
