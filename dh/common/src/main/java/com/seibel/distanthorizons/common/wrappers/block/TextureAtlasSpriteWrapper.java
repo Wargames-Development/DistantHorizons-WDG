@@ -32,6 +32,7 @@ import net.minecraft.client.renderer.IconFlipped;
 import net.minecraft.util.IIcon;
 import org.jetbrains.annotations.Nullable;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 #endif
 
 #if MC_VER < MC_1_17_1
@@ -200,7 +201,7 @@ public class TextureAtlasSpriteWrapper
 	 * 1.7.10 predates the baked model system, so there are no quads to rasterize;
 	 * textures are fetched directly via {@link IIcon} using the same mod-compat
 	 * handling {@link ClientBlockStateColorCache} uses
-	 * (GregTech, {@link IconFlipped}, TwilightForest, IC2).
+	 * (GregTech, {@link IconFlipped}, TwilightForest, IC2, AE2).
 	 *
 	 * @param sideOrdinal the {@link net.minecraftforge.common.util.ForgeDirection}/vanilla side
 	 *                    index passed to {@link Block#getIcon(int, int)}
@@ -240,7 +241,42 @@ public class TextureAtlasSpriteWrapper
 			icon = unwrapIcon(icon, "mappedTexture");
 		}
 		
+		// AE2 wraps Sky Stone (and other block) sprites in FlippableIcon.
+		// Its public getOriginal() also works for FlippableIcon subclasses.
+		icon = unwrapAe2Icon(icon);
 		return (icon instanceof TextureAtlasSprite) ? (TextureAtlasSprite) icon : null;
+	}
+
+	/** Returns the underlying icon from AE2's FlippableIcon without requiring AE2 at build time. */
+	private static IIcon unwrapAe2Icon(IIcon icon)
+	{
+		for (int depth = 0; depth < 8 && icon != null; depth++)
+		{
+			Class<?> type = icon.getClass();
+			while (type != null && !type.getName().equals("appeng.client.texture.FlippableIcon"))
+			{
+				type = type.getSuperclass();
+			}
+			if (type == null)
+			{
+				break;
+			}
+			try
+			{
+				Method method = type.getMethod("getOriginal");
+				Object original = method.invoke(icon);
+				if (!(original instanceof IIcon) || original == icon)
+				{
+					break;
+				}
+				icon = (IIcon) original;
+			}
+			catch (ReflectiveOperationException | SecurityException e)
+			{
+				break;
+			}
+		}
+		return icon;
 	}
 
 	/**
