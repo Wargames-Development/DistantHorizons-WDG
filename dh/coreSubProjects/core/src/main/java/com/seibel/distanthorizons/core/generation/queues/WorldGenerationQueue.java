@@ -278,7 +278,7 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		
 		// queue more tasks if any of the threads are available
 		int worldGenThreadCount = Math.max(Config.Common.MultiThreading.numberOfThreads.get(), 1);
-		return this.inProgressGenTasksByLodPos.size() > worldGenThreadCount;
+		return this.inProgressGenTasksByLodPos.size() >= worldGenThreadCount;
 	}
 	/**
 	 * @param targetPos the position to center the generation around
@@ -396,6 +396,12 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		{
 			try
 			{
+				boolean taskRemoved = this.inProgressGenTasksByLodPos.remove(taskPos, worldGenTask);
+				if (!taskRemoved)
+				{
+					LOGGER.warn("Unable to find in-progress generator task with position [" + DhSectionPos.toString(taskPos) + "] while completing it.");
+				}
+
 				if (exception != null)
 				{
 					// don't log the shutdown exceptions
@@ -410,10 +416,6 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 				else
 				{
 					fullDataSource.recordLastSeen();
-					
-					boolean taskRemoved = this.inProgressGenTasksByLodPos.remove(taskPos, worldGenTask);
-					LodUtil.assertTrue(taskRemoved, "Unable to find in progress generator task with position ["+DhSectionPos.toString(taskPos)+"]");
-					
 					worldGenTask.future.complete(DataSourceRetrievalResult.CreateSuccess(taskPos, fullDataSource));
 				}
 			}
@@ -705,6 +707,11 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		LOGGER.info("Closing world gen queue");
 		this.queueingThread.shutdownNow();
 		
+		// Waiting work has not reached the generator yet, so it is safe to cancel
+		// immediately. Running generation is handled separately below so its normal
+		// generator cleanup/finally blocks still get a chance to execute.
+		this.waitingTaskByPos.values().forEach((worldGenTask) -> worldGenTask.future.cancel(true));
+		this.waitingTaskByPos.clear();
 		
 		// stop and remove any in progress tasks
 		ArrayList<CompletableFuture<Void>> inProgressTasksCancelingFutures = new ArrayList<>(this.inProgressGenTasksByLodPos.size());

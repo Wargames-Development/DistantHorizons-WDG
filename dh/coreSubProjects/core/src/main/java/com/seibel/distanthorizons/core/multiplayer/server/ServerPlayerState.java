@@ -23,6 +23,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.io.Closeable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ServerPlayerState implements Closeable
 {
@@ -45,6 +46,11 @@ public class ServerPlayerState implements Closeable
 	
 	public final FullDataPayloadSender fullDataPayloadSender;
 	
+	private final AtomicBoolean closing = new AtomicBoolean();
+	private final AtomicBoolean closed = new AtomicBoolean();
+	public boolean isClosing() { return this.closing.get() || this.networkSession.isClosed(); }
+	public void beginClosing() { this.closing.set(true); }
+
 	private final ConcurrentHashMap<AbstractDhServerLevel, RateLimiterSet> rateLimiterSets = new ConcurrentHashMap<>();
 	public RateLimiterSet getRateLimiterSet(AbstractDhServerLevel level) { return this.rateLimiterSets.computeIfAbsent(level, ignored -> new RateLimiterSet()); }
 	public void clearRateLimiterSets() { this.rateLimiterSets.clear(); }
@@ -119,6 +125,12 @@ public class ServerPlayerState implements Closeable
 	@Override
 	public void close()
 	{
+		this.beginClosing();
+		if (!this.closed.compareAndSet(false, true))
+		{
+			return;
+		}
+
 		this.fullDataPayloadSender.close();
 		this.configAnyChangeListener.close();
 		this.networkSession.close();

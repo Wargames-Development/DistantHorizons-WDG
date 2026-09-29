@@ -223,7 +223,16 @@ public abstract class AbstractDhServerLevel extends AbstractDhLevel implements I
 	//=================//
 	
 	public void addPlayer(IServerPlayerWrapper serverPlayer) { this.worldGenPlayerCenteringQueue.add(serverPlayer); }
-	public void removePlayer(IServerPlayerWrapper serverPlayer) { this.worldGenPlayerCenteringQueue.remove(serverPlayer); }
+	public void removePlayer(IServerPlayerWrapper serverPlayer)
+	{
+		this.worldGenPlayerCenteringQueue.remove(serverPlayer);
+
+		ServerPlayerState playerState = this.serverPlayerStateManager.getConnectedPlayer(serverPlayer);
+		if (playerState != null)
+		{
+			this.requestHandler.cancelRequestsForPlayer(playerState);
+		}
+	}
 	
 	@Override
 	public CompletableFuture<Void> updateDataSourcesAsync(FullDataSourceV2 data)

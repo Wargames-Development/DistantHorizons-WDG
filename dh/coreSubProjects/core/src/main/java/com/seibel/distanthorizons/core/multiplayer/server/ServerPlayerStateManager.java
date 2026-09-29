@@ -33,6 +33,11 @@ public class ServerPlayerStateManager
 	
 	public void unregisterLeftPlayer(IServerPlayerWrapper serverPlayer)
 	{
+		// Plugin messages may have been queued before the session became ready.
+		// Always discard that per-player queue when the player leaves so the wrapper,
+		// messages, and their session references cannot survive the disconnect.
+		this.messageQueueByPlayerWrapper.remove(serverPlayer);
+
 		ServerPlayerState playerState = this.connectedPlayerStateByPlayerWrapper.remove(serverPlayer);
 		if (playerState != null)
 		{

@@ -10,6 +10,7 @@ import io.netty.buffer.ByteBuf;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.*;
 
 public class FullDataPayloadSender implements AutoCloseable
@@ -29,6 +30,7 @@ public class FullDataPayloadSender implements AutoCloseable
 	private final ConcurrentLinkedQueue<PendingTransfer> transferQueue = new ConcurrentLinkedQueue<>();
 	
 	private final SharedBandwidthLimit sharedBandwidthLimit;
+	private final AtomicBoolean closed = new AtomicBoolean();
 	
 	
 	public FullDataPayloadSender(NetworkSession session, IntSupplier maxKBpsSupplier, SharedBandwidthLimit sharedBandwidthLimit)
@@ -42,17 +44,62 @@ public class FullDataPayloadSender implements AutoCloseable
 	@Override
 	public void close()
 	{
+		if (!this.closed.compareAndSet(false, true))
+		{
+			return;
+		}
+
 		this.tickTimerTask.cancel();
+		UPLOAD_TIMER.purge();
+		this.sharedBandwidthLimit.setSenderActive(this, false);
+
+		PendingTransfer pendingTransfer;
+		while ((pendingTransfer = this.transferQueue.poll()) != null)
+		{
+			pendingTransfer.discard();
+		}
 	}
 	
 	
 	public void sendInChunks(FullDataPayload payload, Runnable sendFinalMessage)
 	{
-		this.transferQueue.add(new PendingTransfer(payload, sendFinalMessage));
+		this.sendInChunks(payload, sendFinalMessage, () -> { });
+	}
+
+	public void sendInChunks(FullDataPayload payload, Runnable sendFinalMessage, Runnable discardMessage)
+	{
+		PendingTransfer pendingTransfer = new PendingTransfer(payload, sendFinalMessage, discardMessage);
+		if (this.closed.get())
+		{
+			pendingTransfer.discard();
+			return;
+		}
+
+		this.transferQueue.add(pendingTransfer);
+
+		// close() may have raced with the queue insertion. If so, remove this exact
+		// transfer and run its discard callback so request permits are not leaked.
+		if (this.closed.get() && this.transferQueue.remove(pendingTransfer))
+		{
+			pendingTransfer.discard();
+		}
 	}
 	
 	private void tick()
 	{
+		if (this.closed.get())
+		{
+			this.sharedBandwidthLimit.setSenderActive(this, false);
+			return;
+		}
+
+		boolean hasPendingTransfers = !this.transferQueue.isEmpty();
+		this.sharedBandwidthLimit.setSenderActive(this, hasPendingTransfers);
+		if (!hasPendingTransfers)
+		{
+			return;
+		}
+
 		int bandwidthShare = this.sharedBandwidthLimit.getBandwidthShare();
 		int maxPlayerRate = Math.min(this.maxKBpsSupplier.getAsInt(), bandwidthShare);
 		
@@ -61,13 +108,19 @@ public class FullDataPayloadSender implements AutoCloseable
 				? (maxPlayerRate * 1000) / TICK_RATE + 1
 				: Integer.MAX_VALUE;
 		
-		this.sharedBandwidthLimit.setSenderActive(this, bytesToSend > 0);
-		
-		while (bytesToSend > 0)
+		while (bytesToSend > 0 && !this.closed.get())
 		{
 			PendingTransfer pendingTransfer = this.transferQueue.peek();
 			if (pendingTransfer == null)
 			{
+				return;
+			}
+			if (this.closed.get())
+			{
+				if (this.transferQueue.remove(pendingTransfer))
+				{
+					pendingTransfer.discard();
+				}
 				return;
 			}
 			
@@ -81,15 +134,8 @@ public class FullDataPayloadSender implements AutoCloseable
 			
 			if (pendingTransfer.buffer.readableBytes() == 0)
 			{
-				try
-				{
-					pendingTransfer.sendFinalMessage.run();
-				}
-				catch (Throwable e)
-				{
-					LOGGER.error("Failed to send the completed full data transfer", e);
-				}
-				this.transferQueue.poll();
+				this.transferQueue.remove(pendingTransfer);
+				pendingTransfer.complete();
 			}
 		}
 	}
@@ -100,12 +146,49 @@ public class FullDataPayloadSender implements AutoCloseable
 		public final int bufferId;
 		public final ByteBuf buffer;
 		public final Runnable sendFinalMessage;
+		public final Runnable discardMessage;
+		private final AtomicBoolean resolved = new AtomicBoolean();
 		
-		private PendingTransfer(FullDataPayload payload, Runnable sendFinalMessage)
+		private PendingTransfer(FullDataPayload payload, Runnable sendFinalMessage, Runnable discardMessage)
 		{
 			this.bufferId = payload.dtoBufferId;
 			this.buffer = payload.dtoBuffer.duplicate().readerIndex(0);
 			this.sendFinalMessage = sendFinalMessage;
+			this.discardMessage = discardMessage;
+		}
+
+		private void complete()
+		{
+			if (!this.resolved.compareAndSet(false, true))
+			{
+				return;
+			}
+
+			try
+			{
+				this.sendFinalMessage.run();
+			}
+			catch (Throwable e)
+			{
+				LOGGER.error("Failed to send the completed full data transfer", e);
+			}
+		}
+
+		private void discard()
+		{
+			if (!this.resolved.compareAndSet(false, true))
+			{
+				return;
+			}
+
+			try
+			{
+				this.discardMessage.run();
+			}
+			catch (Throwable e)
+			{
+				LOGGER.error("Failed to discard an incomplete full data transfer", e);
+			}
 		}
 		
 	}

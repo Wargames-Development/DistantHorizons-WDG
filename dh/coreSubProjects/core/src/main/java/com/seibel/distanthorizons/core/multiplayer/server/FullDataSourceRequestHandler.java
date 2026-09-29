@@ -38,6 +38,8 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 	
 	private final ConcurrentMap<Long, DataSourceRequestGroup> requestGroupsByPos = new ConcurrentHashMap<>();
 	private final ConcurrentMap<Long, DataSourceRequestGroup> requestGroupsByFutureId = new ConcurrentHashMap<>();
+	private final ConcurrentMap<Long, SyncRequestState> syncRequestsByFutureId = new ConcurrentHashMap<>();
+	private final AtomicBoolean closed = new AtomicBoolean();
 	
 	
 	
@@ -62,6 +64,11 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 	
 	public void queueLodSyncForRequestMessage(ServerPlayerState serverPlayerState, FullDataSourceRequestMessage message, ServerPlayerState.RateLimiterSet rateLimiterSet)
 	{
+		if (this.closed.get() || serverPlayerState.isClosing())
+		{
+			return;
+		}
+
 		if (!serverPlayerState.sessionConfig.getSynchronizeOnLoad())
 		{
 			message.sendResponse(new RequestRejectedException("Operation is disabled in config."));
@@ -73,28 +80,40 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 			return;
 		}
 		
-		
+		SyncRequestState syncRequestState = new SyncRequestState(serverPlayerState, message.futureId, rateLimiterSet);
+		this.syncRequestsByFutureId.put(message.futureId, syncRequestState);
+		if (this.closed.get() || serverPlayerState.isClosing())
+		{
+			syncRequestState.cancel();
+			return;
+		}
 		
 		AbstractExecutorService fileHandlerExecutor = ThreadPoolUtil.getFileHandlerExecutor();
 		if (fileHandlerExecutor == null)
 		{
-			// shouldn't normally happen, but just in case
 			LOGGER.warn("Unable to send FullDataSourceResponseMessage - getFileHandlerExecutor() is null");
+			syncRequestState.finish();
 			return;
 		}
 		
 		AbstractExecutorService networkCompressionExecutor = ThreadPoolUtil.getNetworkCompressionExecutor();
 		if (networkCompressionExecutor == null)
 		{
-			// shouldn't normally happen, but just in case
 			LOGGER.warn("Unable to send FullDataSourceResponseMessage - getNetworkCompressionExecutor() is null");
+			syncRequestState.finish();
 			return;
 		}
 		
-		
-		// get the data requested by the client
-		CompletableFuture<FullDataSourceV2> getServerDatasourceFuture = CompletableFuture.supplyAsync(() -> 
+		CompletableFuture<FullDataSourceV2> getServerDatasourceFuture;
+		try
+		{
+			getServerDatasourceFuture = CompletableFuture.supplyAsync(() ->
 			{
+				if (syncRequestState.isCancelled() || this.closed.get())
+				{
+					return null;
+				}
+
 				try
 				{
 					// the client timestamp will be null if we want to retrieve the LOD regardless of when it was last updated
@@ -102,16 +121,11 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 					
 					// the server timestamp will be null if no LOD data exists for this position
 					Long serverTimestamp = this.fullDataSourceProvider().getTimestampForPos(message.sectionPos);
-					if (serverTimestamp == null
-						|| serverTimestamp <= clientTimestamp)
+					if (serverTimestamp == null || serverTimestamp <= clientTimestamp)
 					{
-						// either no data exists to sync, or the client is already up to date
-						rateLimiterSet.syncOnLoginRateLimiter.release();
-						message.sendResponse(new FullDataSourceResponseMessage(null));
 						return null;
 					}
 					
-					// get the server's datasource
 					return this.fullDataSourceProvider().get(message.sectionPos);
 				}
 				catch (Exception e)
@@ -120,38 +134,104 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 					return null;
 				}
 			}, fileHandlerExecutor);
+		}
+		catch (RejectedExecutionException e)
+		{
+			syncRequestState.finish();
+			return;
+		}
 		
-		// send the found data
-		getServerDatasourceFuture.thenAcceptAsync(fullDataSource ->
+		getServerDatasourceFuture.whenComplete((fullDataSource, throwable) ->
+		{
+			if (syncRequestState.isCancelled() || this.closed.get() || serverPlayerState.isClosing())
 			{
-				try
+				if (fullDataSource != null)
 				{
-					// no server data source found
-					if (fullDataSource == null)
+					fullDataSource.close();
+				}
+				syncRequestState.finish();
+				return;
+			}
+
+			if (throwable != null)
+			{
+				LOGGER.debug("LOD sync request ended before a response could be sent: [" + throwable.getClass().getSimpleName() + "].");
+				syncRequestState.finish();
+				return;
+			}
+
+			try
+			{
+				CompletableFuture.runAsync(() ->
+				{
+					if (syncRequestState.isCancelled() || this.closed.get() || serverPlayerState.isClosing())
 					{
+						if (fullDataSource != null)
+						{
+							fullDataSource.close();
+						}
+						syncRequestState.finish();
 						return;
 					}
 					
-					// send the found data source to client
-					FullDataPayload payload = new FullDataPayload(fullDataSource, this.getAllBeamsForPos(message.sectionPos));
-					fullDataSource.close();
-					
-					serverPlayerState.fullDataPayloadSender.sendInChunks(payload, () ->
+					if (fullDataSource == null)
 					{
-						message.sendResponse(new FullDataSourceResponseMessage(payload));
-						rateLimiterSet.syncOnLoginRateLimiter.release();
-					});
-				}
-				catch (Exception e)
+						message.sendResponse(new FullDataSourceResponseMessage(null));
+						syncRequestState.finish();
+						return;
+					}
+
+					try
+					{
+						FullDataPayload payload;
+						try
+						{
+							payload = new FullDataPayload(fullDataSource, this.getAllBeamsForPos(message.sectionPos));
+						}
+						finally
+						{
+							fullDataSource.close();
+						}
+
+						serverPlayerState.fullDataPayloadSender.sendInChunks(payload, () ->
+						{
+							if (!serverPlayerState.isClosing())
+							{
+								message.sendResponse(new FullDataSourceResponseMessage(payload));
+							}
+							syncRequestState.finish();
+						}, syncRequestState::finish);
+					}
+					catch (Exception e)
+					{
+						LOGGER.error("Unexpected issue sending request for pos [" + DhSectionPos.toString(message.sectionPos) + "], error: [" + e.getMessage() + "].", e);
+						syncRequestState.finish();
+					}
+				}, networkCompressionExecutor).exceptionally(responseThrowable ->
 				{
-					LOGGER.error("Unexpected issue sending request for pos [" + DhSectionPos.toString(message.sectionPos) + "], error: [" + e.getMessage() + "].", e);
+					syncRequestState.finish();
+					return null;
+				});
+			}
+			catch (RejectedExecutionException e)
+			{
+				if (fullDataSource != null)
+				{
+					fullDataSource.close();
 				}
-			}, networkCompressionExecutor);
+				syncRequestState.finish();
+			}
+		});
 		
 	}
 	
 	public void queueWorldGenForRequestMessage(ServerPlayerState serverPlayerState, FullDataSourceRequestMessage message, ServerPlayerState.RateLimiterSet rateLimiterSet)
 	{
+		if (this.closed.get() || serverPlayerState.isClosing())
+		{
+			return;
+		}
+
 		if (!Config.Common.WorldGenerator.generatorPlan.get().generationEnabled)
 		{
 			message.sendResponse(new RequestRejectedException("Operation is disabled in config."));
@@ -168,7 +248,13 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 	
 	private void doQueueWorldGenForRequestMessage(DataSourceRequestGroup.RequestData requestData)
 	{
-		while (true)
+		if (this.closed.get() || requestData.serverPlayerState.isClosing())
+		{
+			requestData.releaseRateLimitOnce();
+			return;
+		}
+
+		while (!this.closed.get())
 		{
 			AtomicBoolean createdNewGroup = new AtomicBoolean(false);
 			DataSourceRequestGroup requestGroup = this.requestGroupsByPos.computeIfAbsent(requestData.sectionPos(), pos ->
@@ -200,24 +286,48 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 			}
 			
 			this.requestGroupsByFutureId.put(requestData.futureId(), requestGroup);
-			break;
+			if (this.closed.get() || requestData.serverPlayerState.isClosing())
+			{
+				this.cancelGenerationRequest(requestData.futureId());
+			}
+			return;
 		}
+
+		requestData.releaseRateLimitOnce();
 	}
 	
 	public void cancelRequest(long requestId)
 	{
+		SyncRequestState syncRequestState = this.syncRequestsByFutureId.get(requestId);
+		if (syncRequestState != null)
+		{
+			syncRequestState.cancel();
+			return;
+		}
+
+		this.cancelGenerationRequest(requestId);
+	}
+
+	private boolean cancelGenerationRequest(long requestId)
+	{
 		DataSourceRequestGroup requestGroup = this.requestGroupsByFutureId.remove(requestId);
 		if (requestGroup == null)
 		{
-			return;
+			return false;
 		}
 		
 		DataSourceRequestGroup.RequestData removedRequest = requestGroup.tryRemoveRequest(requestId, requestsToTransfer ->
 		{
 			LOGGER.debug("[" + this.getLevelIdentifier() + "] Cancelled request group [" + DhSectionPos.toString(requestGroup.pos) + "].");
-			this.requestGroupsByPos.remove(requestGroup.pos);
+			this.requestGroupsByPos.remove(requestGroup.pos, requestGroup);
 			
-			if (!requestsToTransfer.isEmpty())
+			FullDataSourceV2 completedDataSource = requestGroup.takeFullDataSource();
+			if (completedDataSource != null)
+			{
+				completedDataSource.close();
+			}
+
+			if (!requestsToTransfer.isEmpty() && !this.closed.get())
 			{
 				for (DataSourceRequestGroup.RequestData requestToTransfer : requestsToTransfer)
 				{
@@ -232,7 +342,41 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 		
 		if (removedRequest != null)
 		{
-			removedRequest.rateLimiterSet.generationRequestRateLimiter.release();
+			removedRequest.releaseRateLimitOnce();
+			return true;
+		}
+
+		return false;
+	}
+
+	public void cancelRequestsForPlayer(ServerPlayerState serverPlayerState)
+	{
+		int cancelledSyncRequestCount = 0;
+		for (SyncRequestState syncRequestState : this.syncRequestsByFutureId.values())
+		{
+			if (syncRequestState.serverPlayerState == serverPlayerState)
+			{
+				syncRequestState.cancel();
+				cancelledSyncRequestCount++;
+			}
+		}
+
+		int cancelledGenerationRequestCount = 0;
+		for (Map.Entry<Long, DataSourceRequestGroup> entry : this.requestGroupsByFutureId.entrySet())
+		{
+			DataSourceRequestGroup.RequestData requestData = entry.getValue().requestMessages.get(entry.getKey());
+			if (requestData != null && requestData.serverPlayerState == serverPlayerState)
+			{
+				if (this.cancelGenerationRequest(entry.getKey()))
+				{
+					cancelledGenerationRequestCount++;
+				}
+			}
+		}
+
+		if (cancelledSyncRequestCount != 0 || cancelledGenerationRequestCount != 0)
+		{
+			LOGGER.info("[" + this.getLevelIdentifier() + "] Player left; cancelled [" + cancelledGenerationRequestCount + "] generation requests and [" + cancelledSyncRequestCount + "] LOD sync requests. Remaining generation groups: [" + this.requestGroupsByPos.size() + "].");
 		}
 	}
 	
@@ -243,10 +387,19 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 		provider.getAsync(pos)
 			.thenAccept((FullDataSourceV2 fullDataSource) ->
 		{
+			if (requestGroup.isClosed.get() || this.closed.get())
+			{
+				fullDataSource.close();
+				return;
+			}
+
 			if (provider.generationStepsAreFullyGenerated(fullDataSource.columnGenerationSteps))
 			{
 				//LOGGER.info("sending - complete [" + DhSectionPos.toString(pos) + "]");
-				requestGroup.fullDataSource = fullDataSource;
+				if (!requestGroup.trySetFullDataSource(fullDataSource))
+				{
+					fullDataSource.close();
+				}
 				return;
 			}
 			
@@ -257,7 +410,7 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 					: this.serverLevel.serverside.fullDataFileHandler.lowestDataDetailLevel()))
 			{
 				// Make this group unavailable for adding into
-				this.requestGroupsByPos.remove(pos);
+				this.requestGroupsByPos.remove(pos, requestGroup);
 				if (!requestGroup.tryClose())
 				{
 					//LOGGER.info("closing [" + DhSectionPos.toString(pos) + "]");
@@ -268,20 +421,26 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 				{
 					//LOGGER.info("sending [" + DhSectionPos.toString(pos) + "] - ["+DhSectionPos.toString(requestData.sectionPos())+"]");
 					
-					this.requestGroupsByFutureId.remove(requestData.futureId());
-					requestData.rateLimiterSet.generationRequestRateLimiter.release();
+					this.requestGroupsByFutureId.remove(requestData.futureId(), requestGroup);
+					requestData.releaseRateLimitOnce();
 					requestData.message.sendResponse(new SectionRequiresSplittingException());
 				}
 			}
 			else if (requestGroup.isWorldGenTaskComplete())
 			{
 				//LOGGER.info("sending - retry [" + DhSectionPos.toString(pos) + "]");
-				this.tryFulfillDataSourceRequestGroup(requestGroup, pos);
+				if (!requestGroup.isClosed.get() && !this.closed.get())
+				{
+					this.tryFulfillDataSourceRequestGroup(requestGroup, pos);
+				}
 			}
 			else
 			{
 				//LOGGER.info("queueing incomplete world gen [" + DhSectionPos.toString(pos) + "]");
-				this.fullDataSourceProvider().queuePositionForRetrieval(pos);
+				if (!requestGroup.isClosed.get() && !this.closed.get())
+				{
+					this.fullDataSourceProvider().queuePositionForRetrieval(pos);
+				}
 			}
 		});
 	}
@@ -316,21 +475,42 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 	}
 	private void tick()
 	{
+		if (this.closed.get())
+		{
+			return;
+		}
+
 		// Send finished data source requests
 		for (Map.Entry<Long, DataSourceRequestGroup> entry : this.requestGroupsByPos.entrySet())
 		{
 			DataSourceRequestGroup requestGroup = entry.getValue();
-			if (requestGroup.fullDataSource == null)
+			if (!requestGroup.hasFullDataSource())
 			{
 				continue;
 			}
 			
 			LOGGER.debug("[" + this.getLevelIdentifier() + "] Fulfilled request group [" + DhSectionPos.toString(entry.getKey()) + "]");
 			
-			// Make this group unavailable for adding into
-			this.requestGroupsByPos.remove(entry.getKey());
+			// Make this exact group unavailable for adding into. A replacement group may
+			// already exist for the same position, so never remove by key alone.
+			if (!this.requestGroupsByPos.remove(entry.getKey(), requestGroup))
+			{
+				continue;
+			}
 			if (!requestGroup.tryClose())
 			{
+				continue;
+			}
+
+			FullDataSourceV2 fullDataSource = requestGroup.takeFullDataSource();
+			if (fullDataSource == null)
+			{
+				continue;
+			}
+
+			if (requestGroup.requestMessages.isEmpty())
+			{
+				fullDataSource.close();
 				continue;
 			}
 			
@@ -338,23 +518,67 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 			if (executor == null)
 			{
 				LOGGER.warn("Unable to send FullDataSourceResponseMessage - getNetworkCompressionExecutor() is null");
-				continue;
-			}
-			CompletableFuture.runAsync(() ->
-			{
-				FullDataPayload payload = new FullDataPayload(requestGroup.fullDataSource, this.getAllBeamsForPos(entry.getKey()));
-				requestGroup.fullDataSource.close();
-				
+				fullDataSource.close();
 				for (DataSourceRequestGroup.RequestData requestData : requestGroup.requestMessages.values())
 				{
-					this.requestGroupsByFutureId.remove(requestData.futureId());
-					
-					requestData.serverPlayerState.fullDataPayloadSender.sendInChunks(payload, () -> {
-						requestData.message.sendResponse(new FullDataSourceResponseMessage(payload));
-						requestData.rateLimiterSet.generationRequestRateLimiter.release();
-					});
+					this.requestGroupsByFutureId.remove(requestData.futureId(), requestGroup);
+					requestData.releaseRateLimitOnce();
 				}
-			}, executor);
+				continue;
+			}
+
+			try
+			{
+				CompletableFuture.runAsync(() ->
+				{
+					FullDataPayload payload;
+					try
+					{
+						payload = new FullDataPayload(fullDataSource, this.getAllBeamsForPos(entry.getKey()));
+					}
+					finally
+					{
+						fullDataSource.close();
+					}
+				
+					for (DataSourceRequestGroup.RequestData requestData : requestGroup.requestMessages.values())
+					{
+						this.requestGroupsByFutureId.remove(requestData.futureId(), requestGroup);
+
+						if (requestData.serverPlayerState.isClosing() || this.closed.get())
+						{
+							requestData.releaseRateLimitOnce();
+							continue;
+						}
+
+						requestData.serverPlayerState.fullDataPayloadSender.sendInChunks(payload, () ->
+						{
+							if (!requestData.serverPlayerState.isClosing())
+							{
+								requestData.message.sendResponse(new FullDataSourceResponseMessage(payload));
+							}
+							requestData.releaseRateLimitOnce();
+						}, requestData::releaseRateLimitOnce);
+					}
+				}, executor).exceptionally(throwable ->
+				{
+					for (DataSourceRequestGroup.RequestData requestData : requestGroup.requestMessages.values())
+					{
+						this.requestGroupsByFutureId.remove(requestData.futureId(), requestGroup);
+						requestData.releaseRateLimitOnce();
+					}
+					return null;
+				});
+			}
+			catch (RejectedExecutionException e)
+			{
+				fullDataSource.close();
+				for (DataSourceRequestGroup.RequestData requestData : requestGroup.requestMessages.values())
+				{
+					this.requestGroupsByFutureId.remove(requestData.futureId(), requestGroup);
+					requestData.releaseRateLimitOnce();
+				}
+			}
 		}
 	}
 	
@@ -367,7 +591,82 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 	@Override 
 	public void close()
 	{
+		if (!this.closed.compareAndSet(false, true))
+		{
+			return;
+		}
+
 		this.tickerThread.shutdownNow();
+
+		for (SyncRequestState syncRequestState : this.syncRequestsByFutureId.values())
+		{
+			syncRequestState.cancel();
+		}
+
+		for (Long requestId : this.requestGroupsByFutureId.keySet())
+		{
+			this.cancelGenerationRequest(requestId);
+		}
+
+		for (DataSourceRequestGroup requestGroup : this.requestGroupsByPos.values())
+		{
+			this.requestGroupsByPos.remove(requestGroup.pos, requestGroup);
+			if (requestGroup.tryClose())
+			{
+				FullDataSourceV2 fullDataSource = requestGroup.takeFullDataSource();
+				if (fullDataSource != null)
+				{
+					fullDataSource.close();
+				}
+				this.fullDataSourceProvider().removeRetrievalRequestIf(pos -> pos == requestGroup.pos);
+			}
+
+			for (DataSourceRequestGroup.RequestData requestData : requestGroup.requestMessages.values())
+			{
+				this.requestGroupsByFutureId.remove(requestData.futureId(), requestGroup);
+				requestData.releaseRateLimitOnce();
+			}
+		}
+
+		this.syncRequestsByFutureId.clear();
+		this.requestGroupsByFutureId.clear();
+		this.requestGroupsByPos.clear();
+	}
+
+
+	private class SyncRequestState
+	{
+		private final ServerPlayerState serverPlayerState;
+		private final long futureId;
+		private final ServerPlayerState.RateLimiterSet rateLimiterSet;
+		private final AtomicBoolean cancelled = new AtomicBoolean();
+		private final AtomicBoolean finished = new AtomicBoolean();
+
+		private SyncRequestState(ServerPlayerState serverPlayerState, long futureId, ServerPlayerState.RateLimiterSet rateLimiterSet)
+		{
+			this.serverPlayerState = serverPlayerState;
+			this.futureId = futureId;
+			this.rateLimiterSet = rateLimiterSet;
+		}
+
+		private boolean isCancelled() { return this.cancelled.get(); }
+
+		private void cancel()
+		{
+			this.cancelled.set(true);
+			this.finish();
+		}
+
+		private void finish()
+		{
+			if (!this.finished.compareAndSet(false, true))
+			{
+				return;
+			}
+
+			FullDataSourceRequestHandler.this.syncRequestsByFutureId.remove(this.futureId, this);
+			this.rateLimiterSet.syncOnLoginRateLimiter.release();
+		}
 	}
 	
 	

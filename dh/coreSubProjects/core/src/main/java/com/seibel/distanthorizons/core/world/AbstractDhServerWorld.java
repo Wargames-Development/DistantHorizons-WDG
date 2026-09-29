@@ -55,13 +55,16 @@ public abstract class AbstractDhServerWorld<TDhServerLevel extends AbstractDhSer
 	@Override
 	public void addPlayer(IServerPlayerWrapper serverPlayer)
 	{
-		ServerPlayerState playerState = this.serverPlayerStateManager.registerJoinedPlayer(serverPlayer);
 		AbstractDhServerLevel serverLevel = (AbstractDhServerLevel) this.getOrLoadServerLevel(serverPlayer.getLevel());
 		if (serverLevel == null)
 		{
 			return;
 		}
-		
+
+		// Only create per-player networking state once there is a valid DH level
+		// to own it. This avoids retaining a half-created player session when level
+		// setup fails or races with server shutdown.
+		ServerPlayerState playerState = this.serverPlayerStateManager.registerJoinedPlayer(serverPlayer);
 		serverLevel.addPlayer(serverPlayer);
 		
 		Iterator<TDhServerLevel> it = this.dhLevelByLevelWrapper.values().stream().distinct().iterator();
@@ -77,21 +80,25 @@ public abstract class AbstractDhServerWorld<TDhServerLevel extends AbstractDhSer
 	@Override
 	public void removePlayer(IServerPlayerWrapper serverPlayer)
 	{
-		IServerLevelWrapper playerLevel = serverPlayer.getLevel();
-		if (playerLevel == null)
+		ServerPlayerState playerState = this.serverPlayerStateManager.getConnectedPlayer(serverPlayer);
+		if (playerState != null)
 		{
-			// can happen during server shutdown
-			return;
+			// Stop any request thread that races with logout from adding more work after
+			// the per-level cancellation pass below has already inspected its queues.
+			playerState.beginClosing();
 		}
-		
-		TDhServerLevel serverLevel = this.getLevel(playerLevel);
-		if (serverLevel == null)
+
+		// A session registers handlers against every loaded DH level, so outstanding
+		// requests are not guaranteed to belong to serverPlayer.getLevel() at the
+		// instant logout fires. Remove the player from every level before closing the
+		// shared ServerPlayerState so each request handler can detach its work.
+		Iterator<TDhServerLevel> levelIterator = this.dhLevelByLevelWrapper.values().stream().distinct().iterator();
+		while (levelIterator.hasNext())
 		{
-			// can happen during server shutdown
-			return;
+			levelIterator.next().removePlayer(serverPlayer);
 		}
-		
-		serverLevel.removePlayer(serverPlayer);
+
+		// Player/session cleanup must not depend on the vanilla level still existing.
 		this.serverPlayerStateManager.unregisterLeftPlayer(serverPlayer);
 		
 		// If player's left, session is already closed

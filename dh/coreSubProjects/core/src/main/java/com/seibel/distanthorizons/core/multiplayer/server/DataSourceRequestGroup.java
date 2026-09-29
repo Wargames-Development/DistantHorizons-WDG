@@ -18,7 +18,7 @@ class DataSourceRequestGroup
 	/**
 	 * If this variable is true, we definitely know that generation is complete and there's no need for checking column gen steps
 	 */
-	private boolean worldGenTaskComplete = false;
+	private volatile boolean worldGenTaskComplete = false;
 	
 	void markWorldGenTaskComplete()
 	{
@@ -31,11 +31,32 @@ class DataSourceRequestGroup
 	}
 	
 	@CheckForNull
-	public FullDataSourceV2 fullDataSource = null;
+	private FullDataSourceV2 fullDataSource = null;
 	
 	public final ConcurrentMap<Long, RequestData> requestMessages = new ConcurrentHashMap<>();
 	public final Semaphore pendingAdditionSemaphore = new Semaphore(Short.MAX_VALUE, true);
 	public final AtomicBoolean isClosed = new AtomicBoolean();
+
+	public synchronized boolean trySetFullDataSource(FullDataSourceV2 newFullDataSource)
+	{
+		if (this.isClosed.get() || this.fullDataSource != null)
+		{
+			return false;
+		}
+
+		this.fullDataSource = newFullDataSource;
+		return true;
+	}
+
+	public synchronized boolean hasFullDataSource() { return this.fullDataSource != null; }
+
+	@CheckForNull
+	public synchronized FullDataSourceV2 takeFullDataSource()
+	{
+		FullDataSourceV2 result = this.fullDataSource;
+		this.fullDataSource = null;
+		return result;
+	}
 	
 	
 	DataSourceRequestGroup(long pos)
@@ -87,6 +108,7 @@ class DataSourceRequestGroup
 		public final ServerPlayerState.RateLimiterSet rateLimiterSet;
 		
 		public final FullDataSourceRequestMessage message;
+		private final AtomicBoolean rateLimitReleased = new AtomicBoolean();
 		public long futureId() { return this.message.futureId; }
 		public long sectionPos() { return this.message.sectionPos; }
 		
@@ -95,6 +117,14 @@ class DataSourceRequestGroup
 			this.serverPlayerState = serverPlayerState;
 			this.rateLimiterSet = rateLimiterSet;
 			this.message = message;
+		}
+
+		public void releaseRateLimitOnce()
+		{
+			if (this.rateLimitReleased.compareAndSet(false, true))
+			{
+				this.rateLimiterSet.generationRequestRateLimiter.release();
+			}
 		}
 		
 	}
