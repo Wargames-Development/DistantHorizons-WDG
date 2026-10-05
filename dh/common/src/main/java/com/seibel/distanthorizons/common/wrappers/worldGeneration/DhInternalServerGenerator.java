@@ -62,6 +62,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -363,6 +364,7 @@ public class DhInternalServerGenerator
 			#if MC_VER <= MC_1_12_2
 			CompletableFuture<Void> tickFuture = ServerThreadTaskHandler.INSTANCE.queueEssentialTask(() ->
 			{
+				if (this.dhServerLevel.getServerLevelWrapper().getDhLevel() != this.dhServerLevel) { return null; }
 				try
 				{
 					ChunkProviderServer provider = (ChunkProviderServer) this.params.mcServerLevel.getChunkProvider();
@@ -485,6 +487,12 @@ public class DhInternalServerGenerator
 			
 			return ServerThreadTaskHandler.INSTANCE.queueTask(() ->
 			{
+				// Unload detaches the wrapper before Forge discards this world's ticket state.
+				// Check on the server thread, where dimension unload and chunk access run.
+				if (this.dhServerLevel.getServerLevelWrapper().getDhLevel() != this.dhServerLevel)
+				{
+					throw new CancellationException("DH level unloaded before its queued chunk request ran.");
+				}
 				ChunkProviderServer provider = (ChunkProviderServer) level.getChunkProvider();
 				
 				// load neighbors first so the target chunk can fully populate.
@@ -608,6 +616,8 @@ public class DhInternalServerGenerator
 		#if MC_VER <= MC_1_12_2
 		return ServerThreadTaskHandler.INSTANCE.queueEssentialTask(() ->
 		{
+			// Forge has already released the world's tickets when an unloaded level reaches here.
+			if (this.dhServerLevel.getServerLevelWrapper().getDhLevel() != this.dhServerLevel) { return null; }
 			try
 			{
 				ChunkProviderServer provider = (ChunkProviderServer) level.getChunkProvider();

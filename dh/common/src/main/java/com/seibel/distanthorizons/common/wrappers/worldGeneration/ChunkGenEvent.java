@@ -104,6 +104,8 @@ public final class ChunkGenEvent
 		{
 			worldGeneratorThreadPool.execute(() ->
 			{
+				// A dimension may unload while this event is waiting in the shared executor.
+				if (genEvent.future.isDone()) { return; }
 				try
 				{
 					if (genEvent.generatorMode == EDhApiDistantGeneratorMode.INTERNAL_SERVER)

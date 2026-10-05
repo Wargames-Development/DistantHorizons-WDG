@@ -763,15 +763,8 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 		LodUtil.assertTrue(this.generatorClosingFuture != null);
 		
 		
-		LOGGER.info("Shutting down world generator thread pool...");
-		
-		PriorityTaskPicker.Executor executor = ThreadPoolUtil.getWorldGenExecutor();
-		if (executor != null)
-		{
-			int queueSize = executor.getQueueSize();
-			executor.clearQueue();
-			LOGGER.info("World generator thread pool shutdown with [" + queueSize + "] incomplete tasks.");
-		}
+		// The executor is shared by all dimensions. Only cancel this level's work;
+		// clearing the shared queue would strand requests in still-loaded levels.
 		
 		this.inProgressGenTasksByLodPos.values().forEach((inProgressWorldGenTaskGroup) -> inProgressWorldGenTaskGroup.future.cancel(true));
 		this.waitingTaskByPos.values().forEach((worldGenTask) -> worldGenTask.future.cancel(true));

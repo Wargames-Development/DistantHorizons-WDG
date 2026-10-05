@@ -68,6 +68,7 @@ public class DhServerWorld extends AbstractDhServerWorld<DhServerLevel>
 				try
 				{
 					DhServerLevel level = new DhServerLevel(this.saveStructure, (IServerLevelWrapper) serverLevelWrapper, this.getServerPlayerStateManager());
+					this.registerConnectedPlayers(level);
 					ApiEventInjector.INSTANCE.fireAllEvents(DhApiLevelLoadEvent.class, new DhApiLevelLoadEvent.EventParam(wrapper));
 					return level;
 				}

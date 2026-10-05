@@ -9,6 +9,7 @@ import com.seibel.distanthorizons.core.multiplayer.server.FullDataSourceRequestH
 import com.seibel.distanthorizons.core.multiplayer.server.ServerPlayerState;
 import com.seibel.distanthorizons.core.multiplayer.server.ServerPlayerStateManager;
 import com.seibel.distanthorizons.core.network.exceptions.RequestOutOfRangeException;
+import com.seibel.distanthorizons.core.network.event.ScopedNetworkEventSource;
 import com.seibel.distanthorizons.core.network.exceptions.SectionRequiresSplittingException;
 import com.seibel.distanthorizons.core.network.messages.AbstractNetworkMessage;
 import com.seibel.distanthorizons.core.network.messages.AbstractTrackableMessage;
@@ -32,6 +33,8 @@ import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.*;
 
 public abstract class AbstractDhServerLevel extends AbstractDhLevel implements IDhServerLevel
@@ -50,6 +53,8 @@ public abstract class AbstractDhServerLevel extends AbstractDhLevel implements I
 	protected final ConcurrentLinkedQueue<IServerPlayerWrapper> worldGenPlayerCenteringQueue = new ConcurrentLinkedQueue<>();
 	
 	private final FullDataSourceRequestHandler requestHandler;
+	private final Map<ServerPlayerState, ScopedNetworkEventSource> playerNetworkScopes = new HashMap<>();
+	private boolean networkClosed;
 	
 	
 	
@@ -125,9 +130,15 @@ public abstract class AbstractDhServerLevel extends AbstractDhLevel implements I
 	// network handling //
 	//==================//
 	
-	public void registerNetworkHandlers(ServerPlayerState serverPlayerState)
+	public synchronized void registerNetworkHandlers(ServerPlayerState serverPlayerState)
 	{
-		serverPlayerState.networkSession.registerHandler(FullDataSourceRequestMessage.class, (message) ->
+		if (this.networkClosed || serverPlayerState.isClosing() || this.playerNetworkScopes.containsKey(serverPlayerState))
+		{
+			return;
+		}
+		ScopedNetworkEventSource scope = new ScopedNetworkEventSource(serverPlayerState.networkSession);
+		this.playerNetworkScopes.put(serverPlayerState, scope);
+		scope.registerHandler(FullDataSourceRequestMessage.class, (message) ->
 		{
 			if (!this.validatePlayerInCurrentLevel(message))
 			{
@@ -178,10 +189,18 @@ public abstract class AbstractDhServerLevel extends AbstractDhLevel implements I
 		});
 		
 		
-		serverPlayerState.networkSession.registerHandler(CancelMessage.class, msg ->
+		scope.registerHandler(CancelMessage.class, msg ->
 		{
 			this.requestHandler.cancelRequest(msg.futureId);
 		});
+	}
+
+	public synchronized void unregisterNetworkHandlers(ServerPlayerState serverPlayerState)
+	{
+		ScopedNetworkEventSource scope = this.playerNetworkScopes.remove(serverPlayerState);
+		if (scope != null) { scope.close(); }
+		this.requestHandler.cancelRequestsForPlayer(serverPlayerState);
+		serverPlayerState.removeRateLimiterSet(this);
 	}
 	
 	
@@ -314,9 +333,22 @@ public abstract class AbstractDhServerLevel extends AbstractDhLevel implements I
 	@Override
 	public void close()
 	{
+		// Detach session callbacks before closing the world resources they capture.
+		synchronized (this)
+		{
+			if (this.networkClosed) { return; }
+			this.networkClosed = true;
+			for (Map.Entry<ServerPlayerState, ScopedNetworkEventSource> entry : this.playerNetworkScopes.entrySet())
+			{
+				entry.getValue().close();
+				entry.getKey().removeRateLimiterSet(this);
+			}
+			this.playerNetworkScopes.clear();
+		}
+		this.serverLevelWrapper.setDhLevel(null);
+		this.requestHandler.close();
 		super.close();
 		this.serverside.close();
-		this.requestHandler.close();
 		LOGGER.info("Closed DHLevel for [" + this.getLevelWrapper() + "].");
 	}
 	

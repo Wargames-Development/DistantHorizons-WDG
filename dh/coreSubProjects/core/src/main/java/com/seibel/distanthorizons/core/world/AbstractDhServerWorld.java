@@ -95,7 +95,9 @@ public abstract class AbstractDhServerWorld<TDhServerLevel extends AbstractDhSer
 		Iterator<TDhServerLevel> levelIterator = this.dhLevelByLevelWrapper.values().stream().distinct().iterator();
 		while (levelIterator.hasNext())
 		{
-			levelIterator.next().removePlayer(serverPlayer);
+			TDhServerLevel level = levelIterator.next();
+			level.removePlayer(serverPlayer);
+			if (playerState != null) { level.unregisterNetworkHandlers(playerState); }
 		}
 
 		// Player/session cleanup must not depend on the vanilla level still existing.
@@ -107,8 +109,19 @@ public abstract class AbstractDhServerWorld<TDhServerLevel extends AbstractDhSer
 	@Override
 	public void changePlayerLevel(IServerPlayerWrapper player, IServerLevelWrapper originLevel, IServerLevelWrapper destinationLevel)
 	{
-		this.getLevel(destinationLevel).addPlayer(player);
-		this.getLevel(originLevel).removePlayer(player);
+		AbstractDhServerLevel destination = (AbstractDhServerLevel) this.getOrLoadServerLevel(destinationLevel);
+		TDhServerLevel origin = this.getLevel(originLevel);
+		if (destination != null) { destination.addPlayer(player); }
+		if (origin != null && origin != destination) { origin.removePlayer(player); }
+	}
+
+	protected void registerConnectedPlayers(AbstractDhServerLevel level)
+	{
+		// WGEvents and other dynamic dimensions can load after player login.
+		for (ServerPlayerState playerState : this.serverPlayerStateManager.getConnectedPlayers())
+		{
+			level.registerNetworkHandlers(playerState);
+		}
 	}
 	
 	

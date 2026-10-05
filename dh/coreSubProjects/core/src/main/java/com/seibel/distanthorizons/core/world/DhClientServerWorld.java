@@ -90,6 +90,7 @@ public class DhClientServerWorld extends AbstractDhServerWorld<DhClientServerLev
 				try
 				{
 					DhClientServerLevel level = new DhClientServerLevel(this.saveStructure, (IServerLevelWrapper) levelWrapper, this.getServerPlayerStateManager());
+					this.registerConnectedPlayers(level);
 					this.clientLevelWrapperSetByDhLevel.computeIfAbsent(level, (clientServerLevel) -> Collections.synchronizedSet(new HashSet<>()));
 					ApiEventInjector.INSTANCE.fireAllEvents(DhApiLevelLoadEvent.class, new DhApiLevelLoadEvent.EventParam(wrapper));
 					return level;

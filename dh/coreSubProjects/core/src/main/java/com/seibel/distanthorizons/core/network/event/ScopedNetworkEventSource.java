@@ -22,6 +22,8 @@ package com.seibel.distanthorizons.core.network.event;
 import com.seibel.distanthorizons.core.network.messages.AbstractNetworkMessage;
 
 import java.util.function.Consumer;
+import java.util.HashSet;
+import java.util.Set;
 
 /** 
  * Provides a way to register network message handlers which are expected to be removed later. <br><br>
@@ -33,9 +35,13 @@ import java.util.function.Consumer;
 public final class ScopedNetworkEventSource extends AbstractNetworkEventSource
 {
 	public final AbstractNetworkEventSource parent;
-	private boolean isClosed = false;
+	private volatile boolean isClosed = false;
+	private final Set<Class<?>> forwardedMessageClasses = new HashSet<>();
 	
-	private final Consumer<AbstractNetworkMessage> actualHandleMessageStable = this::handleMessage;
+	private final Consumer<AbstractNetworkMessage> actualHandleMessageStable = message ->
+	{
+		if (!this.isClosed) { this.handleMessage(message); }
+	};
 	
 	
 	
@@ -52,17 +58,20 @@ public final class ScopedNetworkEventSource extends AbstractNetworkEventSource
 	//==================//
 	
 	@Override
-	public <T extends AbstractNetworkMessage> void registerHandler(Class<T> handlerClass, Consumer<T> handlerImplementation)
+	public synchronized <T extends AbstractNetworkMessage> void registerHandler(Class<T> handlerClass, Consumer<T> handlerImplementation)
 	{
 		if (this.isClosed)
 		{
 			return;
 		}
 		
-		//noinspection unchecked
-		this.parent.registerHandler(this, handlerClass, (Consumer<T>) this.actualHandleMessageStable);
-		
 		super.registerHandler(this, handlerClass, handlerImplementation);
+		// One forwarder dispatches all local handlers for this message type.
+		if (this.forwardedMessageClasses.add(handlerClass))
+		{
+			//noinspection unchecked
+			this.parent.registerHandler(this, handlerClass, (Consumer<T>) this.actualHandleMessageStable);
+		}
 	}
 	
 	
@@ -72,10 +81,12 @@ public final class ScopedNetworkEventSource extends AbstractNetworkEventSource
 	//==========//
 	
 	@Override
-	public void close()
+	public synchronized void close()
 	{
 		this.isClosed = true;
 		this.parent.removeAllHandlers(this);
+		this.forwardedMessageClasses.clear();
+		super.close();
 	}
 	
 }
