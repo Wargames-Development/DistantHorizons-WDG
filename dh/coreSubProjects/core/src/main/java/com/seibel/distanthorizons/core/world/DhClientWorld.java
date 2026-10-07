@@ -272,21 +272,11 @@ public class DhClientWorld extends AbstractDhWorld implements IDhClientWorld
 			
 			// close levels asynchronously to speed up
 			// shutdown on servers with a lot of levels
-			CompletableFuture<Void> closeFuture = new CompletableFuture<>();
-			Thread closeThread = new Thread(() ->
-			{
-				dhClientLevel.close();
-				closeFuture.complete(null);
-			}, "level shutdown");
-			closeThread.start();
-			closeFutures.add(closeFuture);
+			closeFutures.add(LevelShutdown.closeAsync(dhClientLevel::close));
 		}
 		
 		// wait for all the levels to finish closing
-		for (CompletableFuture<Void> future : closeFutures)
-		{
-			future.join();
-		}
+		LevelShutdown.awaitAll(closeFutures);
 		
 		this.clientLevelByDhId.clear();
 		this.clientLevelWrapperSetByDhId.clear();

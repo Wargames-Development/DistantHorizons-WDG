@@ -166,21 +166,11 @@ public abstract class AbstractDhServerWorld<TDhServerLevel extends AbstractDhSer
 			
 			// close levels asynchronously to speed up
 			// shutdown on servers with a lot of levels
-			CompletableFuture<Void> closeFuture = new CompletableFuture<>();
-			Thread closeThread = new Thread(() ->
-			{
-				level.close();
-				closeFuture.complete(null);
-			}, "level shutdown");
-			closeThread.start();
-			closeFutures.add(closeFuture);
+			closeFutures.add(LevelShutdown.closeAsync(level::close));
 		}
 		
 		// wait for all the levels to finish closing
-		for (CompletableFuture<Void> future : closeFutures)
-		{
-			future.join();
-		}
+		LevelShutdown.awaitAll(closeFutures);
 		
 		this.dhLevelByLevelWrapper.clear();
 		LOGGER.info("Closed DhWorld of type [" + this.environment + "].");
