@@ -229,7 +229,8 @@ public class ClientApi
 		{
 			LOGGER.info("Client on ClientOnly mode disconnecting.");
 			
-			world.close();
+			// setDhWorld(null) already closes the previous DH world. Calling
+			// world.close() first closes all levels twice and stalls disconnect.
 			SharedApi.setDhWorld(null);
 		}
 		

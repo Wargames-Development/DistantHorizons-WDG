@@ -242,7 +242,11 @@ public class ChunkWrapper implements IChunkWrapper
 	public static int getHeight(ChunkAccess chunk)
 	#endif
 	{
-		#if MC_VER < MC_1_17_1
+		#if MC_VER <= MC_1_7_10
+		// The DH height is the number of usable vertical block coordinates.
+		// EFR+ Overworld uses 384; vanilla and unmodified dimensions use 256.
+		return getExclusiveMaxBuildHeight(chunk) - getInclusiveMinBuildHeight(chunk);
+		#elif MC_VER < MC_1_17_1
 		return 255;
 		#else
 		return chunk.getHeight();
@@ -274,7 +278,12 @@ public class ChunkWrapper implements IChunkWrapper
 	public static int getExclusiveMaxBuildHeight(ChunkAccess chunk) 
 	#endif
 	{
-		#if MC_VER <= MC_1_12_2
+		#if MC_VER <= MC_1_7_10
+		// World#getHeight() uses the active provider (384 with EFR extended height,
+		// 256 in vanilla). Never exceed the chunk's actual backing sections.
+		int storedHeight = chunk.getBlockStorageArray().length * 16;
+		return chunk.worldObj == null ? storedHeight : Math.min(storedHeight, chunk.worldObj.getHeight());
+		#elif MC_VER <= MC_1_12_2
 		return 256;
 		#elif MC_VER < MC_1_21_3
 		return chunk.getMaxBuildHeight();
@@ -442,7 +451,7 @@ public class ChunkWrapper implements IChunkWrapper
 		if (this.solidHeightMap == null)
 		{
 			#if MC_VER <= MC_1_7_10
-			return 255; // assume max height so we don't miss anything
+			return this.getExclusiveMaxBuildHeight() - 1; // highest usable Y in this chunk
 			#elif MC_VER <= MC_1_12_2
 			return this.chunk.getHeightValue(xRel, zRel);
 			#else

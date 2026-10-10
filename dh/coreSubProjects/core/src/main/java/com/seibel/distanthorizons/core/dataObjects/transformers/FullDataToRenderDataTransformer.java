@@ -335,6 +335,9 @@ public class FullDataToRenderDataTransformer
 		// to copy the top datapoint down and override the one below it
 		int colorToApplyToNextBlock = -1;
 		IBlockStateWrapper blockToApplyToNextBlock = null;
+		// Only avoided vegetation (not snow) uses this guard. Never paint a whole
+		// structural block/merged LOD column with the colour of a thin plant.
+		boolean avoidedBlockTintPending = false;
 		int skylightToApplyToNextBlock = -1;
 		int blocklightToApplyToNextBlock = -1;
 		
@@ -389,6 +392,24 @@ public class FullDataToRenderDataTransformer
 				continue;
 			}
 			
+			// EFR's 1.7.10 aquatic blocks carry contained water in their own
+			// block ID/metadata. Retain real water for all of them, notably at
+			// the surface. For kelp ONLY, a cell already covered by water can
+			// display a subdued kelp colour without replacing water geometry.
+			// The flag is per data point, never carried to other blocks/columns.
+			IBlockStateWrapper submergedKelpBlock = null;
+			if (EfrAquaticLodCompat.containsSourceWater(block.getSerialString())
+				&& water != null && !water.isAir())
+			{
+				if (EfrAquaticLodCompat.isKelp(block.getSerialString())
+					&& lastBlock != null
+					&& lastBlock.getMaterialId() == EDhApiBlockMaterial.WATER.index)
+				{
+					submergedKelpBlock = block;
+				}
+				block = water;
+			}
+			
 			// can be un-commented for testing floating islands
 			// it's recommended to place a single netherrack block as a marker 
 			// and a glowstone block to trigger an LOD update
@@ -414,6 +435,7 @@ public class FullDataToRenderDataTransformer
 				// when hanging above water
 				colorToApplyToNextBlock = -1;
 				blockToApplyToNextBlock = null;
+				avoidedBlockTintPending = false;
 				skylightToApplyToNextBlock = -1;
 				blocklightToApplyToNextBlock = -1;
 			}
@@ -549,6 +571,7 @@ public class FullDataToRenderDataTransformer
 						// below it, if not done grass will appear as gray
 						int snowColor = levelWrapper.getBlockColor(mutableBlockPos, biome, fullDataSource, block);
 						colorToApplyToNextBlock = ColorUtil.setAlpha(snowColor, 255);
+						avoidedBlockTintPending = false;
 						
 						// the dirt/grass below the snow should be related with snow
 						blockToApplyToNextBlock = block;
@@ -556,6 +579,7 @@ public class FullDataToRenderDataTransformer
 					else //if (isWaterSurfaceReplacement)
 					{
 						colorToApplyToNextBlock = levelWrapper.getBlockColor(mutableBlockPos, biome, fullDataSource, block);
+						avoidedBlockTintPending = false;
 					}
 				}
 			}
@@ -574,6 +598,7 @@ public class FullDataToRenderDataTransformer
 						colorToApplyToNextBlock = ColorUtil.setAlpha(ignoredColor, 255);
 						// also copy over the material so shaders/textures render correctly
 						blockToApplyToNextBlock = block;
+						avoidedBlockTintPending = true;
 					}
 				}
 				
@@ -607,6 +632,28 @@ public class FullDataToRenderDataTransformer
 				continue;
 			}
 			
+			
+			// If a skipped flower/plant sits on a log, leaves or a merged
+			// multi-block column, tinting would recolour the entire solid LOD
+			// (sometimes the full height of a trunk). Preserve the actual
+			// block's colour and material; snow is handled independently.
+			if (avoidedBlockTintPending &&
+				(block.getMaterialId() == EDhApiBlockMaterial.WOOD.index
+					|| block.getMaterialId() == EDhApiBlockMaterial.LEAVES.index
+					|| blockHeight > 1))
+			{
+				colorToApplyToNextBlock = -1;
+				blockToApplyToNextBlock = null;
+			}
+			avoidedBlockTintPending = false;
+
+			// A preceding skipped plant must not leak an override into kelp water.
+			// In particular, never recolour wood, leaves or the lake surface.
+			if (submergedKelpBlock != null)
+			{
+				colorToApplyToNextBlock = -1;
+				blockToApplyToNextBlock = null;
+			}
 			
 			int color;
 			// use the override values if necessary
@@ -646,20 +693,32 @@ public class FullDataToRenderDataTransformer
 				if (skylightToApplyToNextBlock != -1)
 				{
 					skyLight = skylightToApplyToNextBlock;
+					skylightToApplyToNextBlock = -1;
 				}
 				
 				if (blocklightToApplyToNextBlock != -1)
 				{
 					blockLight = blocklightToApplyToNextBlock;
+					blocklightToApplyToNextBlock = -1;
 				}
 				
 				if (blockToApplyToNextBlock != null)
 				{
 					block = blockToApplyToNextBlock;
+					blockToApplyToNextBlock = null;
 				}
 			}
 			
 			
+			
+			// Only blend vegetation inside submerged kelp's existing water
+			// geometry. Preserve the water alpha, material ID and lighting;
+			// leave surface water, non-kelp plants and solid terrain alone.
+			if (submergedKelpBlock != null)
+			{
+				int kelpColor = levelWrapper.getBlockColor(mutableBlockPos, biome, fullDataSource, submergedKelpBlock);
+				color = EfrAquaticLodCompat.tintSubmergedKelp(color, kelpColor);
+			}
 			
 			//=============================//
 			// merge same-colored adjacent //

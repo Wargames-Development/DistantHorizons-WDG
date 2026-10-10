@@ -78,6 +78,13 @@ public class PriorityTaskPicker
 	
 	private void startNextTask(boolean waitForLock)
 	{
+		// A scheduled re-queue can race with world shutdown. Never submit more
+		// work after the executor pools have been told to stop.
+		if (this.isShutDownRef.get())
+		{
+			return;
+		}
+		
 		// only let one thread start the next task to prevent concurrency errors
 		if (waitForLock)
 		{
@@ -191,43 +198,64 @@ public class PriorityTaskPicker
 		return stream.iterator();
 	}
 	
-	/** Blocking, shuts down the thread pool immediately, stopping all tasks. */
+	/**
+	 * Stop all pools on a single bounded deadline instead of waiting up to five
+	 * seconds for each executor in sequence on the client disconnect thread.
+	 * World-save and database-close lifecycles remain synchronous and unchanged.
+	 */
 	public void shutdownNow()
 	{
-		LOGGER.info("Shutting down PriorityTaskPicker thread pool...");
-		this.isShutDownRef.set(true);
-		
-		// signal all executors to shutdown
-		for (int i = 0; i < this.executors.size(); i++)
+		if (!this.isShutDownRef.compareAndSet(false, true))
 		{
-			Executor executor = this.executors.get(i);
+			return;
+		}
+		LOGGER.info("Shutting down PriorityTaskPicker thread pool...");
+		
+		ScheduledFuture<?> scheduled = this.scheduledFutureRef.getAndSet(null);
+		if (scheduled != null)
+		{
+			scheduled.cancel(false);
+		}
+		
+		// Signal every executor before waiting; they can terminate in parallel.
+		for (Executor executor : this.executors)
+		{
 			if (executor != null)
 			{
 				executor.shutdown();
 			}
 		}
 		
-		// since they're all already shutting down concurrently, this is bounded by the slowest one
-		try
+		final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+		boolean interrupted = false;
+		for (Executor executor : this.executors)
 		{
-			for (int i = 0; i < this.executors.size(); i++)
+			if (executor == null || executor.isTerminated())
 			{
-				Executor executor = this.executors.get(i);
-				if (executor != null)
+				continue;
+			}
+			try
+			{
+				long remaining = deadline - System.nanoTime();
+				if (remaining <= 0 || !executor.awaitTermination(remaining, TimeUnit.NANOSECONDS))
 				{
-					if (!executor.awaitTermination(5, TimeUnit.SECONDS))
-					{
-						executor.shutdownNow();
-					}
+					// Still-running tasks get an interruption request just as they did
+					// after the old five-second per-pool timeout.
+					executor.shutdownNow();
 				}
 			}
+			catch (InterruptedException e)
+			{
+				interrupted = true;
+				executor.shutdownNow();
+			}
 		}
-		catch (InterruptedException e)
+		if (interrupted)
 		{
-			throw new RuntimeException(e);
+			Thread.currentThread().interrupt();
 		}
 	}
-	
+
 	///endregion
 	
 	
