@@ -600,7 +600,19 @@ public class BlockStateWrapper implements IBlockStateWrapper
 			// texture ignoring //
 			{
 				String dontTextureNamesCsv = Config.Client.Advanced.Graphics.Texture.blocksDontRenderTextureCsv.get();
-				this.renderTexture = !blockSerialInCsv(lowerCaseSerial, dontTextureNamesCsv);
+				boolean renderTexture = !blockSerialInCsv(lowerCaseSerial, dontTextureNamesCsv);
+                #if MC_VER <= MC_1_7_10
+                // TESR-only NTM models have no terrain face texture to bake. Keep the
+                // representative material colour instead of a missing/transparent tile.
+                net.minecraft.block.material.Material material=this.blockState==null ? null : this.blockState.getMaterial();
+                if(levelWrapper instanceof com.seibel.distanthorizons.core.wrapperInterfaces.world.IClientLevelWrapper
+                    && this.blockState!=null && this.blockState.getBlock().getRenderType()<0
+                    && com.seibel.distanthorizons.core.dataObjects.transformers.NtmLodPolicy.structural(this.serialString,
+                        material==net.minecraft.block.material.Material.iron || material==net.minecraft.block.material.Material.rock
+                        || material==net.minecraft.block.material.Material.wood || material==net.minecraft.block.material.Material.anvil))
+                    renderTexture=false;
+                #endif
+                this.renderTexture=renderTexture;
 			}
 			
 			

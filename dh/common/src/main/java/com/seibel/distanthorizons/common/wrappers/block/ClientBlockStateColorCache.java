@@ -297,6 +297,28 @@ public class ClientBlockStateColorCache
 				this.baseColor = 0xFF000000 | blockState.block.getBlockColor();
 			}
 
+            net.minecraft.block.material.Material ntmMaterial=blockState.block.getMaterial();
+            boolean ntmStructural=com.seibel.distanthorizons.core.dataObjects.transformers.NtmLodPolicy.structural(
+                this.blockStateWrapper.getSerialString(), ntmMaterial==net.minecraft.block.material.Material.iron
+                    || ntmMaterial==net.minecraft.block.material.Material.rock
+                    || ntmMaterial==net.minecraft.block.material.Material.wood
+                    || ntmMaterial==net.minecraft.block.material.Material.anvil);
+            if (ntmStructural) {
+                // A TESR or directional renderer may not provide an UP icon. Try actual
+                // side icons before falling back to the block's native material colour.
+                if (sprite==null || (this.baseColor >>> 24)==0) {
+                    this.baseColor=0;
+                    for(int side=0;side<6;side++) {
+                        TextureAtlasSprite alternative=TextureAtlasSpriteWrapper.resolveFaceSprite(blockState,side);
+                        if(alternative==null)continue;
+                        int color=calculateColorFromTexture(alternative,EColorMode.getColorMode(blockState.block));
+                        if((color>>>24)>(this.baseColor>>>24))this.baseColor=color;
+                    }
+                }
+                this.baseColor=com.seibel.distanthorizons.core.dataObjects.transformers.NtmLodPolicy.color(
+                    true,this.baseColor,this.blockStateWrapper.getMapColor().getRGB());
+            }
+
             // Ask the block's actual colour implementation; BlockBush/IShearable are not tint contracts.
             // Vanilla and EFR water use the captured biome, never the live client terrain.
             this.needPostTinting = LEGACY_TINT_CALLBACKS.computeIfAbsent(blockState.block.getClass(), type ->

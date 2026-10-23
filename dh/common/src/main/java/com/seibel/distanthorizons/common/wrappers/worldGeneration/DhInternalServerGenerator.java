@@ -246,6 +246,8 @@ public class DhInternalServerGenerator
 				while (chunkPosIterator.hasNext())
 				{
 					ChunkPos chunkPos = chunkPosIterator.next();
+                    com.seibel.distanthorizons.core.generation.WorldBorderBounds bounds=this.dhServerLevel.getLodGenerationBounds();
+                    if(bounds!=null&&!bounds.intersectsChunk(chunkPos.x,chunkPos.z))continue;
 					
 					#if MC_VER <= MC_1_12_2
 					CompletableFuture<Chunk> requestChunkFuture;
@@ -497,7 +499,7 @@ public class DhInternalServerGenerator
 				}
                 if(acquired.isReleased())throw new CancellationException("Chunk acquisition already released");
                 com.seibel.distanthorizons.core.generation.WorldBorderBounds border=this.dhServerLevel.getLodGenerationBounds();
-                if(border!=null&&!border.containsChunk(chunkPos.x,chunkPos.z))throw new CancellationException("Outside configured WorldBorder");
+                if(border!=null&&!border.intersectsChunk(chunkPos.x,chunkPos.z))throw new CancellationException("Outside configured WorldBorder");
 				ChunkProviderServer provider = (ChunkProviderServer) level.getChunkProvider();
 				
 				// load neighbors first so the target chunk can fully populate.
@@ -510,7 +512,7 @@ public class DhInternalServerGenerator
 						int neighborPosX = chunkPos.x + dx;
 						int neighborPosZ = chunkPos.z + dz;
 						
-                        if(border!=null&&!border.containsChunk(neighborPosX,neighborPosZ))continue;
+                        if(border!=null&&!border.intersectsChunk(neighborPosX,neighborPosZ))continue;
                         acquired.add(new DhChunkPos(neighborPosX,neighborPosZ));
 						if (!this.acquireChunkRef(new DhChunkPos(neighborPosX, neighborPosZ)))
 						{
