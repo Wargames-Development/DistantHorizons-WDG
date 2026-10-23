@@ -1,0 +1,11 @@
+# Crucible logout with a missing player handler
+
+The supplied server report from 2026-10-23 22:35 fails in ServerPlayerWrapper.getWrapper, reached from ForgeServerProxy.playerLoggedOutEvent. EntityPlayerMP.playerNetServerHandler is null and Guava's weak-key map rejects the null key passed through computeIfAbsent. The report does not establish what caused the preceding disconnect; a failed/mismatched-mod connection is one possible trigger. EFR mixins appearing in the report do not identify EFR as the cause of this exception.
+
+Forge 1.7.10 logout now uses a non-creating existing-wrapper lookup. If there is no cached wrapper for the event player, the DH disconnect callback is skipped. When a valid joined player's handler has already been cleared, the lookup can find the original connection-backed wrapper by exact player-object identity in the existing cache, preserving normal session/request cleanup. A direct cached-connection match is preferred when available. It neither matches by display name/UUID nor creates a wrapper or inserts a null cache key. Non-server player events are ignored. Login, packet handling and compatibility/version checks are unchanged.
+
+Five new regression tests use the same Guava weak-key/weak-value map type as production. They cover rejected/null-handler connections without cache insertion, normal disconnect identity, handler-cleared cleanup, unknown/null players without touching another session, and preference for the current connection. All 104 core tests pass; Forge 1.7.10 check and assemble pass. Actual reproduction on the remote Crucible server has not been run here.
+
+Install the new DH jar on the server while it is stopped, replacing its previous DH jar (keep a backup; do not leave both active). This build includes the earlier water blending, border-edge and NTM LOD changes. The logout correction itself changes no network format or world/database data. Keep existing LOD databases and worlds. No EFR patch is needed for this crash. To validate, check one normal join/quit, then a connection rejected by the pack's existing version checks: the server should reject it normally and remain running. Do not disable version checks to test this.
+
+Built locally and committed without pushing. No live server or Release Testing files were replaced automatically.
