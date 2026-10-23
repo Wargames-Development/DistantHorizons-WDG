@@ -62,6 +62,7 @@ public interface IDhLevel extends AutoCloseable, GeneratedFullDataSourceProvider
 	 */
 	@NotNull
 	ILevelWrapper getLevelWrapper();
+    default com.seibel.distanthorizons.core.generation.WorldBorderBounds getLodGenerationBounds() { return this.getLevelWrapper().getLodGenerationBounds(); }
 	
 	/** @return 0 if no hash is known */
 	int getChunkHash(DhChunkPos pos);

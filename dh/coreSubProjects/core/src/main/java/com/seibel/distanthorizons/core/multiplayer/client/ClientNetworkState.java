@@ -41,6 +41,9 @@ public class ClientNetworkState implements Closeable
 	private static final IMinecraftClientWrapper MC_CLIENT = SingletonInjector.INSTANCE.get(IMinecraftClientWrapper.class);
 	
 	
+    private final java.util.concurrent.ConcurrentHashMap<String,com.seibel.distanthorizons.core.generation.WorldBorderBounds> worldBorders = new java.util.concurrent.ConcurrentHashMap<>();
+    public com.seibel.distanthorizons.core.generation.WorldBorderBounds getWorldBorder(String dimension) { return this.worldBorders.get(dimension); }
+
 	public final FullDataPayloadReceiver fullDataPayloadReceiver = new FullDataPayloadReceiver();
 	
 	private final SessionConfig.AnyChangeListener configAnyChangeListener = new SessionConfig.AnyChangeListener(this::sendConfigMessage);
@@ -118,6 +121,9 @@ public class ClientNetworkState implements Closeable
 			}
 		});
 		
+        this.networkSession.registerHandler(com.seibel.distanthorizons.core.network.messages.base.WorldBorderMessage.class, message -> {
+            if(message.bounds==null)this.worldBorders.remove(message.dimension);else this.worldBorders.put(message.dimension,message.bounds);
+        });
 		this.networkSession.registerHandler(LevelInitMessage.class, message ->
 		{
 			// we will also receive this message when we have full support
@@ -133,6 +139,7 @@ public class ClientNetworkState implements Closeable
 		this.networkSession.registerHandler(CloseInternalEvent.class, message ->
 		{
 			this.configReceived = false;
+            this.worldBorders.clear();
 		});
 		
 		this.networkSession.registerHandler(FullDataPartialUpdateMessage.class, msg ->

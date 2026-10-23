@@ -110,6 +110,9 @@ public abstract class AbstractFullDataNetworkRequestQueue implements IDebugRende
 	
 	public CompletableFuture<DataSourceRetrievalResult> submitRequest(long sectionPos, @Nullable Long clientTimestamp)
 	{
+        CompletableFuture<DataSourceRetrievalResult> borderResult=com.seibel.distanthorizons.core.generation.BorderRetrieval.check(this.level.getLodGenerationBounds(),sectionPos);
+        if(borderResult!=null)return borderResult;
+
 		NetRequestTask requestEntry = this.waitingTasksBySectionPos.compute(sectionPos, (Long pos, NetRequestTask existingNetTask) ->
 		{
 			// ignore already queued tasks
@@ -202,6 +205,11 @@ public abstract class AbstractFullDataNetworkRequestQueue implements IDebugRende
 			return;
 		}
 		
+        CompletableFuture<DataSourceRetrievalResult> borderResult=com.seibel.distanthorizons.core.generation.BorderRetrieval.check(this.level.getLodGenerationBounds(),requestPos);
+        if(borderResult!=null) {
+            borderResult.whenComplete((result,error)->{if(error!=null)requestTask.future.completeExceptionally(error);else requestTask.future.complete(result);});
+            this.pendingTasksSemaphore.release();return;
+        }
 		Long offsetEntryTimestamp = requestTask.updateTimestamp != null
 				? requestTask.updateTimestamp + this.networkState.getServerTimeOffset()
 				: null;

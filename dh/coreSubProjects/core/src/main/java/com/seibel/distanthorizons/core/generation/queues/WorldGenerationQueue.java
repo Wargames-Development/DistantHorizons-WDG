@@ -124,6 +124,8 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 	@Override
 	public CompletableFuture<DataSourceRetrievalResult> submitRetrievalTask(long pos, byte requiredDataDetail)
 	{
+        CompletableFuture<DataSourceRetrievalResult> borderResult=com.seibel.distanthorizons.core.generation.BorderRetrieval.check(this.level.getLodGenerationBounds(),pos);
+        if(borderResult!=null)return borderResult;
 		// the generator is shutting down, don't add new tasks
 		if (this.generatorClosingFuture != null)
 		{
@@ -374,6 +376,12 @@ public class WorldGenerationQueue implements IFullDataSourceRetrievalQueue, IDeb
 	private void startWorldGenTaskGroup(DataSourceRetrievalTask worldGenTask)
 	{
 		long taskPos = worldGenTask.pos;
+        CompletableFuture<DataSourceRetrievalResult> borderResult=com.seibel.distanthorizons.core.generation.BorderRetrieval.check(this.level.getLodGenerationBounds(),taskPos);
+        if(borderResult!=null) {
+            this.inProgressGenTasksByLodPos.remove(taskPos,worldGenTask);
+            borderResult.whenComplete((result,error)->{if(error!=null)worldGenTask.future.completeExceptionally(error);else worldGenTask.future.complete(result);});
+            return;
+        }
 		// commented out for the time being since detail level can change at any time
 		//LodUtil.assertTrue(
 		//	worldGenTask.requestDetailLevel >= this.highestDataDetail 

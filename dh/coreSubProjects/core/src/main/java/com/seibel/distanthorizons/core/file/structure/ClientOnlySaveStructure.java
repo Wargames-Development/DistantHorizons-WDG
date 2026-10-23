@@ -82,18 +82,16 @@ public class ClientOnlySaveStructure implements ISaveStructure
 				IServerKeyedClientLevel keyedClientLevel = (IServerKeyedClientLevel) newLevelWrapper;
 				LOGGER.info("Loading level [" + newLevelWrapper.getDhIdentifier() + "] with key: [" + keyedClientLevel.getServerLevelKey() + "].");
 				
-				String serverKey = keyedClientLevel.getServerKey();
-				if (serverKey.isEmpty())
-				{
-					serverKey = getServerFolderName();
-				}
+				String serverKey = getServerFolderName();
+                migrateEndpointFolder(keyedClientLevel.getServerKey());
 				
 				// This world was identified by the server directly, so we can know for sure which folder to use.				
 				saveFolder = getSaveFolderByLevelId(serverKey, keyedClientLevel.getServerLevelKey());
 			}
 			else
 			{
-				// get the default folder
+				// get the endpoint folder
+                migrateEndpointFolder(null);
 				saveFolder = getSaveFolderByLevelId(getServerFolderName(), levelWrapper.getDhIdentifier());
 			}
 			
@@ -190,8 +188,49 @@ public class ClientOnlySaveStructure implements ISaveStructure
 		return new File(path);
 	}
 	
+    private static String getServerFolderName() {
+        if (MC_CLIENT.connectedToReplay()) return REPLAY_SERVER_FOLDER_NAME;
+        return "endpoint-" + new PercentEscaper("", true).escape(ServerEndpointIdentity.canonical(MC_CLIENT.getCurrentServerIp()));
+    }
+
+    /** Move one provable legacy root before opening its database; never merge, copy or overwrite. */
+    private static synchronized void migrateEndpointFolder(String serverKey) {
+        if (MC_CLIENT.connectedToReplay()) return;
+        File parent = new File(MC_SHARED.getInstallationDirectory(), SERVER_DATA_FOLDER_NAME);
+        File target = new File(parent, getServerFolderName());
+        if (target.exists()) return;
+        java.util.Set<File> candidates = new java.util.LinkedHashSet<>();
+        // A server-provided key identifies this connection's old keyed root.
+        if (serverKey != null && serverKey.matches("[a-zA-Z0-9_-]{1,150}")) candidates.add(new File(parent, serverKey));
+        // Label-only storage cannot prove ownership. Never migrate it automatically.
+        if (Config.Client.Advanced.Multiplayer.serverFolderNameMode.get() != EDhApiServerFolderNameMode.NAME_ONLY)
+            candidates.add(new File(parent, getLegacyServerFolderName()));
+        // Old name+IP formats can be identified even when this connection has a different display label.
+        ParsedIp parsed=new ParsedIp(MC_CLIENT.getCurrentServerIp());
+        String legacyIp=parsed.ip.replaceAll(INVALID_FILE_CHARACTERS_REGEX, "");
+        String legacyPort=parsed.port==null?"":parsed.port.replaceAll(INVALID_FILE_CHARACTERS_REGEX, "");
+        String suffix=", IP "+legacyIp+(legacyPort.isEmpty()?"":"-"+legacyPort);
+        File[] children=parent.listFiles();
+        if(children!=null&&children.length<=10000)for(File child:children) {
+            try {
+                String label=java.net.URLDecoder.decode(child.getName(),"UTF-8");
+                int version=label.indexOf(", GameVersion ");
+                if(version>=0)label=label.substring(0,version);
+                if(label.endsWith(suffix))candidates.add(child);
+            } catch(java.io.UnsupportedEncodingException impossible) {throw new AssertionError(impossible);}
+            catch(IllegalArgumentException invalidLegacyName) { /* Preserve unidentified directory. */ }
+        }
+        try {
+            java.nio.file.Path moved=EndpointStorageMigration.migrateUnique(target.toPath(),candidates);
+            if(moved!=null)LOGGER.info("Migrated DH dataset "+moved.getFileName()+" to "+target.getName());
+            else if(!target.exists())LOGGER.info("DH endpoint storage: no single provable legacy dataset; existing datasets were preserved.");
+        } catch(java.io.IOException failure) {
+            throw new IllegalStateException("Could not migrate DH dataset; originals preserved. Target: "+target,failure);
+        }
+    }
+
 	/** Generated from the server the client is currently connected to. */
-	private static String getServerFolderName()
+	private static String getLegacyServerFolderName()
 	{
 		// if connected to a replay we won't have any server info
 		// use the dedicated replay server folder

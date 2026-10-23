@@ -394,18 +394,18 @@ public class FullDataToRenderDataTransformer
 			
 			// EFR's 1.7.10 aquatic blocks carry contained water in their own
 			// block ID/metadata. Retain real water for all of them, notably at
-			// the surface. For kelp ONLY, a cell already covered by water can
-			// display a subdued kelp colour without replacing water geometry.
+			// the surface. For aquatic vegetation, a cell already covered by water can
+			// display a subdued plant colour without replacing water geometry.
 			// The flag is per data point, never carried to other blocks/columns.
-			IBlockStateWrapper submergedKelpBlock = null;
-			if (EfrAquaticLodCompat.containsSourceWater(block.getSerialString())
+			IBlockStateWrapper submergedPlantBlock = null;
+			if (EfrLodCompat.containsWater(block.getSerialString())
 				&& water != null && !water.isAir())
 			{
-				if (EfrAquaticLodCompat.isKelp(block.getSerialString())
+				if (EfrLodCompat.submergedPlant(block.getSerialString())
 					&& lastBlock != null
 					&& lastBlock.getMaterialId() == EDhApiBlockMaterial.WATER.index)
 				{
-					submergedKelpBlock = block;
+					submergedPlantBlock = block;
 				}
 				block = water;
 			}
@@ -541,6 +541,7 @@ public class FullDataToRenderDataTransformer
 			
 			boolean ignoreNonSolidBlock =
 				ignoreNonCollidingBlocks
+				&& !EfrLodCompat.visibleVolume(block.getSerialString())
 				&& !block.isSolid()
 				&& !block.isLiquid()
 				&& block.getOpacity() != LodUtil.BLOCK_FULLY_OPAQUE;
@@ -649,7 +650,7 @@ public class FullDataToRenderDataTransformer
 
 			// A preceding skipped plant must not leak an override into kelp water.
 			// In particular, never recolour wood, leaves or the lake surface.
-			if (submergedKelpBlock != null)
+			if (submergedPlantBlock != null)
 			{
 				colorToApplyToNextBlock = -1;
 				blockToApplyToNextBlock = null;
@@ -711,13 +712,13 @@ public class FullDataToRenderDataTransformer
 			
 			
 			
-			// Only blend vegetation inside submerged kelp's existing water
+			// Only blend vegetation inside its own submerged water
 			// geometry. Preserve the water alpha, material ID and lighting;
 			// leave surface water, non-kelp plants and solid terrain alone.
-			if (submergedKelpBlock != null)
+			if (submergedPlantBlock != null)
 			{
-				int kelpColor = levelWrapper.getBlockColor(mutableBlockPos, biome, fullDataSource, submergedKelpBlock);
-				color = EfrAquaticLodCompat.tintSubmergedKelp(color, kelpColor);
+				int plantColor = levelWrapper.getBlockColor(mutableBlockPos, biome, fullDataSource, submergedPlantBlock);
+				color = EfrAquaticLodCompat.tintSubmergedKelp(color, plantColor);
 			}
 			
 			//=============================//

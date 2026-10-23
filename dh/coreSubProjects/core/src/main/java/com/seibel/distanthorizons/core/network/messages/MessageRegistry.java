@@ -72,6 +72,8 @@ public class MessageRegistry
 		this.registerMessage(FullDataPartialUpdateMessage.class, FullDataPartialUpdateMessage::new);
 		this.registerMessage(FullDataSplitMessage.class, FullDataSplitMessage::new);
 		
+		this.registerMessage(WorldBorderMessage.class, WorldBorderMessage::new);
+
 		// Debug messages are always last, and not included in release builds.
 		if (DEBUG_CODEC_CRASH_MESSAGE)
 		{

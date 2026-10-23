@@ -39,6 +39,9 @@ public class CameraZoom
 	
 	/** how many times larger objects appear on screen compared to the player's FOV setting */
 	public double magnification;
+    private static final boolean WDG_ZOOM_DIAGNOSTICS=Boolean.getBoolean("wdg.dh.zoomDiagnostics");
+    private static final com.seibel.distanthorizons.core.logging.DhLogger WDG_ZOOM_LOG=new com.seibel.distanthorizons.core.logging.DhLoggerBuilder().build();
+    private long lastZoomDiagnostic;
 	
 	/**
 	 * The tangent of half the zoom cone's horizontal angle. <br>
@@ -126,6 +129,11 @@ public class CameraZoom
 		
 		// how many times larger objects appear on screen compared to the player's FOV setting
 		double magnification = projectionYScale / fovSettingYScale;
+        if(WDG_ZOOM_DIAGNOSTICS && System.nanoTime()-this.lastZoomDiagnostic>5_000_000_000L) {
+            this.lastZoomDiagnostic=System.nanoTime();
+            WDG_ZOOM_LOG.info("WDG zoom diagnostic: projectionYScale="+projectionYScale+", configuredFov="+MC_RENDER.getFovSetting()+", rawMagnification="+magnification);
+        }
+        if(!Double.isFinite(magnification)||magnification<=0) {this.set(CameraZoom.NOT_ZOOMED);return;}
 		if (magnification < MIN_ZOOM_MAGNIFICATION)
 		{
 			// ignores minor FOV reductions (IE vanilla FOV effects), 

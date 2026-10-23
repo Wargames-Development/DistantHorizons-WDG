@@ -59,6 +59,7 @@ public class ModrinthGetter
 	
 	public static boolean init()
 	{
+        if (com.seibel.distanthorizons.core.jar.updater.WdgUpdatePolicy.upstreamUpdatesDisabled()) return false;
 		try
 		{
 			initted = false;

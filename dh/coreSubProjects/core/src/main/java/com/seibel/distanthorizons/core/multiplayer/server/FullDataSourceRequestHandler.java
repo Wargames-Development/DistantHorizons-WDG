@@ -64,6 +64,14 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 	
 	public void queueLodSyncForRequestMessage(ServerPlayerState serverPlayerState, FullDataSourceRequestMessage message, ServerPlayerState.RateLimiterSet rateLimiterSet)
 	{
+        com.seibel.distanthorizons.core.generation.WorldBorderBounds bounds=this.serverLevel.getServerLevelWrapper().getLodGenerationBounds();
+        if(bounds!=null && bounds.classify(message.sectionPos)!=1) {
+            if(bounds.classify(message.sectionPos)==0 && DhSectionPos.getDetailLevel(message.sectionPos)>DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL)
+                message.sendResponse(new SectionRequiresSplittingException());
+            else message.sendResponse(new RequestRejectedException("Outside configured WorldBorder"));
+            return;
+        }
+
 		if (this.closed.get() || serverPlayerState.isClosing())
 		{
 			return;
@@ -227,6 +235,14 @@ public class FullDataSourceRequestHandler implements AutoCloseable
 	
 	public void queueWorldGenForRequestMessage(ServerPlayerState serverPlayerState, FullDataSourceRequestMessage message, ServerPlayerState.RateLimiterSet rateLimiterSet)
 	{
+        com.seibel.distanthorizons.core.generation.WorldBorderBounds bounds=this.serverLevel.getServerLevelWrapper().getLodGenerationBounds();
+        if(bounds!=null && bounds.classify(message.sectionPos)!=1) {
+            if(bounds.classify(message.sectionPos)==0 && DhSectionPos.getDetailLevel(message.sectionPos)>DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL)
+                message.sendResponse(new SectionRequiresSplittingException());
+            else message.sendResponse(new RequestRejectedException("Outside configured WorldBorder"));
+            return;
+        }
+
 		if (this.closed.get() || serverPlayerState.isClosing())
 		{
 			return;

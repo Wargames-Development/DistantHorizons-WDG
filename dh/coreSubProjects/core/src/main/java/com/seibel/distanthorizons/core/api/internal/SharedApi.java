@@ -199,6 +199,9 @@ public class SharedApi
 			return;
 		}
 		
+        com.seibel.distanthorizons.core.generation.WorldBorderBounds border=levelWrapper.getDhLevel()==null
+            ?levelWrapper.getLodGenerationBounds():levelWrapper.getDhLevel().getLodGenerationBounds();
+        if(border!=null&&!border.containsChunk(chunkWrapper.getChunkPos().getX(),chunkWrapper.getChunkPos().getZ()))return;
 		AbstractDhWorld dhWorld = SharedApi.getAbstractDhWorld();
 		if (dhWorld == null)
 		{

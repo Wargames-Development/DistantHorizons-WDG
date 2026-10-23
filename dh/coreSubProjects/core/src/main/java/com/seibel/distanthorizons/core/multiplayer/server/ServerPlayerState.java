@@ -42,6 +42,7 @@ public class ServerPlayerState implements Closeable
 	
 	@NotNull
 	public final SessionConfig sessionConfig = new SessionConfig();
+    public final java.util.concurrent.ConcurrentHashMap<String,Object> deliveredWorldBorders = new java.util.concurrent.ConcurrentHashMap<>();
 	public boolean isReady() { return this.sessionConfig.constrainingConfig != null; }
 	
 	public final FullDataPayloadSender fullDataPayloadSender;
@@ -74,17 +75,14 @@ public class ServerPlayerState implements Closeable
 		
 		this.networkSession.registerHandler(RequestLevelInitMessage.class, msg ->
 		{
-			if (!Config.Server.sendLevelKeys.get())
-			{
-				return;
-			}
-			
 			IServerLevelWrapper serverLevelWrapper = MC_SHARED.getLevelWrapper(msg.dimensionResourceLocation);
 			if (serverLevelWrapper == null)
 			{
 				return;
 			}
 			
+            this.networkSession.sendMessage(new com.seibel.distanthorizons.core.network.messages.base.WorldBorderMessage(msg.dimensionResourceLocation,serverLevelWrapper.getLodGenerationBounds()));
+            if (!Config.Server.sendLevelKeys.get()) return;
 			String levelKey = serverLevelWrapper.getKeyedLevelDimensionName();
 			this.networkSession.sendMessage(new LevelInitMessage(msg.dimensionResourceLocation, this.serverKey, levelKey));
 		});

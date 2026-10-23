@@ -973,7 +973,7 @@ public class Config
 				public static ConfigUIComment autoUpdaterHeader = new ConfigUIComment.Builder().setParentConfigClass(AutoUpdater.class).build();
 				
 				public static ConfigEntry<Boolean> enableAutoUpdater = new ConfigEntry.Builder<Boolean>()
-					.set(!isRunningInDevEnvironment())
+					.set(false)
 					.comment(""
 						+ "Automatically check for updates on game launch? \n"
 						+ "")
@@ -1005,7 +1005,7 @@ public class Config
 				public static ConfigEntry<EDhApiServerFolderNameMode> serverFolderNameMode = new ConfigEntry.Builder<EDhApiServerFolderNameMode>()
 					.set(EDhApiServerFolderNameMode.NAME_ONLY)
 					.comment(""
-						+ "How should multiplayer save folders should be named? \n"
+						+ "Legacy migration hint only. WDG always stores multiplayer LODs by host and port, independent of menu labels. \n"
 						+ "\n"
 						+ EDhApiServerFolderNameMode.NAME_ONLY + ": Example: \"Minecraft Server\" \n"
 						+ EDhApiServerFolderNameMode.IP_ONLY + ": Example: \"192.168.1.40\" \n"

@@ -61,6 +61,7 @@ public class GitlabGetter
 	{
 		this.projectID = projectID;
 		this.GitProjID = GitlabApi + projectID + "/";
+        if(com.seibel.distanthorizons.core.jar.updater.WdgUpdatePolicy.upstreamUpdatesDisabled())return;
 		
 		try
 		{
@@ -71,6 +72,7 @@ public class GitlabGetter
 	
 	public Config getCommitInfo(String commit)
 	{
+        if(com.seibel.distanthorizons.core.jar.updater.WdgUpdatePolicy.upstreamUpdatesDisabled())return Config.inMemory();
 		if (!commitInfo.containsKey(commit))
 		{
 			try
@@ -90,6 +92,7 @@ public class GitlabGetter
 	
 	public ArrayList<Config> getPipelineInfo(Number pipeline)
 	{
+        if(com.seibel.distanthorizons.core.jar.updater.WdgUpdatePolicy.upstreamUpdatesDisabled())return new ArrayList<>();
 		if (!pipelineInfo.containsKey(pipeline))
 		{
 			try
@@ -119,6 +122,7 @@ public class GitlabGetter
 	 */
 	public Map<String, URL> getDownloads(Number pipelineID)
 	{
+        if(com.seibel.distanthorizons.core.jar.updater.WdgUpdatePolicy.upstreamUpdatesDisabled())return new HashMap<>();
 		Map<String, URL> downloads = new HashMap<>();
 		ArrayList<Config> currentPipelineInfo = this.getPipelineInfo(pipelineID);
 		
@@ -157,6 +161,7 @@ public class GitlabGetter
 	@Nullable
 	public static URL getLatestForVersion(String mcVer)
 	{
+        if(com.seibel.distanthorizons.core.jar.updater.WdgUpdatePolicy.upstreamUpdatesDisabled())return null;
 		try
 		{
 			return new URL("https://gitlab.com/distant-horizons-team/distant-horizons/-/jobs/artifacts/main/download?job=build:%20%5B" + mcVer + "%5D");

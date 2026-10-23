@@ -77,6 +77,9 @@ public class DhClientLevel extends AbstractDhLevel implements IDhClientLevel
 	
 	@CheckForNull
 	private final ClientNetworkState networkState;
+    @Override public com.seibel.distanthorizons.core.generation.WorldBorderBounds getLodGenerationBounds() {
+        return this.networkState==null?null:this.networkState.getWorldBorder(this.getLevelWrapper().getDimensionName());
+    }
 	@Nullable
 	private final ScopedNetworkEventSource networkEventSource;
 	@Nullable

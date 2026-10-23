@@ -75,6 +75,8 @@ public class SelfUpdater
 	 */
 	public static boolean onStart()
 	{
+		// WDG builds must never query, download, replace or delete upstream jars.
+		if (WdgUpdatePolicy.upstreamUpdatesDisabled()) { return false; }
 		if (!Config.Client.Advanced.AutoUpdater.enableAutoUpdater.get())
 		{
 			LOGGER.info("Distant Horizons auto update disabled.");
@@ -236,6 +238,8 @@ public class SelfUpdater
 	
 	public static boolean updateMod()
 	{
+		// WDG builds must never query, download, replace or delete upstream jars.
+		if (WdgUpdatePolicy.upstreamUpdatesDisabled()) { return false; }
 		String mcVer = SingletonInjector.INSTANCE.get(IVersionConstants.class).getMinecraftVersion();
 		return updateMod(
 				mcVer,
@@ -244,6 +248,8 @@ public class SelfUpdater
 	}
 	public static boolean updateMod(String minecraftVersion, File file)
 	{
+		// WDG builds must never query, download, replace or delete upstream jars.
+		if (WdgUpdatePolicy.upstreamUpdatesDisabled()) { return false; }
 		EDhApiUpdateBranch updateBranch = EDhApiUpdateBranch.convertAutoToStableOrNightly(Config.Client.Advanced.AutoUpdater.updateBranch.get());
 		if (updateBranch == EDhApiUpdateBranch.STABLE)
 		{
@@ -262,6 +268,8 @@ public class SelfUpdater
 	
 	public static boolean updateStableMod(String minecraftVersion, File file)
 	{
+		// WDG builds must never query, download, replace or delete upstream jars.
+		if (WdgUpdatePolicy.upstreamUpdatesDisabled()) { return false; }
 		try
 		{
 			LOGGER.info("Attempting to auto update Distant Horizons");
@@ -317,6 +325,8 @@ public class SelfUpdater
 	
 	public static boolean updateNightlyMod(String minecraftVersion, File file)
 	{
+		// WDG builds must never query, download, replace or delete upstream jars.
+		if (WdgUpdatePolicy.upstreamUpdatesDisabled()) { return false; }
 		if (GitlabGetter.INSTANCE.projectPipelines.isEmpty())
 		{
 			LOGGER.warn("Failed to find any nightly builds for the minecraft version ["+minecraftVersion+"] update canceled.");
@@ -462,6 +472,8 @@ public class SelfUpdater
 	 */
 	public static void onClose()
 	{
+		// WDG builds must never query, download, replace or delete upstream jars.
+		if (WdgUpdatePolicy.upstreamUpdatesDisabled()) { return; }
 		if (!deleteOldJarOnJvmShutdown)
 		{
 			return;
