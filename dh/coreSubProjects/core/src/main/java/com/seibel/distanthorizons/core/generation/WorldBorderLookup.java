@@ -3,6 +3,17 @@ import com.seibel.distanthorizons.core.generation.WorldBorderBounds;
 /** Invoked only on the server thread; no Bukkit symbols are statically linked. */
 public final class WorldBorderLookup {
     private WorldBorderLookup() { }
+    /** Actual Bukkit world name, independently of whether WorldBorder is installed. */
+    public static String worldName(Object world) {
+        if(world==null)return null;
+        try {
+            Class<?> bukkit=Class.forName("org.bukkit.Bukkit");
+            for(Object w:(Iterable<?>)bukkit.getMethod("getWorlds").invoke(null))
+                if(w.getClass().getMethod("getHandle").invoke(w)==world)
+                    return (String)w.getClass().getMethod("getName").invoke(w);
+        } catch(ReflectiveOperationException|RuntimeException|LinkageError unavailable) { }
+        return null;
+    }
     public static WorldBorderBounds inspect(Object world) {
         if(world==null)return null;
         try {

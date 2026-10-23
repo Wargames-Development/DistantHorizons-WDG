@@ -84,7 +84,7 @@ public class ServerPlayerState implements Closeable
             this.networkSession.sendMessage(new com.seibel.distanthorizons.core.network.messages.base.WorldBorderMessage(msg.dimensionResourceLocation,serverLevelWrapper.getLodGenerationBounds()));
             if (!Config.Server.sendLevelKeys.get()) return;
 			String levelKey = serverLevelWrapper.getKeyedLevelDimensionName();
-			this.networkSession.sendMessage(new LevelInitMessage(msg.dimensionResourceLocation, this.serverKey, levelKey));
+			this.networkSession.sendMessage(new LevelInitMessage(msg.dimensionResourceLocation, this.serverKey, levelKey, serverLevelWrapper.getStorageWorldName()));
 		});
 		
 		

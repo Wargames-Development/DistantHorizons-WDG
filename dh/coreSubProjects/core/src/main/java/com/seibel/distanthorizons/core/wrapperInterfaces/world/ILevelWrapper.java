@@ -61,6 +61,8 @@ public interface ILevelWrapper extends IDhApiLevelWrapper, IBindable
 	
     default com.seibel.distanthorizons.core.generation.WorldBorderBounds getLodGenerationBounds() { return null; }
 
+    default String getStorageWorldName() { return ""; }
+
 	long getHashedSeed();
 	/**
 	 * Returns the result of {@link #getHashedSeed()}, encoded into a short string. <br>

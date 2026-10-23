@@ -83,6 +83,7 @@ public class ClientPluginChannelApi
 			throw new IllegalArgumentException("Server sent invalid level key.");
 		}
 		
+        if(!msg.storageWorldName.isEmpty())com.seibel.distanthorizons.core.file.structure.ReadableWorldStorage.validateName(msg.storageWorldName);
 		LOGGER.info("Level init received for [" + msg.dimensionResourceLocation + "]: server key [" + msg.serverKey + "], level key [" + msg.levelKey + "]");
 		
 		RenderThreadTaskHandler.INSTANCE.queueRunningOnRenderThread("ClientPluginChannelApi onLevelInitMessage", () -> 
@@ -92,11 +93,12 @@ public class ClientPluginChannelApi
 			
 			if (existingKeyedClientLevel == null
 				|| !existingKeyedClientLevel.getServerKey().equals(msg.serverKey)
-				|| !existingKeyedClientLevel.getServerLevelKey().equals(msg.levelKey))
+				|| !existingKeyedClientLevel.getServerLevelKey().equals(msg.levelKey)
+                || !existingKeyedClientLevel.getStorageWorldName().equals(msg.storageWorldName))
 			{
 				LOGGER.info("Loading level with key: [" + msg.levelKey + "].");
 				
-				IServerKeyedClientLevel keyedLevel = KEYED_CLIENT_LEVEL_MANAGER.setServerKeyedLevel(clientLevel, msg.dimensionResourceLocation, msg.serverKey, msg.levelKey);
+				IServerKeyedClientLevel keyedLevel = KEYED_CLIENT_LEVEL_MANAGER.setServerKeyedLevel(clientLevel, msg.dimensionResourceLocation, msg.serverKey, msg.levelKey,msg.storageWorldName);
 				
 				if (keyedLevel != null) {
 					AbstractDhWorld world = SharedApi.getAbstractDhWorld();

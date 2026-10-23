@@ -25,6 +25,7 @@ public class LevelInitMessage extends AbstractNetworkMessage
 	public String serverKey;
 	public String levelKey;
 	public long serverTime;
+    public String storageWorldName="";
 	
 	
 	
@@ -35,6 +36,10 @@ public class LevelInitMessage extends AbstractNetworkMessage
 	public LevelInitMessage() { }
 	public LevelInitMessage(String dimensionResourceLocation, String serverKey, String levelKey)
 	{
+        this(dimensionResourceLocation,serverKey,levelKey,"");
+    }
+    public LevelInitMessage(String dimensionResourceLocation,String serverKey,String levelKey,String storageWorldName) {
+        this.storageWorldName=storageWorldName;
 		this.dimensionResourceLocation = dimensionResourceLocation;
 		this.serverKey = serverKey;
 		this.levelKey = levelKey;
@@ -54,6 +59,7 @@ public class LevelInitMessage extends AbstractNetworkMessage
 		this.writeString(this.serverKey, out);
 		this.writeString(this.levelKey, out);
 		out.writeLong(this.serverTime);
+        this.writeString(this.storageWorldName,out);
 	}
 	
 	@Override
@@ -63,6 +69,7 @@ public class LevelInitMessage extends AbstractNetworkMessage
 		this.serverKey = this.readString(in);
 		this.levelKey = this.readString(in);
 		this.serverTime = in.readLong();
+        this.storageWorldName=this.readString(in);
 	}
 	
 	

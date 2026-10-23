@@ -86,7 +86,9 @@ public class ClientOnlySaveStructure implements ISaveStructure
                 migrateEndpointFolder(keyedClientLevel.getServerKey());
 				
 				// This world was identified by the server directly, so we can know for sure which folder to use.				
-				saveFolder = getSaveFolderByLevelId(serverKey, keyedClientLevel.getServerLevelKey());
+				saveFolder = keyedClientLevel.getStorageWorldName().isEmpty()
+                    ? getSaveFolderByLevelId(serverKey,keyedClientLevel.getServerLevelKey())
+                    : ReadableWorldStorage.resolve(new File(MC_SHARED.getInstallationDirectory(),SERVER_DATA_FOLDER_NAME+File.separator+serverKey),keyedClientLevel.getStorageWorldName(),keyedClientLevel.getServerLevelKey());
 			}
 			else
 			{
@@ -190,7 +192,7 @@ public class ClientOnlySaveStructure implements ISaveStructure
 	
     private static String getServerFolderName() {
         if (MC_CLIENT.connectedToReplay()) return REPLAY_SERVER_FOLDER_NAME;
-        return "endpoint-" + new PercentEscaper("", true).escape(ServerEndpointIdentity.canonical(MC_CLIENT.getCurrentServerIp()));
+        return ReadableWorldStorage.endpointFolder(MC_CLIENT.getCurrentServerIp(),System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows"));
     }
 
     /** Move one provable legacy root before opening its database; never merge, copy or overwrite. */
@@ -200,6 +202,7 @@ public class ClientOnlySaveStructure implements ISaveStructure
         File target = new File(parent, getServerFolderName());
         if (target.exists()) return;
         java.util.Set<File> candidates = new java.util.LinkedHashSet<>();
+        candidates.add(new File(parent,"endpoint-"+new PercentEscaper("",true).escape(ServerEndpointIdentity.canonical(MC_CLIENT.getCurrentServerIp()))));
         // A server-provided key identifies this connection's old keyed root.
         if (serverKey != null && serverKey.matches("[a-zA-Z0-9_-]{1,150}")) candidates.add(new File(parent, serverKey));
         // Label-only storage cannot prove ownership. Never migrate it automatically.

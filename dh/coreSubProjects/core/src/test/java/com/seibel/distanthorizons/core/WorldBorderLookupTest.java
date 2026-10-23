@@ -11,6 +11,7 @@ public class WorldBorderLookupTest {
         Config.Border b=new Config.Border();b.rx=20992;b.rz=12288;b.shape=false;Config.borders.put("other-world",b);
         assertNull(WorldBorderLookup.inspect(actual)); // Never borrow another world's border.
         Bukkit.worlds.add(new Bukkit.World(actual,"earth40"));assertNull(WorldBorderLookup.inspect(actual));
+        assertEquals("earth40",WorldBorderLookup.worldName(actual));assertNull(WorldBorderLookup.worldName(new Object()));
         Config.borders.put("earth40",b);assertEquals(new WorldBorderBounds(-20992,-12288,20992,12288),WorldBorderLookup.inspect(actual));
         b.rx=100;assertEquals(100,WorldBorderLookup.inspect(actual).maxX,0);
         b.shape=true;assertNull(WorldBorderLookup.inspect(actual));b.shape=null;Config.round=true;assertNull(WorldBorderLookup.inspect(actual));
