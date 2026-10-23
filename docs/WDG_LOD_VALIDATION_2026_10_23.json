@@ -1,0 +1,12 @@
+{
+  "core_test_suites": 18,
+  "core_tests": 78,
+  "failures": 0,
+  "forge_check_and_assemble": "passed",
+  "standalone_aquatic_contract": "passed",
+  "owned_class_max_major": 52,
+  "test_bukkit_fixtures_packaged": false,
+  "runtime_graphics_and_crucible_test": "pending user smoke test",
+  "installed_pack_modified": false,
+  "network_protocol": 17
+}

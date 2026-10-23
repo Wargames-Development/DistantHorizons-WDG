@@ -1,0 +1,13 @@
+{
+  "capability_export_sha256": "ad5fc2897994f2e0f839a8c7d9c88bded2477e28d9ac56075051e3ea52797566",
+  "efr_registered_blocks": 653,
+  "policy_counts": {
+    "native_icon_and_colour_callback": 613,
+    "metadata_contained_water": 2,
+    "contained_water": 1,
+    "metadata_contained_water_and_submerged_plant": 31,
+    "contained_water_and_submerged_plant": 5,
+    "visible_snow_volume": 1
+  },
+  "scope": "Registry/classification and source-contract audit, not a visual certification of every block or all 16 metadata states."
+}
