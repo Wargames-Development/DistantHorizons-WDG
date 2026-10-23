@@ -26,6 +26,7 @@ import com.seibel.distanthorizons.core.dataObjects.render.ColumnRenderSource;
 import com.seibel.distanthorizons.core.dataObjects.render.bufferBuilding.ColumnRenderBufferBuilder;
 import com.seibel.distanthorizons.core.dataObjects.render.bufferBuilding.LodQuadBuilder;
 import com.seibel.distanthorizons.core.dataObjects.transformers.FullDataToRenderDataTransformer;
+import com.seibel.distanthorizons.core.dataObjects.transformers.LegacyWaterColorBlender;
 import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
 import com.seibel.distanthorizons.core.enums.EDhDirection;
 import com.seibel.distanthorizons.core.file.fullDatafile.V2.FullDataSourceProviderV2;
@@ -268,6 +269,12 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 				adjIsSameDetailLevel[EDhDirection.SOUTH.compassIndex] = this.isAdjacentPosSameDetailLevel(EDhDirection.SOUTH);
 				adjIsSameDetailLevel[EDhDirection.EAST.compassIndex] = this.isAdjacentPosSameDetailLevel(EDhDirection.EAST);
 				adjIsSameDetailLevel[EDhDirection.WEST.compassIndex] = this.isAdjacentPosSameDetailLevel(EDhDirection.WEST);
+
+				if (this.clientLevelWrapper.useLegacyWaterColorBlending())
+				{
+					LegacyWaterColorBlender.blend(thisRenderSource, adjacentRenderSections,
+						Config.Client.Advanced.Graphics.Quality.lodBiomeBlending.get());
+				}
 
 				// the render sources are only needed by this synchronous method,
 				// then they can be closed

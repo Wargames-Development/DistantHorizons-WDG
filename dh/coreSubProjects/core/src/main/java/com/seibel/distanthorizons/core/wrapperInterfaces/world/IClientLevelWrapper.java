@@ -42,6 +42,9 @@ public interface IClientLevelWrapper extends ILevelWrapper
 	/** @return -1 if there was a problem getting the color */
 	int getDirtBlockColor();
 	void clearBlockColorCache();
+
+	/** Legacy biome callbacks lack neighboring biome data. */
+	default boolean useLegacyWaterColorBlending() { return false; }
 	
 	Color getCloudColor(float tickDelta);
 	
