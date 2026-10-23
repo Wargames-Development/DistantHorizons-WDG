@@ -164,7 +164,11 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
 
     @SubscribeEvent
     public void playerLoggedOutEvent(PlayerEvent.PlayerLoggedOutEvent event) 
-    { ServerApi.INSTANCE.serverPlayerDisconnectEvent(getServerPlayerWrapper(event)); }
+    {
+        if (!(event.player instanceof EntityPlayerMP)) return;
+        IServerPlayerWrapper wrapper=ServerPlayerWrapper.getExistingWrapper((EntityPlayerMP)event.player);
+        if (wrapper!=null) ServerApi.INSTANCE.serverPlayerDisconnectEvent(wrapper);
+    }
 
     @SubscribeEvent
     public void playerChangedDimensionEvent(PlayerEvent.PlayerChangedDimensionEvent event) 

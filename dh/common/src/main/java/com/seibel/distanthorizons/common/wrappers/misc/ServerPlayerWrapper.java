@@ -73,6 +73,25 @@ public class ServerPlayerWrapper implements IServerPlayerWrapper
 		#endif
 	}
 	
+    /** Non-creating lookup for logout, including rejected/partially initialized connections. */
+    @org.jetbrains.annotations.Nullable
+    public static ServerPlayerWrapper getExistingWrapper(
+        #if MC_VER <= MC_1_12_2
+        EntityPlayerMP serverPlayer
+        #else
+        ServerPlayer serverPlayer
+        #endif
+    ) {
+        if(serverPlayer==null)return null;
+        return com.seibel.distanthorizons.core.util.ConnectionWrapperLookup.existing(serverPlayer,
+            #if MC_VER <= MC_1_7_10
+            serverPlayer.playerNetServerHandler,
+            #else
+            serverPlayer.connection,
+            #endif
+            serverPlayerWrapperMap,ServerPlayerWrapper::getServerPlayer);
+    }
+
 	#if MC_VER <= MC_1_12_2
 	private ServerPlayerWrapper(NetHandlerPlayServer connection)
 	#else
