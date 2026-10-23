@@ -142,6 +142,7 @@ public class ClientBlockStateColorCache
 	
 	
 	#if MC_VER <= MC_1_7_10
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>,Boolean> LEGACY_TINT_CALLBACKS = new java.util.concurrent.ConcurrentHashMap<>();
 	private static final ThreadLocal<FakeWorld> FAKE_WORLD_REF = ThreadLocal.withInitial(FakeWorld::new);
 	#endif
 
@@ -294,29 +295,11 @@ public class ClientBlockStateColorCache
 				this.baseColor = 0xFF000000 | blockState.block.getBlockColor();
 			}
 
-			// Backup tinting heuristics
-			// (aka guess that the block should be tinted if it's entirely white)
-			this.needPostTinting = blockState.block.getBlockColor() != 0xFFFFFF; // white
-			
-			if (blockState.block instanceof BlockGrass
-				|| blockState.block instanceof BlockLeavesBase
-				|| blockState.block instanceof BlockBush)
-			{
-				this.needPostTinting = true;
-			}
-			
-			if (blockState.block == Blocks.water 
-				|| blockState.block == Blocks.flowing_water)
-			{
-				this.needPostTinting = true;
-			}
-			
-			// Necessary for the Lord of the Rings (LOTR) mod
-			if (blockState.block instanceof IShearable)
-			{
-				this.needPostTinting = true;
-			}
-			
+            // Ask the block's actual colour implementation; BlockBush/IShearable are not tint contracts.
+            // Vanilla and EFR water use the captured biome, never the live client terrain.
+            this.needPostTinting = LEGACY_TINT_CALLBACKS.computeIfAbsent(blockState.block.getClass(), type ->
+                com.seibel.distanthorizons.core.dataObjects.transformers.LegacyTintPolicy.hasCustomColorCallback(type, Block.class, IBlockAccess.class));
+
 			this.tintIndex = 0;
 
 			this.isColorResolved = true;

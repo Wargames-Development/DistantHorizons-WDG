@@ -218,7 +218,20 @@ public class MinecraftClientWrapper extends AbstractMinecraftSharedWrapper imple
 	}
 	private String getServerIp(ServerData server)
 	{
+        #if MC_VER <= MC_1_7_10
+        if(server==null) {
+            net.minecraft.client.network.NetHandlerPlayClient handler=MINECRAFT.getNetHandler();
+            java.net.SocketAddress remote=handler==null?null:handler.getNetworkManager().getRemoteAddress();
+            if(remote instanceof java.net.InetSocketAddress) {
+                java.net.InetSocketAddress inet=(java.net.InetSocketAddress)remote;
+                String host=inet.getHostString();
+                return (host.indexOf(':')>=0?"["+host+"]":host)+":"+inet.getPort();
+            }
+            throw new IllegalStateException("Cannot identify multiplayer endpoint; refusing shared placeholder storage");
+        }
+        #else
 		if (server == null) { return "NA"; }
+        #endif
 		
 		#if MC_VER <= MC_1_12_2
 		return server.serverIP;

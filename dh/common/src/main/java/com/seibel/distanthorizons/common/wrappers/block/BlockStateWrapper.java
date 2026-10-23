@@ -657,7 +657,8 @@ public class BlockStateWrapper implements IBlockStateWrapper
 			else
 			{
 	        #if MC_VER < MC_1_20_1
-			this.isSolid = this.blockState.getMaterial().isSolid();
+			this.isSolid = this.blockState.getMaterial().isSolid()
+                || com.seibel.distanthorizons.core.dataObjects.transformers.EfrLodCompat.visibleVolume(this.getSerialString());
 	        #else
 			this.isSolid = !this.blockState.getCollisionShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).isEmpty();
             #endif

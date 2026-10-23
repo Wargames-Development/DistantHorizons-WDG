@@ -86,6 +86,20 @@ public class ServerLevelWrapper implements IServerLevelWrapper
 	
 	private final #if MC_VER <= MC_1_12_2 WorldServer #else ServerLevel #endif level;
 	private IDhLevel dhLevel;
+    private volatile com.seibel.distanthorizons.core.generation.WorldBorderBounds lodBounds;
+    @Override public com.seibel.distanthorizons.core.generation.WorldBorderBounds getLodGenerationBounds() { return this.lodBounds; }
+    #if MC_VER <= MC_1_7_10
+    public void refreshLodBorder() {
+        com.seibel.distanthorizons.core.generation.WorldBorderBounds old = this.lodBounds;
+        this.lodBounds = com.seibel.distanthorizons.core.generation.WorldBorderLookup.inspect(this.level);
+        if (!java.util.Objects.equals(old, this.lodBounds)) {
+            com.seibel.distanthorizons.core.generation.WorldBorderBounds b = this.lodBounds;
+            LOGGER.info("DH WorldBorder limits for " + this.getDimensionName() + ": " + (b == null
+                ? "unrestricted (no configured rectangular border)"
+                : "X " + b.minX + ".." + b.maxX + ", Z " + b.minZ + ".." + b.maxZ));
+        }
+    }
+    #endif
 	
 	/** 
 	 * this name is cached to prevent issues during shutdown where

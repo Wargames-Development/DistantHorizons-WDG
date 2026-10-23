@@ -73,12 +73,32 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
 		ServerThreadTaskHandler.INSTANCE.cancelPendingTasks();
 	}
 
+    private int borderTicks;
+    private void refreshWorldBorders() {
+        if ((this.borderTicks++ % 20) != 0) return;
+        net.minecraft.server.MinecraftServer server=net.minecraft.server.MinecraftServer.getServer();
+        if(server==null||server.worldServers==null)return;
+        com.seibel.distanthorizons.core.world.IDhServerWorld dhWorld=SharedApi.tryGetDhServerWorld();
+        for(WorldServer world:server.worldServers) {
+            if(world==null)continue;
+            ServerLevelWrapper wrapper=ServerLevelWrapper.getWrapper(world);
+            wrapper.refreshLodBorder();
+            if(dhWorld!=null)for(com.seibel.distanthorizons.core.multiplayer.server.ServerPlayerState player:dhWorld.getServerPlayerStateManager().getReadyPlayers()) {
+                // Initial delivery and updates (including border removal), independent of level-key policy.
+                Object current=wrapper.getLodGenerationBounds()==null?Boolean.FALSE:wrapper.getLodGenerationBounds();
+                if(!java.util.Objects.equals(player.deliveredWorldBorders.put(wrapper.getDimensionName(),current),current))
+                    player.networkSession.sendMessage(new com.seibel.distanthorizons.core.network.messages.base.WorldBorderMessage(wrapper.getDimensionName(),wrapper.getLodGenerationBounds()));
+            }
+        }
+    }
+
     // ServerTickEvent (at end)
     @SubscribeEvent
 	public void serverTickEvent(TickEvent.ServerTickEvent event)
 	{
 		if (event.phase == TickEvent.Phase.START)
 		{
+            refreshWorldBorders();
 			ServerThreadTaskHandler.INSTANCE.onTickStart();
 		}
 		else
@@ -93,6 +113,7 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
     {
 		if (GetEventLevel(event) instanceof WorldServer)
 	    {
+            ServerLevelWrapper.getWrapper((WorldServer)GetEventLevel(event)).refreshLodBorder();
 			ServerApi.INSTANCE.serverLevelLoadEvent(getServerLevelWrapper((WorldServer) GetEventLevel(event)));
 		}
 	}

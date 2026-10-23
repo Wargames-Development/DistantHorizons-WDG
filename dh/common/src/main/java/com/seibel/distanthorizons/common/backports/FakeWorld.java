@@ -109,7 +109,7 @@ public class FakeWorld implements IBlockAccess
 	public int isBlockProvidingPowerTo(int x, int y, int z, int directionIn) { return 0; }
 
 	@Override
-	public boolean isAirBlock(int x, int y, int z) { return false; }
+	public boolean isAirBlock(int x, int y, int z) { return this.getBlock(x,y,z) == Blocks.air; }
 
 	@Override
 	public BiomeGenBase getBiomeGenForCoords(int x, int z)

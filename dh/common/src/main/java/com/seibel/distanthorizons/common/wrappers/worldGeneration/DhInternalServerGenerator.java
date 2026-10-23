@@ -226,6 +226,8 @@ public class DhInternalServerGenerator
 	public void generateChunksViaInternalServer(ChunkGenEvent genEvent)
 	{
 		this.runValidation();
+        // Per-event acquisition lists keep cleanup exact even if borders change while work is queued.
+        Map<ChunkPos,com.seibel.distanthorizons.core.generation.GenerationNeighborLease> acquiredByTarget=new HashMap<>();
 		
 		try
 		{
@@ -252,7 +254,7 @@ public class DhInternalServerGenerator
 					#endif
 					
 					requestChunkFuture =
-						this.requestChunkFromServerAsync(chunkPos)
+						this.requestChunkFromServerAsync(chunkPos, acquiredByTarget.computeIfAbsent(chunkPos,k->new com.seibel.distanthorizons.core.generation.GenerationNeighborLease()))
 							// log errors if necessary
 							.whenCompleteAsync(
 								(chunk, throwable) ->
@@ -349,7 +351,7 @@ public class DhInternalServerGenerator
 			while (chunkPosIterator.hasNext())
 			{
 				ChunkPos chunkPos = chunkPosIterator.next();
-				releaseFutures.add(this.releaseChunkFromServerAsync(this.params.mcServerLevel, chunkPos));
+				releaseFutures.add(this.releaseChunkFromServerAsync(this.params.mcServerLevel, chunkPos, acquiredByTarget.get(chunkPos)));
 			}
 
 			// wait for all release futures to finish to prevent an issue where DH queues
@@ -469,9 +471,9 @@ public class DhInternalServerGenerator
 	}
 
 	#if MC_VER <= MC_1_12_2
-	private CompletableFuture<Chunk> requestChunkFromServerAsync(ChunkPos chunkPos)
+	private CompletableFuture<Chunk> requestChunkFromServerAsync(ChunkPos chunkPos, com.seibel.distanthorizons.core.generation.GenerationNeighborLease acquired)
 	#else
-	private CompletableFuture<ChunkAccess> requestChunkFromServerAsync(ChunkPos chunkPos)
+	private CompletableFuture<ChunkAccess> requestChunkFromServerAsync(ChunkPos chunkPos, com.seibel.distanthorizons.core.generation.GenerationNeighborLease acquired)
 	#endif
 	{
 		#if MC_VER <= MC_1_12_2
@@ -493,6 +495,9 @@ public class DhInternalServerGenerator
 				{
 					throw new CancellationException("DH level unloaded before its queued chunk request ran.");
 				}
+                if(acquired.isReleased())throw new CancellationException("Chunk acquisition already released");
+                com.seibel.distanthorizons.core.generation.WorldBorderBounds border=this.dhServerLevel.getLodGenerationBounds();
+                if(border!=null&&!border.containsChunk(chunkPos.x,chunkPos.z))throw new CancellationException("Outside configured WorldBorder");
 				ChunkProviderServer provider = (ChunkProviderServer) level.getChunkProvider();
 				
 				// load neighbors first so the target chunk can fully populate.
@@ -505,6 +510,8 @@ public class DhInternalServerGenerator
 						int neighborPosX = chunkPos.x + dx;
 						int neighborPosZ = chunkPos.z + dz;
 						
+                        if(border!=null&&!border.containsChunk(neighborPosX,neighborPosZ))continue;
+                        acquired.add(new DhChunkPos(neighborPosX,neighborPosZ));
 						if (!this.acquireChunkRef(new DhChunkPos(neighborPosX, neighborPosZ)))
 						{
 							// another generation event already has this chunk loaded
@@ -608,9 +615,9 @@ public class DhInternalServerGenerator
 	 * See: https://github.com/pop4959/Chunky/pull/383
 	 */
 	#if MC_VER <= MC_1_12_2
-	private CompletableFuture<Void> releaseChunkFromServerAsync(WorldServer level, ChunkPos chunkPos)
+	private CompletableFuture<Void> releaseChunkFromServerAsync(WorldServer level, ChunkPos chunkPos, com.seibel.distanthorizons.core.generation.GenerationNeighborLease acquired)
 	#else
-	private CompletableFuture<Void> releaseChunkFromServerAsync(ServerLevel level, ChunkPos chunkPos)
+	private CompletableFuture<Void> releaseChunkFromServerAsync(ServerLevel level, ChunkPos chunkPos, com.seibel.distanthorizons.core.generation.GenerationNeighborLease acquired)
 	#endif
 	{
 		#if MC_VER <= MC_1_12_2
@@ -622,16 +629,9 @@ public class DhInternalServerGenerator
 			{
 				ChunkProviderServer provider = (ChunkProviderServer) level.getChunkProvider();
 	
-				// release the target chunk and the neighbors acquired in requestChunkFromServerAsync.
-				// only the chunks that no other generation event needs anymore are actually unloaded.
-				for (int dx = -1; dx <= 1; dx++)
-				{
-					for (int dz = -1; dz <= 1; dz++)
-					{
-						int neighborPosX = chunkPos.x + dx;
-						int neighborPosZ = chunkPos.z + dz;
-						DhChunkPos neighborDhPos = new DhChunkPos(neighborPosX, neighborPosZ);
-	
+                if(acquired==null||acquired.isReleased())return null;
+                for(DhChunkPos neighborDhPos:acquired.release()) {
+                    int neighborPosX=neighborDhPos.getX(),neighborPosZ=neighborDhPos.getZ();
 						if (!this.releaseChunkRef(neighborDhPos))
 						{
 							// another generation event still needs this chunk loaded
@@ -669,8 +669,7 @@ public class DhInternalServerGenerator
 						#endif
 	
 						this.scheduleRemovePosToIgnore(neighborDhPos);
-					}
-				}
+                }
 			}
 			catch (Exception e)
 			{
