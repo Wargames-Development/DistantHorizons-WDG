@@ -386,6 +386,11 @@ public class ClientLevelWrapper implements IClientLevelWrapper
 	//====================//
 	//region
 	
+	#if MC_VER <= MC_1_7_10
+	@Override
+	public boolean useLegacyWaterColorBlending() { return true; }
+	#endif
+
 	@Override
 	public int getBlockColor(
 		DhBlockPos blockWorldPos, IBiomeWrapper biome, FullDataSourceV2 fullDataSource, IBlockStateWrapper blockWrapper, 
