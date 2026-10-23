@@ -281,7 +281,9 @@ public class ClientBlockStateColorCache
 			FakeBlockState blockState = (FakeBlockState)this.blockState; 
 
 			TextureAtlasSprite sprite = TextureAtlasSpriteWrapper.resolveFaceSprite(
-				blockState, ForgeDirection.UP.ordinal());
+				blockState, blockState.block instanceof net.minecraft.block.BlockLog
+                    ? com.seibel.distanthorizons.core.dataObjects.transformers.LegacyLogFacePolicy.representativeFace(blockState.meta)
+                    : ForgeDirection.UP.ordinal());
 			if (sprite != null)
 			{
 				this.baseColor = calculateColorFromTexture(

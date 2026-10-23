@@ -12,6 +12,7 @@ public class ServerKeyedClientLevelWrapper extends ClientLevelWrapper implements
 {
 	/** Returns the folder name the server wants the client to use. */
 	private final String serverKey;
+    private final String storageWorldName;
 	
 	/** A unique identifier (generally the level's name) for differentiating multiverse levels */
 	private final String serverLevelKey;
@@ -24,13 +25,14 @@ public class ServerKeyedClientLevelWrapper extends ClientLevelWrapper implements
 	//region
 	
 	#if MC_VER <= MC_1_12_2
-	public ServerKeyedClientLevelWrapper(WorldClient level, String serverKey, String serverLevelKey)
+	public ServerKeyedClientLevelWrapper(WorldClient level, String serverKey, String serverLevelKey,String worldName)
 	#else
-	public ServerKeyedClientLevelWrapper(ClientLevel level, String serverKey, String serverLevelKey)
+	public ServerKeyedClientLevelWrapper(ClientLevel level, String serverKey, String serverLevelKey,String worldName)
     #endif
 	{
 		super(level);
 		this.serverKey = serverKey;
+        this.storageWorldName=worldName;
 		this.serverLevelKey = serverLevelKey;
 	}
 	
@@ -45,6 +47,7 @@ public class ServerKeyedClientLevelWrapper extends ClientLevelWrapper implements
 	
 	@Override
 	public String getServerKey() { return this.serverKey; }
+    @Override public String getStorageWorldName() { return this.storageWorldName; }
 	
 	@Override
 	public String getServerLevelKey() { return this.serverLevelKey; }

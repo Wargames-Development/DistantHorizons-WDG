@@ -81,7 +81,7 @@ public class KeyedClientLevelManager implements IKeyedClientLevelManager
 			}
 			
 			// Create and cache a new keyed wrapper
-			IServerKeyedClientLevel keyedLevel = new ServerKeyedClientLevelWrapper(level, info.serverKey, info.levelKey);
+			IServerKeyedClientLevel keyedLevel = new ServerKeyedClientLevelWrapper(level, info.serverKey, info.levelKey, info.worldName);
 			this.keyedLevelsCache.put(level, keyedLevel);
 			return keyedLevel;
 		}
@@ -90,7 +90,11 @@ public class KeyedClientLevelManager implements IKeyedClientLevelManager
 	@Override
 	public IServerKeyedClientLevel setServerKeyedLevel(IClientLevelWrapper clientLevel, String dimensionResource, String serverKey, String levelKey)
 	{
-		this.keysByDimensionName.put(dimensionResource, new KeyInfo(serverKey, levelKey));
+        return this.setServerKeyedLevel(clientLevel,dimensionResource,serverKey,levelKey,"");
+    }
+    @Override
+    public IServerKeyedClientLevel setServerKeyedLevel(IClientLevelWrapper clientLevel,String dimensionResource,String serverKey,String levelKey,String worldName) {
+        this.keysByDimensionName.put(dimensionResource, new KeyInfo(serverKey, levelKey,worldName));
 		this.enabled = true;
 		
 		synchronized (this.keyedLevelsCache)
@@ -150,9 +154,11 @@ public class KeyedClientLevelManager implements IKeyedClientLevelManager
 		public final String serverKey;
 		public final String levelKey;
 		
-		public KeyInfo(String serverKey, String levelKey)
+        public final String worldName;
+		public KeyInfo(String serverKey, String levelKey,String worldName)
 		{
 			this.serverKey = serverKey;
+            this.worldName=worldName;
 			this.levelKey = levelKey;
 		}
 	}

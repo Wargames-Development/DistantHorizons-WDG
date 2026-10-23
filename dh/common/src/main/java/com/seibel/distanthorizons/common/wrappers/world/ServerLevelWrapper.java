@@ -160,6 +160,15 @@ public class ServerLevelWrapper implements IServerLevelWrapper
 	
 	@Override
 	public String getKeyedLevelDimensionName() { return this.keyedLevelDimensionName; }
+
+    @Override public String getStorageWorldName() {
+        #if MC_VER <= MC_1_7_10
+        String bukkitName=com.seibel.distanthorizons.core.generation.WorldBorderLookup.worldName(this.level);
+        return bukkitName!=null?bukkitName:this.level.getChunkSaveLocation().getName();
+        #else
+        return this.getDhIdentifier().replace(":","@@");
+        #endif
+    }
 	
 	private String createKeyedLevelDimensionName()
 	{
