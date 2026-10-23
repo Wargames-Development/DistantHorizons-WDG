@@ -884,8 +884,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 			
 			long missingPos = this.sortedMissingPosList.get(i);
             com.seibel.distanthorizons.core.generation.WorldBorderBounds bounds=this.level.getLodGenerationBounds();
-            if(bounds!=null && (bounds.classify(missingPos)<0
-                || (bounds.classify(missingPos)==0 && DhSectionPos.getDetailLevel(missingPos)<=DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL))) continue;
+            if(bounds!=null && bounds.classify(missingPos)<0) continue;
 			
 			// is this position within acceptable generator range?
 			boolean posInRange = WorldGenUtil.isPosInWorldGenRange(

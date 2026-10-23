@@ -124,6 +124,14 @@ public class LodQuadBuilder implements AutoCloseable
 	
 	private boolean doTransparency;
 	private IClientLevelWrapper clientLevelWrapper;
+    private com.seibel.distanthorizons.core.generation.WorldBorderBounds borderClip;
+    private int borderOriginX,borderOriginZ;
+    public void setBorderClip(com.seibel.distanthorizons.core.generation.WorldBorderBounds border,int x,int z) {
+        this.borderClip=border;this.borderOriginX=x;this.borderOriginZ=z;
+    }
+    private boolean clipToBorder(BufferQuad quad) {
+        return com.seibel.distanthorizons.core.generation.WorldBorderMeshClip.clip(quad,this.borderClip,this.borderOriginX,this.borderOriginZ);
+    }
 	
 	private EDhApiDebugRendering debugRenderingMode;
 	private EDhApiGrassSideRendering grassSideRenderingMode;
@@ -157,6 +165,7 @@ public class LodQuadBuilder implements AutoCloseable
 		this.doTransparency = doTransparency;
 		
 		this.clientLevelWrapper = clientLevelWrapper;
+        this.borderClip=null;
 		
 		this.debugRenderingMode = Config.Client.Advanced.Debugging.debugRenderingColors.get();
 		this.grassSideRenderingMode = Config.Client.Advanced.Graphics.Quality.grassSideRendering.get();
@@ -198,6 +207,7 @@ public class LodQuadBuilder implements AutoCloseable
 		
 		BufferQuad quad = this.getOrCreateBufferQuad();
 		quad.set(x, y, z, width, height, color, faceTextureId, irisBlockMaterialId, skyLight, blockLight, dir);
+        if(!this.clipToBorder(quad))return;
 		if (!quadList.isEmpty()
 			&& (
 				quadList.get(quadList.size() - 1).tryMerge(quad, BufferMergeDirectionEnum.EastWest)
@@ -226,6 +236,7 @@ public class LodQuadBuilder implements AutoCloseable
 		
 		BufferQuad quad = this.getOrCreateBufferQuad();
 		quad.set(minX, maxY, minZ, blockWidth, blockWidth, color, faceTextureId, irisBlockMaterialId, skylight, blocklight, EDhDirection.UP);
+        if(!this.clipToBorder(quad))return;
 		quadList.add(quad);
 	}
 	
@@ -242,6 +253,7 @@ public class LodQuadBuilder implements AutoCloseable
 		
 		BufferQuad quad = this.getOrCreateBufferQuad();
 		quad.set(x, y, z, blockWidth, blockWidth, color, faceTextureId, irisBlockMaterialId, skylight, blocklight, EDhDirection.DOWN);
+        if(!this.clipToBorder(quad))return;
 		quadArray.add(quad);
 	}
 	

@@ -470,7 +470,7 @@ public class FullDataToRenderDataTransformer
 				block = water;
 			}
 			
-			boolean ignoreBlock = blockStatesToIgnore.contains(block);
+			boolean ignoreBlock = blockStatesToIgnore.contains(block) || NtmLodPolicy.hidden(block.getSerialString());
 			boolean caveBlock = caveBlockStatesToIgnore.contains(block);
 			if (caveBlock
 				// caves also ignore transparent/non-solid blocks (IE grass and plants) without each being defined

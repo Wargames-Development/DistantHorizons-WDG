@@ -65,6 +65,10 @@ public class ColumnRenderBufferBuilder
 		
 		// can be used to limit which section positions are build and thus, rendered
 		// useful when debugging a specific section
+        quadBuilder.setBorderClip(clientLevelWrapper.getDhLevel()==null ? clientLevelWrapper.getLodGenerationBounds()
+                : clientLevelWrapper.getDhLevel().getLodGenerationBounds(),
+            DhSectionPos.getMinCornerBlockX(renderSource.pos),DhSectionPos.getMinCornerBlockZ(renderSource.pos));
+
 		boolean columnBuilderDebugEnabled = Config.Client.Advanced.Debugging.ColumnBuilderDebugging.columnBuilderDebugEnable.get();
 		if (columnBuilderDebugEnabled)
 		{

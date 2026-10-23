@@ -18,6 +18,22 @@ public final class WorldBorderBounds {
     }
     public int classify(long section) {return classify(DhSectionPos.getMinCornerBlockX(section),DhSectionPos.getMinCornerBlockZ(section),DhSectionPos.getBlockWidth(section));}
     public boolean containsChunk(int x,int z) {return classify((long)x*16,(long)z*16,16)==1;}
+    /** Minecraft chunks are atomic; retain the inside portion of straddling chunks. */
+    public boolean intersectsChunk(int x,int z) {return classify((long)x*16,(long)z*16,16)>=0;}
+    /** Ignore never-requested outside columns when assessing retrieval completion. */
+    public boolean includesGenerationColumn(long section,int x,int z) {
+        int dataDetail=DhSectionPos.getDetailLevel(section)-DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL;
+        long width=1L<<dataDetail;
+        long worldX=DhSectionPos.getMinCornerBlockX(section)+x*width;
+        long worldZ=DhSectionPos.getMinCornerBlockZ(section)+z*width;
+        return width>=16 ? classify(worldX,worldZ,width)>=0
+            : intersectsChunk((int)Math.floorDiv(worldX,16),(int)Math.floorDiv(worldZ,16));
+    }
+    /** Intersecting large requests split; the minimum 64-block leaf is serviced with clipped chunks. */
+    public boolean canRetrieve(long section) {
+        int relation=classify(section);
+        return relation==1 || relation==0 && DhSectionPos.getDetailLevel(section)==DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL;
+    }
     @Override public boolean equals(Object o) {if(!(o instanceof WorldBorderBounds))return false;WorldBorderBounds b=(WorldBorderBounds)o;
         return minX==b.minX&&minZ==b.minZ&&maxX==b.maxX&&maxZ==b.maxZ;}
     @Override public int hashCode(){return java.util.Objects.hash(minX,minZ,maxX,maxZ);}

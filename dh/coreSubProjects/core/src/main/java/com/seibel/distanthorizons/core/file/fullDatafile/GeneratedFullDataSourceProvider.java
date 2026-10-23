@@ -343,6 +343,9 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 	public void clearRetrievalQueue() { this.worldGenQueueRef.set(null); }
 	
 	
+    public boolean generationStepsAreFullyGenerated(long pos,ByteArrayList columnGenerationSteps) {
+        return com.seibel.distanthorizons.core.generation.BorderRetrieval.generationComplete(this.level.getLodGenerationBounds(),pos,columnGenerationSteps);
+    }
 	public boolean generationStepsAreFullyGenerated(ByteArrayList columnGenerationSteps)
 	{
 		return IntStream.range(0, columnGenerationSteps.size())
@@ -365,6 +368,9 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 		}
 		
 		
+        final com.seibel.distanthorizons.core.generation.WorldBorderBounds border=this.level.getLodGenerationBounds();
+        if(border!=null&&border.classify(pos)<0)return new LongArrayList();
+
 		EDhApiWorldGenerationStep requiredWorldGenStep;
 		EDhApiGeneratorPlan genPlan = this.getGeneratorPlan();
 		if (genPlan == EDhApiGeneratorPlan.SURFACE_ONLY)
@@ -397,6 +403,7 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 					// check if any positions are ungenerated
 					for (int i = 0; i < columnGenStepArray.size(); i++)
 					{
+                        if(border!=null&&!border.includesGenerationColumn(pos,i/FullDataSourceV2.WIDTH,i%FullDataSourceV2.WIDTH))continue;
 						byte genStepByte = columnGenStepArray.getByte(i);
 						if (genStepByte == EDhApiWorldGenerationStep.EMPTY.value
 							|| genStepByte == EDhApiWorldGenerationStep.DOWN_SAMPLED.value
@@ -422,6 +429,7 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 		
 		DhSectionPos.forEachChildAtDetailLevel(pos, generatorDetailLevel, (genPos) ->
 		{
+            if(border!=null&&border.classify(genPos)<0)return;
 			if (!this.repo.existsWithKey(genPos))
 			{
 				// nothing exists for this position, it needs generation
@@ -448,6 +456,7 @@ public class GeneratedFullDataSourceProvider extends FullDataSourceProviderV2 im
 					{
 						for (int z = 0; z < FullDataSourceV2.WIDTH; z++)
 						{
+                            if(border!=null&&!border.includesGenerationColumn(genPos,x,z))continue;
 							int index = FullDataSourceV2.relativePosToIndex(x, z);
 							byte genStepValue = columnGenerationSteps.getByte(index);
 							
