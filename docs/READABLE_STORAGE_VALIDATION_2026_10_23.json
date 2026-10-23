@@ -1,0 +1,8 @@
+{
+  "core_tests": 82,
+  "failures": 0,
+  "forge_check_assemble": "passed",
+  "protocol": 18,
+  "runtime_visual_check": "pending",
+  "database_merging": false
+}
