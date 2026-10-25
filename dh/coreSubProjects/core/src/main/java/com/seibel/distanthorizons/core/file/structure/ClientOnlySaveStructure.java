@@ -192,7 +192,7 @@ public class ClientOnlySaveStructure implements ISaveStructure
 	
     private static String getServerFolderName() {
         if (MC_CLIENT.connectedToReplay()) return REPLAY_SERVER_FOLDER_NAME;
-        return ReadableWorldStorage.endpointFolder(MC_CLIENT.getCurrentServerIp(),System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows"));
+        return ReadableWorldStorage.endpointFolder(MC_CLIENT.getCurrentServerIp());
     }
 
     /** Move one provable legacy root before opening its database; never merge, copy or overwrite. */
@@ -202,6 +202,15 @@ public class ClientOnlySaveStructure implements ISaveStructure
         File target = new File(parent, getServerFolderName());
         if (target.exists()) return;
         java.util.Set<File> candidates = new java.util.LinkedHashSet<>();
+        for(String legacy : ReadableWorldStorage.legacyEndpointFolders(MC_CLIENT.getCurrentServerIp())) {
+            File previous=new File(parent,legacy);
+            try {
+                // A literal-colon folder cannot exist on Windows. Never pass an
+                // unparseable old-platform path into the migration helper.
+                previous.toPath();
+                candidates.add(previous);
+            } catch(java.nio.file.InvalidPathException invalidOnThisPlatform) { /* Preserve other candidates. */ }
+        }
         candidates.add(new File(parent,"endpoint-"+new PercentEscaper("",true).escape(ServerEndpointIdentity.canonical(MC_CLIENT.getCurrentServerIp()))));
         // A server-provided key identifies this connection's old keyed root.
         if (serverKey != null && serverKey.matches("[a-zA-Z0-9_-]{1,150}")) candidates.add(new File(parent, serverKey));

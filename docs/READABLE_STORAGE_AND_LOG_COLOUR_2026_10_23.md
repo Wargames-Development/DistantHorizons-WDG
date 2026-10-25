@@ -1,5 +1,7 @@
 # Readable multiplayer storage and log colours — 23 October 2026
 
+Endpoint naming below is historical; see [the portable-folder update](PORTABLE_LOD_STORAGE_2026_10_25.md) for the current cross-platform names.
+
 This follow-up supersedes the folder naming and protocol number in the earlier compatibility report.
 
 On macOS/Linux the endpoint folder is the literal normalized host:port, for example `host.wargames.uk:27007`. There is no endpoint- prefix or percent-escaped dots. Windows cannot use literal colons in filenames, so only that platform escapes them. macOS Finder can display POSIX colons as slashes; the underlying path still contains a colon.

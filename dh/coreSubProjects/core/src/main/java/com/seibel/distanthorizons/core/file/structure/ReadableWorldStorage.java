@@ -10,9 +10,36 @@ public final class ReadableWorldStorage {
             ||name.contains("/")||name.contains("\\")||name.indexOf(':')>=0||name.matches(".*[\\x00-\\x1f].*"))
             throw new IllegalArgumentException("Unsafe world folder name");
     }
-    public static String endpointFolder(String endpoint,boolean windows) {
+    /** Same portable component on every OS, including when packs are exported. */
+    public static String endpointFolder(String endpoint) {
         String value=ServerEndpointIdentity.canonical(endpoint);
-        return windows?value.replace("%","%25").replace(":","%3A"):value;
+        int portSeparator=value.lastIndexOf(':');
+        String host=value.substring(0,portSeparator);
+        StringBuilder folder=new StringBuilder();
+        for(int i=0;i<host.length();i++) {
+            char c=host.charAt(i);
+            // Keep normal DNS/IPv4 names readable. Escape IPv6 colons and literal
+            // percent signs distinctly; only the host/port separator becomes '.'.
+            if(c=='%' || c<32 || c==127 || "\\/:*?\"<>|".indexOf(c)>=0) {
+                folder.append('%').append(Character.toUpperCase(Character.forDigit((c>>>4)&15,16)))
+                    .append(Character.toUpperCase(Character.forDigit(c&15,16)));
+            } else folder.append(c);
+        }
+        folder.append('.').append(value.substring(portSeparator+1));
+        String result=folder.toString();
+        // Windows device names remain reserved even with a filename extension.
+        String first=result.substring(0,result.indexOf('.')).toUpperCase(java.util.Locale.ROOT);
+        if(first.matches("CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]")) {
+            char c=result.charAt(0);
+            result="%"+Integer.toHexString(c).toUpperCase(java.util.Locale.ROOT)+result.substring(1);
+        }
+        return result;
+    }
+    /** Retained for callers compiled against the previous OS-dependent helper. */
+    public static String endpointFolder(String endpoint,boolean windows) { return endpointFolder(endpoint); }
+    public static java.util.List<String> legacyEndpointFolders(String endpoint) {
+        String value=ServerEndpointIdentity.canonical(endpoint);
+        return java.util.Arrays.asList(value,value.replace("%","%25").replace(":","%3A"));
     }
     public static synchronized File resolve(File root,String worldName,String levelKey) {
         validateName(worldName);

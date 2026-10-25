@@ -6,9 +6,42 @@ import com.seibel.distanthorizons.core.dataObjects.transformers.LegacyLogFacePol
 import com.seibel.distanthorizons.core.network.messages.base.LevelInitMessage;
 import io.netty.buffer.*;
 public class ReadableStorageTest {
-    @Test public void endpointIsLiteralAndConnectionIndependent() {
-        assertEquals("host.wargames.uk:27007",ReadableWorldStorage.endpointFolder("HOST.WARGAMES.UK:27007",false));
-        assertEquals("host.wargames.uk%3A27007",ReadableWorldStorage.endpointFolder("host.wargames.uk:27007",true));
+    @Test public void endpointIsPortableAndConnectionIndependent() {
+        assertEquals("host.wargames.uk.27007",ReadableWorldStorage.endpointFolder("HOST.WARGAMES.UK:27007",false));
+        assertEquals("host.wargames.uk.27007",ReadableWorldStorage.endpointFolder("host.wargames.uk:27007",true));
+    }
+    @Test public void portableEndpointHandlesIpv6AndWindowsReservedCharacters() {
+        assertEquals("[2001%3Adb8%3A%3A1].25565",ReadableWorldStorage.endpointFolder("[2001:DB8::1]"));
+        assertEquals("[fe80%3A%3A1%25en0].27007",ReadableWorldStorage.endpointFolder("[fe80::1%en0]:27007"));
+        assertEquals("%63on.27007",ReadableWorldStorage.endpointFolder("CON:27007"));
+        for(String host:Arrays.asList("a?b", "a*b", "a\"b", "a<b", "a>b", "a|b", "con", "nul", "COM1", "lpt9")) {
+            String folder=ReadableWorldStorage.endpointFolder(host+":27007");
+            assertFalse(folder,folder.matches(".*[\\\\/:*?\"<>|\\x00-\\x1f].*"));
+            assertFalse(folder,folder.endsWith(".")||folder.endsWith(" "));
+            assertEquals(folder,ReadableWorldStorage.endpointFolder(host+":27007",true));
+            assertEquals(folder,ReadableWorldStorage.endpointFolder(host+":27007",false));
+        }
+        assertNotEquals(ReadableWorldStorage.endpointFolder("a?b:27007"),ReadableWorldStorage.endpointFolder("a%3fb:27007"));
+        assertNotEquals(ReadableWorldStorage.endpointFolder("host:27007"),ReadableWorldStorage.endpointFolder("host:27008"));
+        assertEquals(ReadableWorldStorage.endpointFolder("host"),ReadableWorldStorage.endpointFolder("HOST.:025565"));
+    }
+    @Test public void portableRootMigrationPreservesDatabaseAndIdentity() throws Exception {
+        for(String oldName:ReadableWorldStorage.legacyEndpointFolders("host.wargames.uk:27007")) {
+            Path base=Files.createTempDirectory("dh-portable-endpoint-");
+            try {
+                Path old;
+                try {old=base.resolve(oldName);}catch(InvalidPathException windowsLiteralColon){continue;}
+                Files.createDirectory(old);Path world=Files.createDirectory(old.resolve("earth40"));
+                byte[] bytes=new byte[]{8,6,7,5,3,0,9};
+                Files.write(world.resolve("DistantHorizons.sqlite"),bytes);
+                Files.write(world.resolve(".dh-level-key"),"stable@overworld:0".getBytes(StandardCharsets.UTF_8));
+                Path target=base.resolve(ReadableWorldStorage.endpointFolder("host.wargames.uk:27007"));
+                assertEquals(old,com.seibel.distanthorizons.core.file.structure.EndpointStorageMigration.migrateUnique(target,Arrays.asList(old.toFile())));
+                assertFalse(Files.exists(old));assertArrayEquals(bytes,Files.readAllBytes(target.resolve("earth40/DistantHorizons.sqlite")));
+                assertEquals("stable@overworld:0",new String(Files.readAllBytes(target.resolve("earth40/.dh-level-key")),StandardCharsets.UTF_8));
+                assertNull(com.seibel.distanthorizons.core.file.structure.EndpointStorageMigration.migrateUnique(target,Arrays.asList(old.toFile())));
+            } finally {try(java.util.stream.Stream<Path> paths=Files.walk(base)){paths.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.delete(p);}catch(Exception failure){throw new RuntimeException(failure);}});}}
+        }
     }
     @Test public void worldNameRoundTripsSeparatelyFromStableIdentity() {
         LevelInitMessage src=new LevelInitMessage("overworld:0","","00000001kk71e@overworld:0","earth40");
