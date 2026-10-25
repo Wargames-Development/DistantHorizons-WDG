@@ -479,6 +479,10 @@ public class FullDataToRenderDataTransformer
 				|| block.getOpacity() < LodUtil.BLOCK_FULLY_OPAQUE)
 			{
 				if (caveCullingEnabled
+                    // Dark gaps under NTM decks/machines are often open structure,
+                    // not caves. Do not extend their last opaque cell down into them.
+                    && (lastBlock == null || !NtmLodPolicy.preserveUnderside(
+                        lastBlock.getSerialString(), lastBlock.getMaterialId()))
 					// assume this data point is underground if it has no sky-light
 					&& skyLight == LodUtil.MIN_MC_LIGHT
 					// ignore caves above a certain height to prevent floating islands from having walls underneath them

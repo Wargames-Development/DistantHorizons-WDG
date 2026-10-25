@@ -220,7 +220,27 @@ public class TextureAtlasSpriteWrapper
 		}
 		if (icon == null)
 		{
-			icon = blockstate.getBlock().getIcon(sideOrdinal, blockstate.getMeta());
+			String registryName = cpw.mods.fml.common.registry.GameData.getBlockRegistry().getNameForObject(blockstate.getBlock());
+            int iconSide = com.seibel.distanthorizons.core.dataObjects.transformers.NtmLodPolicy.iconSide(
+                registryName, sideOrdinal, blockstate.getMeta());
+            if (registryName != null && registryName.startsWith("hbm:"))
+            {
+                try
+                {
+                    icon = blockstate.getBlock().getIcon(iconSide, blockstate.getMeta());
+                }
+                catch (RuntimeException ignored)
+                {
+                    // Some model-only blocks have no icon for a placed/dummy metadata.
+                    // Let the colour cache try other faces and then the material colour.
+                    return null;
+                }
+                if (icon != null && "missingno".equals(icon.getIconName())) return null;
+            }
+            else
+            {
+                icon = blockstate.getBlock().getIcon(iconSide, blockstate.getMeta());
+            }
 		}
 		
 		if (icon instanceof IconFlipped)

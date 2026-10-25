@@ -293,6 +293,19 @@ public class ClientBlockStateTextureCache
 	{
 		#if MC_VER <= MC_1_7_10
 		TextureAtlasSprite sprite = getFaceSprite(blockStateWrapper, dhDirection);
+        if (com.seibel.distanthorizons.core.dataObjects.transformers.NtmLodPolicy.structural(
+            blockStateWrapper.getSerialString(),
+            blockStateWrapper.blockState.getMaterial() == net.minecraft.block.material.Material.iron
+                || blockStateWrapper.blockState.getMaterial() == net.minecraft.block.material.Material.rock
+                || blockStateWrapper.blockState.getMaterial() == net.minecraft.block.material.Material.wood
+                || blockStateWrapper.blockState.getMaterial() == net.minecraft.block.material.Material.anvil)
+            && (sprite == null || (ClientBlockStateColorCache.calculateColorFromTexture(sprite,
+                ClientBlockStateColorCache.EColorMode.getColorMode(blockStateWrapper.blockState.getBlock())) >>> 24) == 0))
+        {
+            // A transparent tile uses the representative vertex colour in the terrain
+            // shader. Do not cover a valid fallback colour with an error-grid texture.
+            return BlockFaceTexture.createSolidColor(ColorUtil.INVISIBLE);
+        }
 		return bakeSpriteTexture(sprite);
 		
 		#else
