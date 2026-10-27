@@ -21,10 +21,16 @@ rootProject.name = 'gtnh-dh'
 // This wrapper only ever ships the GTNH target, so pin it unless asked otherwise.
 // It has to go on the start parameter: that is what included builds inherit, and
 // Settings' own copy of it is read-only, so mutate the one on `gradle`.
+apply from: 'scripts/wargames-version.gradle'
+
 def projectProps = new HashMap<String, String>(gradle.startParameter.projectProperties)
 if (!projectProps.containsKey('mcVer')) {
     projectProps.put('mcVer', '1.7.10')
     gradle.startParameter.setProjectProperties(projectProps)
 }
+
+// Propagate the same version into DH resources, generated ModInfo and manifests.
+projectProps.put('mod_version', gradle.ext.wgVersion)
+gradle.startParameter.setProjectProperties(projectProps)
 
 includeBuild('dh')

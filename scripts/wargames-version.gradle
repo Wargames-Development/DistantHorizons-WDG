@@ -1,0 +1,27 @@
+// Wargames version: major.minor.patch_Xbuild. Only successful packaging consumes X.
+// Configuration cache is disabled because the counter must be read for every invocation.
+def propsFile = new File(rootDir, 'gradle.properties')
+def props = new Properties()
+propsFile.withInputStream { props.load(it) }
+def numbers = ['modMainVersion', 'modSubVersion', 'modPatchVersion', 'modBuildNumber'].collect { key ->
+    def value = props.getProperty(key, '')
+    if (!(value ==~ /0|[1-9][0-9]*/)) throw new GradleException("${key} must be a non-negative integer")
+    value.toInteger()
+}
+def packagingTasks = ['build', 'assemble', 'jar', 'shadowjar', 'reobfjar', 'remapjar', 'collectjars', 'collectdevjars']
+def packaging = !gradle.startParameter.dryRun && gradle.startParameter.taskNames.any {
+    packagingTasks.contains(it.tokenize(':').last().toLowerCase(Locale.ROOT))
+}
+def nextBuild = numbers[3] + (packaging ? 1 : 0)
+gradle.ext.wgVersion = "${numbers[0]}.${numbers[1]}.${numbers[2]}_X${nextBuild}".toString()
+if (packaging) {
+    gradle.buildFinished { result ->
+        if (result.failure == null) {
+            def original = propsFile.getText('UTF-8')
+            def pattern = ~/(?m)^modBuildNumber\s*=\s*[0-9]+[ \t]*$/
+            if (!(original =~ pattern).find()) throw new GradleException('Missing modBuildNumber entry')
+            propsFile.write(original.replaceFirst(pattern, "modBuildNumber=${nextBuild}"), 'UTF-8')
+            println "Wargames build number: X${numbers[3]} -> X${nextBuild}"
+        }
+    }
+}
