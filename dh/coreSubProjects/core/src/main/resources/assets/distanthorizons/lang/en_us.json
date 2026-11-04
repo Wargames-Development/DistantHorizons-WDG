@@ -200,6 +200,24 @@
     "Enable Generic Rendering",
   "distanthorizons.config.client.advanced.graphics.genericRendering.enableGenericRendering.@tooltip":
     "If true non terrain objects will be rendered by DH. \ni.e. beacon beams and clouds.",
+  "distanthorizons.config.server.enableDistantTrailRelay": "Enable Distant Missile Trail Relay",
+  "distanthorizons.config.server.distantTrailRelayDistance": "Maximum Distant Trail Delivery Radius",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendMcheliTrails": "Extend MC Heli Trails",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendHbmTrails": "Extend HBM Missile Trails",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendFlansTrails": "Extend FMUR Missile Trails",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.showDistantEffectDiagnostics": "Show Distant Effect Diagnostics in F3",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.enableDistantMcheliSmoke":
+    "Experimental Distant Weapon Effects",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.enableDistantMcheliSmoke.@tooltip":
+    "Forge 1.7.10 only. Extends supported MC Heli, HBM and FMUR effects. The optional DH server relay continues real trail emissions beyond entity tracking. Source smoke rules and puff lifetimes are preserved. Off by default; shader packs are unsupported.",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.distantSmokeDistance":
+    "Distant Smoke Maximum Distance",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.distantSmokeDistance.@tooltip":
+    "Maximum smoke extension distance in blocks. Fades over the last 32 blocks. Effects must already exist on this client.",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.distantSmokeParticleBudget":
+    "Distant Smoke Particle Budget",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.distantSmokeParticleBudget.@tooltip":
+    "Maximum extra source quads per frame, shared by all supported effect families. Lower this to limit GPU work.",
   "distanthorizons.config.client.advanced.graphics.genericRendering.enableBeaconRendering":
     "Enable Beacon Rendering",
   "distanthorizons.config.client.advanced.graphics.genericRendering.beaconRenderHeight":

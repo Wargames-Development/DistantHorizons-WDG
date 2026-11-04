@@ -84,8 +84,9 @@ public class ForgeMain extends AbstractModInitializer implements IForgeMain
 	//region
 	
     @Mod.EventHandler
-    public void init(FMLInitializationEvent event) 
+    public void init(FMLInitializationEvent event)
     {
+        com.seibel.distanthorizons.forge17.effects.TrailRelay.INSTANCE.initialize();
         if (FMLCommonHandler.instance()
             .getEffectiveSide()
             .isClient()) 
@@ -212,6 +213,7 @@ public class ForgeMain extends AbstractModInitializer implements IForgeMain
         }
 		
         ForgeServerProxy.serverStopping();
+        com.seibel.distanthorizons.forge17.effects.TrailRelay.INSTANCE.clearServer();
     }
 	
 	//endregion

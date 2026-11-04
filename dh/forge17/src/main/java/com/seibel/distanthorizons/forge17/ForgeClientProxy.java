@@ -16,6 +16,7 @@
 package com.seibel.distanthorizons.forge17;
 
 import net.minecraft.client.Minecraft;
+import com.seibel.distanthorizons.forge17.effects.DistantSmokeRenderer;
 import net.minecraft.client.shader.Framebuffer;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
@@ -60,6 +61,13 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
     public void registerEvents()
     {
         MinecraftForge.EVENT_BUS.register(this);
+        DistantSmokeRenderer distantSmoke = new DistantSmokeRenderer();
+        MinecraftForge.EVENT_BUS.register(distantSmoke);
+        FMLCommonHandler.instance().bus().register(distantSmoke);
+        com.seibel.distanthorizons.forge17.effects.TrailClient trails=new com.seibel.distanthorizons.forge17.effects.TrailClient();
+        FMLCommonHandler.instance().bus().register(trails);
+        net.minecraftforge.client.ClientCommandHandler.instance.registerCommand(
+            new com.seibel.distanthorizons.forge17.effects.DistantEffectsCommand());
         FMLCommonHandler.instance()
             .bus()
             .register(this);
@@ -202,6 +210,12 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
         }
 
         F3Screen.addStringToDisplay(event.right);
+        if (com.seibel.distanthorizons.core.config.Config.Client.Advanced.Graphics.GenericRendering.showDistantEffectDiagnostics.get())
+        {
+            event.right.add(DistantSmokeRenderer.INSTANCE.diagnostic());
+            event.right.add(com.seibel.distanthorizons.forge17.effects.TrailClient.INSTANCE.diagnostic());
+            event.right.add(com.seibel.distanthorizons.forge17.effects.TrailClient.INSTANCE.deliveryDiagnostic());
+        }
     }
 	
 	//endregion

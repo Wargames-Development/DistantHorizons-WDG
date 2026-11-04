@@ -54,7 +54,11 @@ public class DistantHorizonsMixinConfigPlugin implements IMixinConfigPlugin
 	@Override
 	public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo)
 	{
-		
+        if (mixinClassName.endsWith(".MixinEffectCapture"))
+        {
+            int hooks=EffectCaptureTransformer.patch(targetClass);
+            LOGGER.info("DH particle dispatch hooks: capture sites="+(hooks & 65535)+", extended culling gates="+(hooks >>> 16));
+        }
 	}
 	
 }

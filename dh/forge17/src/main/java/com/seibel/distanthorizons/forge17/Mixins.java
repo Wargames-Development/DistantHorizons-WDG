@@ -25,6 +25,8 @@ public enum Mixins implements IMixins
 		new MixinBuilder().setPhase(Phase.EARLY)
         .addClientMixins(
             "MixinActiveRenderInfo",
+            "MixinEffectCapture",
+            "MixinTessellatorAccess",
             "MixinChunk",
             "MixinEntityRenderer",
             "MixinNetHandlerPlayClient",

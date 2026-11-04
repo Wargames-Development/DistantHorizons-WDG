@@ -376,6 +376,25 @@ public class Config
 							+ "")
 						.build();
 					
+                    public static ConfigEntry<Boolean> extendMcheliTrails = new ConfigEntry.Builder<Boolean>().set(true).build();
+                    public static ConfigEntry<Boolean> extendHbmTrails = new ConfigEntry.Builder<Boolean>().set(true).build();
+                    public static ConfigEntry<Boolean> extendFlansTrails = new ConfigEntry.Builder<Boolean>().set(true).build();
+                    public static ConfigEntry<Boolean> showDistantEffectDiagnostics = new ConfigEntry.Builder<Boolean>().set(false).build();
+
+					public static ConfigEntry<Boolean> enableDistantMcheliSmoke = new ConfigEntry.Builder<Boolean>()
+						.set(false)
+						.comment("Experimental Forge 1.7.10 MC Heli, HBM and FMUR effect extension. Preserves existing source emission rules. "
+							+ "Opt-in DH server relay continues real trail emissions beyond entity tracking. No projectile simulation changes. Shader packs are unsupported.")
+						.build();
+					public static ConfigEntry<Integer> distantSmokeDistance = new ConfigEntry.Builder<Integer>()
+						.setMinDefaultMax(64, 4096, 16384)
+						.comment("Maximum distance in blocks for the experimental smoke extension; fades over the final 32 blocks.")
+						.build();
+					public static ConfigEntry<Integer> distantSmokeParticleBudget = new ConfigEntry.Builder<Integer>()
+						.setMinDefaultMax(1, 128, 512)
+						.comment("Maximum existing smoke billboards drawn by the extension per frame. Native particles are unchanged.")
+						.build();
+
 					public static ConfigEntry<Boolean> enableBeaconRendering = new ConfigEntry.Builder<Boolean>()
 						.set(true)
 						.comment(""
@@ -1938,6 +1957,11 @@ public class Config
 	
 	public static class Server
 	{
+        public static ConfigEntry<Boolean> enableDistantTrailRelay = new ConfigEntry.Builder<Boolean>()
+            .set(true).comment("Allow explicitly subscribed compatible DH clients to receive cosmetic missile trail emissions. No chunk loads or entity tracking changes.").build();
+        public static ConfigEntry<Integer> distantTrailRelayDistance = new ConfigEntry.Builder<Integer>()
+            .setMinDefaultMax(64, 8192, 16384).comment("Maximum opt-in trail delivery radius, in blocks. Work and packet counts remain capped independently.").build();
+
 		// Level keys
 		public static ConfigEntry<Boolean> sendLevelKeys = new ConfigEntry.Builder<Boolean>()
 			.setChatCommandName("levelKeys.send")

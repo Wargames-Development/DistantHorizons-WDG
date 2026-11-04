@@ -14,7 +14,10 @@ public class MixinTesselator
 {
     @Inject(method = "draw", at = @At(value = "HEAD"))
     void drawMixin(CallbackInfoReturnable<Integer> cir) 
-    { RenderHelper.UnbindAfterTesselatorDraw(); }
+    {
+        com.seibel.distanthorizons.forge17.effects.DistantSmokeRenderer.captureDraw((Tessellator)(Object)this);
+        RenderHelper.UnbindAfterTesselatorDraw();
+    }
 	
 	
 	

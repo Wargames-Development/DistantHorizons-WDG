@@ -66,6 +66,16 @@ public abstract class MixinEntityRenderer
 	
 	
 	
+    // Run after every Forge world-last handler (MC Heli queues its smoke there),
+    // but before vanilla clears scene depth for the held-item pass.
+    @Inject(method = "renderWorld", at = @At(value = "INVOKE",
+        target = "Lnet/minecraftforge/client/ForgeHooksClient;dispatchRenderLast(Lnet/minecraft/client/renderer/RenderGlobal;F)V",
+        shift = At.Shift.AFTER, remap = false))
+    private void dh$afterWorldLast(float partialTicks, long finishTimeNano, CallbackInfo ci)
+    {
+        com.seibel.distanthorizons.forge17.effects.DistantSmokeRenderer.afterWorldLast(partialTicks);
+    }
+
 	//==========//
 	// lightmap //
 	//==========//

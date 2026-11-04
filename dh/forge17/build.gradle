@@ -70,3 +70,23 @@ sourcesJar {
     dependsOn commonSources
     from commonSources.archiveFile.map { zipTree(it) }
 }
+
+// Standalone checks use the existing Forge/Netty classpath; no new test dependencies.
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.runtimeClasspath
+tasks.register('checkDistantEffects', JavaExec) {
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.seibel.distanthorizons.forge17.effects.EffectCoreChecks'
+}
+
+tasks.named('compileTestJava').configure {
+    enabled = true
+    setSource(sourceSets.test.java)
+    doFirst { options.compilerArgs.removeAll { it.toString().contains('-Xplugin:Manifold') } }
+}
+
+// Explicit test output avoids the loader plugin's game-only JavaExec classpath.
+tasks.named('checkDistantEffects').configure {
+    doFirst { classpath = files(sourceSets.test.output.classesDirs, sourceSets.main.runtimeClasspath) }
+}
