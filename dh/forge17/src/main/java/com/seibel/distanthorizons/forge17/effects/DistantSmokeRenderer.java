@@ -32,6 +32,17 @@ import org.lwjgl.opengl.*;
 public final class DistantSmokeRenderer
 {
     public static DistantSmokeRenderer INSTANCE;
+    private static int cameraParticlePass;
+
+    /** Optional render-thread bridge: private cameras draw directly, never into the primary replay. */
+    public static void renderCameraParticles(Runnable particles,boolean thermalMask) {
+        if(cameraParticlePass!=0) throw new IllegalStateException("Recursive camera particles");
+        cameraParticlePass=thermalMask?2:1;
+        try { particles.run(); }
+        finally { cameraParticlePass=0; }
+    }
+    static boolean isCameraParticlePass() { return cameraParticlePass!=0; }
+    static boolean isCameraThermalMask() { return cameraParticlePass==2; }
     private final EffectQuadBuffer quads=new EffectQuadBuffer();
     private EffectQuadBuffer hbmNear;
     private int lateNearCaptured,lateNearDrawn,lateNearFallbacks;
@@ -135,6 +146,12 @@ public final class DistantSmokeRenderer
     public static boolean needsExtendedDispatch(EntityFX particle)
     {
         DistantSmokeRenderer r=INSTANCE;
+        if(isCameraParticlePass()) {
+            double x=particle.posX-EntityFX.interpPosX,y=particle.posY-EntityFX.interpPosY,z=particle.posZ-EntityFX.interpPosZ;
+            double range=Config.Client.Advanced.Graphics.GenericRendering.distantSmokeDistance.get();
+            return !particle.isDead && EffectSources.enabled(EffectSources.family(particle))
+                && Double.isFinite(x*x+y*y+z*z) && x*x+y*y+z*z<=range*range;
+        }
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
         if(iris!=null && iris.isRenderingShadowPass()) return false;
         if(r==null || !r.frameReady || r.failed || particle.isDead
@@ -149,6 +166,7 @@ public final class DistantSmokeRenderer
     }
     public static boolean canRenderBodies() {
         DistantSmokeRenderer r=INSTANCE;
+        if(isCameraParticlePass()) return r!=null && EffectSources.enabled(TrailSample.HBM);
         if(r==null || r.failed || !EffectSources.enabled(TrailSample.HBM) || DhApiRenderProxy.activeOpenGlDhDepthTextureId<=0) return false;
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
         return iris==null || !iris.isShaderPackInUse() || (!r.shaderFailed && !iris.isRenderingShadowPass() && ShaderEffectsTarget.current()!=null);
@@ -200,6 +218,7 @@ public final class DistantSmokeRenderer
     }
     public static boolean begin(EntityFX particle)
     {
+        if(isCameraParticlePass()) return false;
         DistantSmokeRenderer r=INSTANCE;
         if(r==null || !EffectSources.enabled() || r.failed || r.depth>=r.owners.length) return false;
         // Overlapping compatibility wrappers must not capture a source quad twice.
@@ -254,7 +273,7 @@ public final class DistantSmokeRenderer
         double distance=x*x+y*y+z*z;
         if(!Double.isFinite(distance) || distance>max*max) return;
         int family=EffectSources.family(owner);
-        if(cpw.mods.fml.common.Loader.isModLoaded("mcheli") && !normalMchCamera(owner)) return;
+        if(cpw.mods.fml.common.Loader.isModLoaded("mcheli") && !nonThermalMchCamera(owner)) return;
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
         if((iris==null || !iris.isShaderPackInUse()) && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=Minecraft.getMinecraft().getFramebuffer().framebufferObject) return;
         boolean shaderScene=iris!=null && iris.isShaderPackInUse();
@@ -383,7 +402,7 @@ public final class DistantSmokeRenderer
         if((LWJGL.glGetInteger(GL32.GL_CONTEXT_PROFILE_MASK)&GL32.GL_CONTEXT_CORE_PROFILE_BIT)!=0) return 0;
         return GL11.glIsEnabled(GL11.GL_ALPHA_TEST)?GL11.glGetFloat(GL11.GL_ALPHA_TEST_REF):0;
     }
-    private boolean normalMchCamera(EntityFX owner)
+    private boolean nonThermalMchCamera(EntityFX owner)
     {
         try
         {
@@ -392,7 +411,9 @@ public final class DistantSmokeRenderer
                 cameraChecked=true;
                 mchCamera=Class.forName("mcheli.MCH_Camera",false,owner.getClass().getClassLoader()).getField("currentCameraMode");
             }
-            return mchCamera!=null && mchCamera.getInt(null)==0;
+            // Night vision processes the completed scene and still needs its distant effects.
+            int mode=mchCamera==null?-1:mchCamera.getInt(null);
+            return mode==0 || mode==1;
         }
         catch(ReflectiveOperationException unsupported) { return false; }
     }

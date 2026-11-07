@@ -59,6 +59,29 @@ final class MissileCameraOriginChecks {
             mc.renderViewEntity=null;world.fail=false;
             missile.renderParticle(null,0.5F,0,0,0,0,0);
             check(world.x==9790 && world.y==380 && world.z==-2180,"missing view retains the caller's origin");
+            // A private colour/thermal camera supplies an origin independent of
+            // renderViewEntity. Stop in the binding check, before any GL work.
+            mc.renderViewEntity=(net.minecraft.entity.EntityLivingBase)view;world.fail=true;
+            DistantSmokeRenderer.INSTANCE=(DistantSmokeRenderer)unsafe.allocateInstance(DistantSmokeRenderer.class);
+            Field variant=MissileVisual.class.getDeclaredField("variant");variant.setAccessible(true);variant.set(missile,"EntityMissileGeneric");
+            Field cacheField=NativeMissileMesh.class.getDeclaredField("CACHE");cacheField.setAccessible(true);
+            @SuppressWarnings("unchecked") java.util.Map<String,java.util.List<double[]>> cache=
+                (java.util.Map<String,java.util.List<double[]>>)cacheField.get(null);
+            java.util.List<double[]> previousMesh=cache.put("v2",java.util.Collections.singletonList(new double[5]));
+            try {
+                for(boolean thermal:new boolean[]{false,true}) {
+                    try {
+                        DistantSmokeRenderer.renderCameraParticles(() -> missile.renderParticle(null,0.5F,0,0,0,0,0),thermal);
+                        throw new AssertionError("Expected private draw failure");
+                    } catch(OriginFailure expected) {
+                        check(world.x==9790 && world.y==380 && world.z==-2180,"private camera keeps its supplied particle origin");
+                        check(EntityFX.interpPosX==9790 && EntityFX.interpPosY==380 && EntityFX.interpPosZ==-2180,
+                            "private draw failure preserves shared particle state");
+                    }
+                }
+            } finally {
+                if(previousMesh==null) cache.remove("v2");else cache.put("v2",previousMesh);
+            }
             return checks;
         } finally {
             EntityFX.interpPosX=oldX;EntityFX.interpPosY=oldY;EntityFX.interpPosZ=oldZ;

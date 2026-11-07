@@ -9,6 +9,29 @@ import io.netty.buffer.Unpooled;
 public final class EffectCoreChecks
 {
     private static int checks;
+    private static void checkPrivateCameraScope() {
+        check(!DistantSmokeRenderer.isCameraParticlePass(),"primary frame starts outside private particle scope");
+        for(boolean heat:new boolean[]{false,true}) {
+            DistantSmokeRenderer.renderCameraParticles(() -> {
+                check(DistantSmokeRenderer.isCameraParticlePass(),"private particle scope is active");
+                check(DistantSmokeRenderer.isCameraThermalMask()==heat,"private camera distinguishes colour and heat");
+                check(!DistantSmokeRenderer.begin(null),"private particles cannot enter primary capture");
+                try {
+                    DistantSmokeRenderer.renderCameraParticles(() -> {},false);
+                    throw new AssertionError("Expected recursive camera rejection");
+                } catch(IllegalStateException expected) {
+                    check(DistantSmokeRenderer.isCameraThermalMask()==heat,"rejected recursion preserves outer scope");
+                }
+            },heat);
+            check(!DistantSmokeRenderer.isCameraParticlePass(),"private scope resets after successful draw");
+            try {
+                DistantSmokeRenderer.renderCameraParticles(() -> { throw new IllegalArgumentException("fixture"); },heat);
+                throw new AssertionError("Expected particle failure");
+            } catch(IllegalArgumentException expected) {
+                check(!DistantSmokeRenderer.isCameraParticlePass(),"private scope resets after failed draw");
+            }
+        }
+    }
     private static void check(boolean value,String name)
     {
         if(!value) throw new AssertionError(name);
@@ -416,6 +439,7 @@ public final class EffectCoreChecks
         check(TrailRules.coveredFraction(0,0,0,20,0,0,5,0,0)==0.25,"lagging tracked missile trims only its actually covered trail");
         check(TrailRules.coveredFraction(0,200,0,0,180,0,0,190,0)==0.5,"descending native coverage trims only the covered half");
         checkNativeEmitter();
+        checkPrivateCameraScope();
         checks+=MissileCameraOriginChecks.run();
         checkShaderStages(args);
         checkProjectionCopy();

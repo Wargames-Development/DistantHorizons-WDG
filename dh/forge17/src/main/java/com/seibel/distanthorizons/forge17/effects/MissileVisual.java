@@ -97,6 +97,11 @@ public final class MissileVisual extends EntityFX {
     }
     void nativeRendered(long frame) { nativeDrawFrame=frame; }
     private boolean shouldDrawProxy() {
+        // The native colour model is absent from FMUR's heat mask. Replay its
+        // proxy there too, without consulting or updating primary-frame observations.
+        if(DistantSmokeRenderer.isCameraParticlePass())
+            return !isDead && DistantSmokeRenderer.canRenderBodies() && NativeMissileMesh.replacesNative(variant)
+                && (DistantSmokeRenderer.isCameraThermalMask() || ownsModel());
         boolean available=!isDead && DistantSmokeRenderer.canRenderBodies() && NativeMissileMesh.replacesNative(variant);
         boolean nativeOwns=!ownsModel();
         boolean draw=MissileViewRules.drawProxy(available,nativeOwns,nativeDrawFrame,DistantSmokeRenderer.frameId());
@@ -109,13 +114,16 @@ public final class MissileVisual extends EntityFX {
         if(!EffectSources.enabled(TrailSample.HBM)) return;
         // Vanilla draws layer 3 before renderParticles refreshes interpPos. Use
         // this view's current origin for both model vertices and tess.draw capture.
+        // Private camera passes have already supplied their own particle origin.
         double oldX=interpPosX,oldY=interpPosY,oldZ=interpPosZ;
         try {
-            Entity view=Minecraft.getMinecraft().renderViewEntity;
-            if(view!=null) {
-                interpPosX=view.lastTickPosX+(view.posX-view.lastTickPosX)*partial;
-                interpPosY=view.lastTickPosY+(view.posY-view.lastTickPosY)*partial;
-                interpPosZ=view.lastTickPosZ+(view.posZ-view.lastTickPosZ)*partial;
+            if(!DistantSmokeRenderer.isCameraParticlePass()) {
+                Entity view=Minecraft.getMinecraft().renderViewEntity;
+                if(view!=null) {
+                    interpPosX=view.lastTickPosX+(view.posX-view.lastTickPosX)*partial;
+                    interpPosY=view.lastTickPosY+(view.posY-view.lastTickPosY)*partial;
+                    interpPosZ=view.lastTickPosZ+(view.posZ-view.lastTickPosZ)*partial;
+                }
             }
             renderBody(t,partial,rx,rz,ryz,rxy,rxz);
         } finally {
@@ -136,10 +144,11 @@ public final class MissileVisual extends EntityFX {
             org.lwjgl.opengl.GL11.glCullFace(org.lwjgl.opengl.GL11.GL_BACK);
             org.lwjgl.opengl.GL11.glColor4f(1,1,1,1);
             org.lwjgl.opengl.GL11.glBlendFunc(org.lwjgl.opengl.GL11.GL_ONE,org.lwjgl.opengl.GL11.GL_ZERO);
-            // Only the complete-model DH pass draws this geometry. Capture still
-            // runs at tess.draw(), while native fragment/depth writes are suppressed.
-            org.lwjgl.opengl.GL11.glColorMask(false,false,false,false);
-            org.lwjgl.opengl.GL11.glDepthMask(false);
+            // The primary view uses DH replay. Private cameras draw directly
+            // with their own compressed terrain depth, including model self-depth.
+            boolean camera=DistantSmokeRenderer.isCameraParticlePass();
+            org.lwjgl.opengl.GL11.glColorMask(camera,camera,camera,camera);
+            org.lwjgl.opengl.GL11.glDepthMask(camera);
             tessBody(t,x,y,z,rx,rz,ryz,rxy,rxz);
         } finally { org.lwjgl.opengl.GL11.glPopAttrib(); }
     }
