@@ -214,6 +214,31 @@ public final class EffectCoreChecks
         flight.offer(200,5000,0,0,0,1,0);flight.sample(0,pose);
         check(pose[0]==5000,"teleport or long gap resets interpolation instead of sweeping across the world");
     }
+    private static void checkExhaustClockTransitions() {
+        MissileExhaustClock clock=new MissileExhaustClock();
+        check(clock.admit(false,5400,26165600),"remote exhaust admits the server-world presentation tick");
+        check(clock.admit(true,5401,26165601),"binding a tracked overhead missile cannot compare local tick 5401 against world tick 26165600");
+        check(!clock.admit(true,5401,26165601),"tracked exhaust emits at most once in a client tick");
+        check(clock.admit(true,5402,26165601),"tracked pose can advance while the relay playhead holds between packets");
+        check(clock.admit(false,5403,26165601),"losing native tracking resumes the independent relay clock");
+        check(!clock.admit(false,5404,26165601),"held relay pose does not manufacture repeated exhaust");
+        check(clock.admit(false,5405,26165602),"fresh relay pose resumes exhaust after a packet gap");
+
+        clock=new MissileExhaustClock();
+        check(clock.admit(true,10000,10),"native-first flight accepts a local client tick");
+        check(clock.admit(false,10001,11),"reverse epoch ordering also permits native-to-relay transition");
+        check(clock.admit(true,10002,12),"rebinding uses only the previous native tick");
+
+        clock=new MissileExhaustClock();int admitted=0;
+        // A missile becomes client-tracked high above the impact chunk, long
+        // before native particle range. Exhaust must continue across that event.
+        for(int step=0;step<200;step++) {
+            boolean tracked=step>=40 && step<170;
+            if(clock.admit(tracked,5000+step,26000000+step)) admitted++;
+            check(!clock.admit(tracked,5000+step,26000000+step),"same-pose duplicate remains rejected across tracking changes");
+        }
+        check(admitted==200,"every advancing flight pose retains exhaust before, during and after native tracking");
+    }
     private static void checkTrailTimeline() {
         TrailBirthQueue queue=new TrailBirthQueue();
         TrailSample segment=sample();segment.tick=102;segment.x0=0;segment.x=20;
@@ -396,6 +421,7 @@ public final class EffectCoreChecks
         checkProbeFailureIsolation();
         checkBodyTextureContract();
         checkFlightSmoothing();
+        checkExhaustClockTransitions();
         checkTrailTimeline();
         checkNativeTrailSpacing();
         checkLargeBufferSorting();

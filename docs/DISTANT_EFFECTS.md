@@ -514,3 +514,23 @@ Minecraft visual verification.
 See `docs/debugging/distant-effects-shader-depth-2026-11-07.md` for the complete
 causal chain, evidence limits, depth values and reproduction inputs. New flight
 logs include `projectionNear/core` for direct runtime audit.
+
+### X47 client-tracked overhead exhaust continuity
+
+X46's projection, cloud and impact rendering are retained. The separate regression
+when standing near the target came from `MissileVisual.emitExhaust`: its shared
+last-emission field compared server-world presentation ticks while untracked
+against local client ticks after native entity binding. The older world clock
+was much larger, so the local tick was rejected for the rest of the tracked
+flight. This stopped relayed births while the body remained proxy-owned, before
+NTM's own particle range could take over. The latest target-view history showed
+native binding, an unchanged birth counter, decaying old plumes and then zero
+plume geometry with the body still selected.
+
+A per-missile `MissileExhaustClock` keeps these epochs separate. Both sources
+retain their existing once-per-pose rule; a stalled relay presentation tick
+still cannot manufacture repeated exhaust. Pose selection, emission placement,
+native ownership, particle factories, rendering and server relay are unchanged.
+Regression checks cover both epoch orderings, packet holds, duplicate calls and
+an overhead tracking interval between two remote intervals. This fix still needs
+the user's in-game impact-position regression checks with shaders on and off.

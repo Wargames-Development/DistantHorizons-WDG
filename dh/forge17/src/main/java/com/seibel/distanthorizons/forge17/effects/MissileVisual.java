@@ -18,7 +18,7 @@ public final class MissileVisual extends EntityFX {
     private final TrailSample[] exhaust=new TrailSample[8];
     private final int[] exhaustReceived=new int[8];
     private final double[] enginePrevious=new double[6],engineCurrent=new double[6],sourceCenter=new double[6];
-    private double lastExhaustTick=Double.NEGATIVE_INFINITY;
+    private final MissileExhaustClock exhaustClock=new MissileExhaustClock();
     private int quiet;
     private boolean reportedDraw,reportedBinding;
     private long nativeDrawFrame=-1;
@@ -71,10 +71,9 @@ public final class MissileVisual extends EntityFX {
     }
     void emitExhaust(int clientTick,java.util.function.Consumer<TrailSample> spawn) {
         if(!ownsModel()) return;
-        double time=trackedEntity()!=null?clientTick:smoother.presentationTick();
-        if(time<=lastExhaustTick) return;
-        lastExhaustTick=time;
-        if(trackedEntity()!=null) { displayPose(0,enginePrevious);displayPose(1,engineCurrent); }
+        boolean tracked=trackedEntity()!=null;
+        if(!exhaustClock.admit(tracked,clientTick,smoother.presentationTick())) return;
+        if(tracked) { displayPose(0,enginePrevious);displayPose(1,engineCurrent); }
         else { smoother.sample(-1,enginePrevious);smoother.sample(0,engineCurrent); }
         for(int slot=0;slot<exhaust.length;slot++) {
             TrailSample sample=exhaust[slot];
