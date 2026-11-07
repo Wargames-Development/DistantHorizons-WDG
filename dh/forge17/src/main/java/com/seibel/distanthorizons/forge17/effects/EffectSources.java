@@ -10,13 +10,15 @@ import com.seibel.distanthorizons.core.config.Config;
 public final class EffectSources
 {
     private static final Map<String,Integer> TYPES=new HashMap<String,Integer>();
+    private static final WeakHashMap<EntityFX,Boolean> RELAYED=new WeakHashMap<EntityFX,Boolean>();
     private static final WeakHashMap<EntityFX,Integer> TAGGED=new WeakHashMap<EntityFX,Integer>();
     static
     {
+        TYPES.put("com.seibel.distanthorizons.forge17.effects.MissileVisual",TrailSample.HBM);
         add(TrailSample.MCH,"mcheli.particles.","MCH_EntityParticleSmoke","MCH_EntityParticleExplode");
         add(TrailSample.HBM,"com.hbm.particle.","ParticleContrail","ParticleRocketFlame","ParticleRocketBF","ParticleRocketMUD",
             "ParticleRocketSCH","ParticleRocketUP","ParticleRocketFusion","ParticleExSmoke","ParticleExplosionSmall",
-            "ParticleSmokePlume","ParticleMukeCloud","ParticleMukeCloudBF");
+            "ParticleMukeWave","ParticleSmokePlume","ParticleMukeCloud","ParticleMukeCloudBF");
         add(TrailSample.FLANS,"com.flansmod.client.particle.","EntityRocketexhaust","EntityFMSmoke","EntityFMFlame",
             "EntitySmokeBurst","EntityFlare","EntityAfterburn","EntityCloudFX2","EntityCinematicSmoke","EntityEnvironmentalFX");
     }
@@ -46,6 +48,7 @@ public final class EffectSources
     {
         EffectOrigin.Source source=EffectOrigin.get();
         if (particle==null || source==null || !enabled(source.family)) return;
+        if(source.remote && RELAYED.size()<8192) RELAYED.put(particle,Boolean.TRUE);
         String type=particle.getClass().getName();
         if (type.equals("net.minecraft.client.particle.EntitySmokeFX") || type.equals("net.minecraft.client.particle.EntityExplodeFX")
             || type.equals("net.minecraft.client.particle.EntityFlameFX") || type.equals("net.minecraft.client.particle.EntityCloudFX")
@@ -55,7 +58,8 @@ public final class EffectSources
         }
         if (!source.remote && source.emitter!=null) TrailClient.nativeEmission(source.emitter);
     }
-    public static void clear() { TAGGED.clear(); }
+    public static boolean isRelayed(EntityFX particle) { return RELAYED.containsKey(particle); }
+    public static void clear() { TAGGED.clear();RELAYED.clear(); }
     public static double extendedRange(double original)
     {
         EffectOrigin.Source source=EffectOrigin.get();

@@ -11,7 +11,27 @@ public final class EffectCaptureTransformer
     private static final String RENDERER="com/seibel/distanthorizons/forge17/effects/DistantSmokeRenderer";
     private static final String ARGS="(Lnet/minecraft/client/renderer/Tessellator;FFFFFF)V";
     private static final String STATIC_ARGS="(L"+PARTICLE+";Lnet/minecraft/client/renderer/Tessellator;FFFFFF)V";
+    public static boolean shaderFinalizationHookInstalled;
     private EffectCaptureTransformer() { }
+    /** Angelica finalizes BEFORE Forge world-last. Patch the merged callback, not
+     * renderWorld's call to Forge, so mixin injection order cannot move us after it. */
+    public static int patchShaderFinalization(ClassNode target) {
+        int sites=0;
+        for(MethodNode method:target.methods) for(AbstractInsnNode node:method.instructions.toArray()) {
+            if(!(node instanceof MethodInsnNode)) continue;
+            MethodInsnNode call=(MethodInsnNode)node;
+            if(!call.owner.equals("net/coderbot/iris/pipeline/WorldRenderingPipeline")
+                || !call.name.equals("finalizeLevelRendering") || !call.desc.equals("()V")) continue;
+            AbstractInsnNode previous=node.getPrevious();
+            if(previous instanceof MethodInsnNode && ((MethodInsnNode)previous).owner.equals(RENDERER)
+                && ((MethodInsnNode)previous).name.equals("beforeShaderComposite")) continue;
+            // The pipeline receiver stays on the operand stack across this no-arg call.
+            method.instructions.insertBefore(node,new MethodInsnNode(Opcodes.INVOKESTATIC,
+                RENDERER,"beforeShaderComposite","()V",false));sites++;
+        }
+        if(sites>0) shaderFinalizationHookInstalled=true;
+        return sites;
+    }
     /** Returns capture sites and culling gates, packed into the low/high 16 bits. */
     public static int patch(ClassNode target)
     {

@@ -58,6 +58,10 @@ public class GlShaderProgram
 	 * @param fragResourcePath the relative path the fragment shader should be found 
 	 */
 	public GlShaderProgram(String vertResourcePath, String fragResourcePath, String[] attributes)
+	{ this(vertResourcePath, fragResourcePath, attributes, new String[0]); }
+
+	/** Bind MRT outputs before linking; omitted outputs keep the existing driver allocation. */
+	public GlShaderProgram(String vertResourcePath, String fragResourcePath, String[] attributes, String[] outputs)
 	{
 		this.id = LWJGL.glCreateProgram();
 		
@@ -79,6 +83,8 @@ public class GlShaderProgram
 		{
 			LWJGL.glBindAttribLocation(this.id, i, attributes[i]);
 		}
+		for (int i = 0; i < outputs.length; i++)
+		{ LWJGL.glBindFragDataLocation(this.id, i, outputs[i]); }
 		LWJGL.glLinkProgram(this.id);
 		
 		int status = LWJGL.glGetProgrami(this.id, GL20.GL_LINK_STATUS);

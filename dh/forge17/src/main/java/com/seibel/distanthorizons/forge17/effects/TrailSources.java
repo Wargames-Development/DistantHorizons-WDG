@@ -91,6 +91,10 @@ public final class TrailSources
             // Rideable rockets and unreviewed overrides have different engine rules.
             if (!owner.equals("EntityMissileBaseNT") && !owner.equals("EntityMissileCustom")
                 && !owner.equals("EntityMissileTier3") && !owner.equals("EntityMissileTier4")) return;
+            TrailSample body=new TrailSample(); body.family=TrailSample.HBM;body.style="dhBody."+e.getClass().getSimpleName();body.slot=7;body.count=1;
+            body.scale=6;
+            body.mx=(float)e.motionX;body.my=(float)e.motionY;body.mz=(float)e.motionZ;
+            TrailRelay.INSTANCE.offer(e,body);
             String style="missileContrail";
             float scale=((Number)method(e,"getContrailScale").invoke(e)).floatValue();
             int count=Math.max(1,Math.min(10,(int)Math.ceil(Math.sqrt(e.motionX*e.motionX+e.motionY*e.motionY+e.motionZ*e.motionZ))));

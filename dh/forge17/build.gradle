@@ -88,5 +88,9 @@ tasks.named('compileTestJava').configure {
 
 // Explicit test output avoids the loader plugin's game-only JavaExec classpath.
 tasks.named('checkDistantEffects').configure {
-    doFirst { classpath = files(sourceSets.test.output.classesDirs, sourceSets.main.runtimeClasspath) }
+    doFirst {
+        classpath = files(sourceSets.test.output.classesDirs, sourceSets.main.runtimeClasspath)
+        def angelicaFixture = sourceSets.main.compileClasspath.files.find { it.name.toLowerCase().contains('angelica') && it.name.endsWith('.jar') }
+        if (angelicaFixture != null) systemProperty 'dh.effects.angelicaFixture', angelicaFixture.absolutePath
+    }
 }

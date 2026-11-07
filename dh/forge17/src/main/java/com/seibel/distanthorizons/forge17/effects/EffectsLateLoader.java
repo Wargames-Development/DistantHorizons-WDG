@@ -22,8 +22,8 @@ public final class EffectsLateLoader implements ILateMixinLoader
         }
         if(mods.contains("hbm"))
         {
-            result.add("MixinHbmTrailSource");
-            if(client) result.add("MixinHbmParticleRange");
+            result.add("MixinHbmTrailSource");result.add("MixinHbmExplosionSource");
+            if(client) { result.add("MixinHbmParticleRange");result.add("MixinHbmMissileRender"); }
         }
         if(mods.contains("flansmod"))
         {

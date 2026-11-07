@@ -282,3 +282,235 @@ source/topology eligibility, bounded capacity, append order, near/far ownership,
 close native projection, alpha/light state, native/DH occlusion and unchanged
 scene depth. Full in-game X18 acceptance with normal terrain fading remains
 required, including dedicated server and integrated singleplayer support.
+
+
+## Angelica shader scene integration (X43 investigation)
+
+X42's world-last placement was incorrect for the installed Angelica 2.2.14.
+Inspection of the actual release bytecode establishes this order:
+
+1. `HandRenderer.renderTranslucent`.
+2. `WorldRenderingPipeline.finalizeLevelRendering`: composite passes, final pass.
+3. `ForgeHooksClient.dispatchRenderLast`.
+4. DH's existing shaderless effects hook.
+
+X43 patches the merged Angelica callback immediately before its actual
+`finalizeLevelRendering()` invocation. The low-priority EntityRenderer mixin's
+post-apply step finds this call after Angelica has injected it. No optional-mod
+class is linked on a dedicated server or shaderless client. A missing hook makes
+the shader target unavailable before any native particle vertices are suppressed.
+Startup logs report `DH effects shader pre-composite hooks=1` with Angelica.
+The real callback from both compile-time 2.2.12 and runtime 2.2.14 is exercised by
+the core checks, including its before-world-last annotation and patch idempotence.
+
+WDG MCHeli queues smoke for world-last. With shaders, its existing `renderQueued`
+method is called before this effects draw. It draws/captures and clears the same
+queue, so the normal world-last callback does not draw it twice. FMUR particles
+are already captured by this point. Shaderless queue timing and rendering are
+unchanged. These compatibility paths still need visual acceptance in-game.
+
+### Targets and depth
+
+The bridge resolves the current pipeline and texture IDs every frame and again
+before drawing. It uses `getFlippedAfterTranslucent()`, which already applies
+Angelica's per-frame parity. As in `IrisSamplers.addRenderTargetSamplers`, a
+flipped buffer supplies its alternate texture, otherwise its main texture.
+`colortex0` is the input scene colour consumed by subsequent composites. The
+bridge no longer assumes the currently bound framebuffer attachment zero is
+that texture. This also avoids depending on the last hand/weather MRT layout.
+The public depth/parity APIs and the private `getRenderTargets()` compatibility
+seam were inspected in 2.2.12 and 2.2.14, including 2.2.14's Java 17 pipeline.
+If the optional reflective bridge becomes unavailable it retains native drawing.
+
+A private framebuffer attaches that colour texture and live DH depth without
+clearing either or changing Angelica's MRT layout. Opaque missile proxies write
+DH depth; transparent puffs/explosions do not. The pass separately samples native
+foreground depth and Angelica's distinct pre-translucent DH depth copy. Shadows
+are excluded. Existing shaderless projection, handoff and depth rules remain.
+
+X42 also rasterized shader effects with DH's terrain projection, clipping them
+in front of DH's near plane. X43 retains native screen XY/W, checks native camera
+near clipping, and supplies DH fragment depth manually. Close fragments before
+DH's near plane use clamped DH depth while retaining native foreground occlusion.
+Forward/reverse DH far clipping remains active. A new GPU regression fails with
+the saved X42 shaders and passes with X43.
+
+### Volumetric cloud mask
+
+In the installed BountifulStars pack, `program/deferred1.glsl` calculates clouds
+and writes their normalized hit distance to `colortex5.a` (`gaux2.a`). The native
+particle contract is `gaux2.a * gaux2.a * dhRenderDistance`, compared against view
+length capped to that distance. The bridge retains the existing pack-name scope
+(BountifulStars/Complementary) and observes live `gaux2` / `dhRenderDistance`
+uniforms to establish the enabled variant and range. The mask texture itself
+comes from the resolved post-deferred `colortex5` parity, never a saved texture
+unit binding. No previous-frame mask/range is reused. Exact texels are fetched,
+as in the pack, without inventing intermediate hit distances through filtering.
+The small native dithering term is still omitted. Other packs are not assumed
+to use this encoding. Actual enabled-mask detection and dense-cloud appearance
+have not yet been observed with X43 in-game.
+
+### Automatic bounded evidence
+
+`DH effects pipeline probe` lines are emitted automatically while effects are
+present: at most 32 sampled frames per world, at least two seconds apart. Twelve
+query objects are reused. Results are polled only when available; there is no
+synchronous pixel readback or GPU-result wait. On a sampled frame, each nonempty
+body/plume/other buffer gets three extra diagnostic draws with colour and depth
+writes disabled. The normal pass is also queried. Simulation, particle age,
+capture budgets and source geometry are unaffected. Normal frames do no extra
+diagnostic drawing.
+
+Each line identifies the capture frame, scene colour ID/parity, previous bound
+FBO/colour, live/copy/native depth IDs, resolved/enabled cloud texture ID/parity,
+cloud range, and captured buffer sizes. GPU sample counts are
+`raster/depth/cloud/visible` per buffer:
+
+- Raster zero with captured geometry: no eligible on-screen fragments survived
+  view/near/far checks (also inspect culling and body ownership counts).
+- Raster positive, depth zero: terrain/native/hardware depth rejection.
+- Depth positive, cloud zero: the selected cloud mask rejected the geometry.
+- Cloud positive, visible zero: source texture/vertex alpha rejection, or the
+  normal pass's depth ordering. Body probes run after its normal depth writes,
+  so body sample counts need not be monotonic.
+- Visible positive: fragments passed this effects draw. This does **not** prove
+  later pack passes preserved them or that their final appearance is correct.
+
+The existing bounded automatic flight history includes the latest probe and
+`body calls/tracked/nativeOwner/nativeObserved/proxySelected` counts. Native
+renderer observation still does not prove pixels. Captured/selected accounting
+now includes body and plume buffers; earlier `captured=0/drawn>0` lines omitted
+those buffers from the first counter.
+
+### Validation boundary
+
+The offline build/core suite and 71 synthetic OpenGL pixel/depth checks cover
+near continuity, native/DH occlusion, forward/reverse depth, cloud on/off, probe
+stage separation, source alpha/light state, and unchanged shaderless ownership.
+The source/bytecode inspection establishes stage and ping-pong selection contracts.
+Neither executes the actual shader pack in Minecraft. X43 is not in-game verified;
+full-flight shader continuity, dense-cloud occlusion, impact effects, native/LOD
+handoff and MCHeli/FMUR appearance remain acceptance items. No models, textures,
+particle factories, flight smoothing, network identity or server simulation were
+changed for these pipeline corrections.
+
+Validation commands from the repository root:
+
+```sh
+./gradlew collectJars :dh:forge17:checkDistantEffects --offline
+# Optionally supply the exact installed Angelica jar to check its actual callback too:
+./gradlew :dh:forge17:checkDistantEffects --offline --args='/absolute/path/to/angelica.jar'
+clang -Wno-deprecated-declarations scripts/tests/distant_smoke_gl_test.c -framework OpenGL -o /tmp/dh-effects-gl-test
+/tmp/dh-effects-gl-test dh/forge17/src/main/resources/assets/distanthorizons/shaders/distant_smoke.vert dh/forge17/src/main/resources/assets/distanthorizons/shaders/distant_smoke.frag
+```
+
+### X44 diagnostic crash correction
+
+The first X43 missile launch reached the new pre-composite hook and submitted
+native missile geometry, then crashed while polling the first GPU result.
+The client report identifies `NoSuchMethodError` for
+`GLStateManager.glGetQueryObjectui(int,int)`. Angelica's name-based GL redirector
+rewrites LWJGL's unsigned scalar getter to that method, but installed 2.2.14
+provides only the unsigned buffer overload and the signed scalar getter. The
+C shader fixture and previous stage-bytecode checks did not exercise this
+transformation. Server logs show the missile started with its chunk ticket
+present before the client disconnected.
+
+X44 uses the supported `glGetQueryObjecti(int,int)` scalar result getter.
+Runtime/linkage exceptions in every query operation disable only diagnostics,
+with a single warning and no subsequent query calls. Pending results are still
+read only after availability; diagnostic failures do not disable effect rendering.
+Failure-injection checks cover start/create/begin/end/availability/result paths.
+
+`scripts/tests/AngelicaEffectsLinkCheck.java` runs the installed Angelica
+`GLSMRedirector` over actual effect classes and checks every resulting
+`GLStateManager` method descriptor against the runtime class without initializing
+OpenGL or Minecraft. It reproduces the exact missing method in the packaged X43
+jar and accepts the corrected classes. Run it using Java 17+ source-file mode,
+with Angelica, GTNHLib, ASM (core/tree/commons), Log4j and Guava on the classpath:
+
+```sh
+java -cp '<runtime dependency classpath>' scripts/tests/AngelicaEffectsLinkCheck.java '<compiled classes directory or packaged DH jar>'
+```
+
+This is a diagnostic crash correction. X43's render-stage, near-plane, cloud,
+missile/trail appearance and handoff behaviour are otherwise unchanged. Runtime
+linkage verification and injected failures establish this correction's scope;
+they do not establish shader-pack visual acceptance in-game.
+
+### X45 native particle material contract
+
+In-game X44 feedback confirms cloud occlusion now works: the missile enters the
+cloud volume and is hidden. Low-altitude flight and impact remain invisible with
+shaders. The corresponding log establishes that the body proxy stayed selected
+through descent, the client received the native explosion at
+`9153.5568,109.3749,-2122.5725`, and the pre-impact sample at frame 2010 had
+`body raster/depth/cloud/visible=406/314/314/349`. This does not establish the
+visibility of every low-altitude frame, but shows that the sampled body reached
+scene colour and survived cloud checks. No native handoff occurred in that flight.
+
+Inspection of the installed pack found a missing native output contract:
+`gbuffers_textured.glsl` writes `(0,254/255,0,1)` to `colortex6`, alongside colour.
+The pack's later `DoTAA` returns immediately for material 254. Without this marker,
+our fragments inherit the terrain material and depth history underneath them.
+For static-camera LOD pixels, the enabled default TAA settings blend 90% history
+and 10% current colour. This strongly suppresses new moving objects against
+terrain. The native entity material range also bypasses this TAA path.
+
+`scripts/tests/shader_pack_taa_gl_test.c` executes the installed pack's unmodified
+`taa.glsl` with its default smoothing and Catmull-Rom history filter in a focused
+LOD fixture. A dark moving-body pixel of 0.1 against terrain/history of 0.8 becomes
+0.73 without the marker, versus 0.1 with it. Fresh smoke of 0.45 becomes 0.765
+without the marker, versus 0.45 with it. Both lose 90% of their contrast before the
+correction. The fixture uses controlled inputs, not a Minecraft frame; it
+establishes this suppression mechanism, not the complete reported disappearance.
+
+X45 attaches the same current-parity `colortex6` texture to output 1 of the private
+effects FBO for BountifulStars/Complementary only. Output 0 remains scene colour.
+The shader writes the exact native material marker only after source alpha,
+native/DH depth and cloud checks pass. Attachment 1 blending is independently
+disabled so additive explosion waves also replace the marker instead of adding
+to terrain metadata. Its previous indexed blend enable is restored after the
+pass. Native colour blend functions, textures, light, alpha and depth rules remain.
+The shaderless path and other packs have no material attachment. No extra normal
+render pass or texture allocation is required. Fragment output locations are
+explicitly bound before linking through an optional shader-wrapper constructor;
+existing shader constructors retain their prior allocation behaviour.
+
+The OpenGL suite now has 79 checks. New cases cover opaque bodies, transparent
+plumes, additive waves, preservation of terrain metadata behind depth/cloud/alpha
+rejection, write-disabled probes and shaderless rendering with the metadata
+attachment detached. The packaged X44 shader fails the new metadata regression.
+The two actual-pack TAA fixture checks are separate from that synthetic suite:
+
+```sh
+clang -Wno-deprecated-declarations scripts/tests/shader_pack_taa_gl_test.c -framework OpenGL -o /tmp/dh-pack-taa-gl-test
+/tmp/dh-pack-taa-gl-test /path/to/extracted/shaders/lib/antialiasing/taa.glsl
+```
+
+Cloud occlusion is user-verified with X44. X45's low-altitude and impact appearance
+are not yet verified in Minecraft; these checks correct a demonstrated pack
+contract omission without asserting that all remaining low-altitude loss has
+been accounted for.
+
+### X46 projection contract correction
+
+X45 did not fix the reported low-altitude disappearance. A new analysis of the
+latest X45 logs, exact launch recording, active pack, and installed Angelica
+bytecode identifies a depth-coordinate mismatch: core DH caps its near plane at
+7.5, while the pack terrain uses Angelica's separately generated `dhProjection`
+from the uncapped render API. The effects pass was comparing/writing core depth
+against pack depth. The impact wave's actual runtime probe had 3763 raster
+samples and zero depth survivors, before clouds or TAA.
+
+The bridge now snapshots the actual `DHCompat.getProjection()` supplier and uses
+it with the existing DH model view/origin conversion. Shaderless projection and
+cloud occlusion are unchanged. Five GPU cases reproduce the old failure at the
+recorded terminal height (~28.5 blocks above impact), show the consistent-matrix
+correction, and retain shaderless/sky/behind-terrain controls. The suite totals
+84 checks. This is source- and recording-backed reproduction, not a full live
+Minecraft visual verification.
+
+See `docs/debugging/distant-effects-shader-depth-2026-11-07.md` for the complete
+causal chain, evidence limits, depth values and reproduction inputs. New flight
+logs include `projectionNear/core` for direct runtime audit.

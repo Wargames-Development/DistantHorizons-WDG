@@ -38,6 +38,7 @@ public final class TrailRelay
     private final ArrayBlockingQueue<Request> requests=new ArrayBlockingQueue<Request>(64);
     private final Map<UUID, Session> sessions=new HashMap<UUID, Session>();
     private final Map<World, LinkedHashMap<String, Stream>> worlds=new HashMap<World, LinkedHashMap<String, Stream>>();
+    private final Map<World,List<TrailSample>> blasts=new HashMap<World,List<TrailSample>>();
     private volatile boolean subscribed, serverPresent;
     private volatile Consumer<Batch> clientReceiver;
     private boolean initialized;
@@ -86,6 +87,12 @@ public final class TrailRelay
         double step=(sample.x-sample.x0)*(sample.x-sample.x0)+(sample.y-sample.y0)*(sample.y-sample.y0)+(sample.z-sample.z0)*(sample.z-sample.z0);
         if(step>256D*256D) { sample.x0=sample.x;sample.y0=sample.y;sample.z0=sample.z; }
         if (!sample.valid()) return;
+        if(sample.style.equals("dhBlast")) {
+            List<TrailSample> list=blasts.get(entity.worldObj);
+            if(list==null) { list=new ArrayList<TrailSample>();blasts.put(entity.worldObj,list); }
+            if(list.size()<32) list.add(sample);
+            return;
+        }
         if(!reportedFamily[sample.family])
         {
             reportedFamily[sample.family]=true;
@@ -114,6 +121,18 @@ public final class TrailRelay
         }
     }
 
+    public void explosion(World world,double x,double y,double z,int clouds,float scale,float speed,float wave,float nativeRange) {
+        if(world.isRemote || !hasSubscribers()) return;
+        TrailSample sample=new TrailSample();sample.family=TrailSample.HBM;sample.style="dhNativeBlast";
+        sample.uuid=UUID.randomUUID();sample.entityId=-1;sample.tick=world.getTotalWorldTime();sample.count=Math.max(1,Math.min(32,clouds));
+        sample.x0=sample.x=x;sample.y0=sample.y=y;sample.z0=sample.z=z;sample.scale=scale;
+        sample.mx=speed;sample.my=wave/4F;sample.mz=nativeRange/1024F;
+        if(!sample.valid()) return;
+        List<TrailSample> list=blasts.get(world);
+        if(list==null) { list=new ArrayList<TrailSample>();blasts.put(world,list); }
+        if(list.size()<32) list.add(sample);
+    }
+
     @SubscribeEvent
     public void tick(TickEvent.ServerTickEvent event)
     {
@@ -140,13 +159,22 @@ public final class TrailRelay
                 || s.player.isDead || System.nanoTime()-s.changedAt > 30000000000L) i.remove();
         }
         subscribed=!sessions.isEmpty();
-        if (!hasSubscribers()) worlds.clear();
+        if (!hasSubscribers()) { worlds.clear(); blasts.clear(); }
     }
 
     @SubscribeEvent
     public void worldTick(TickEvent.WorldTickEvent event)
     {
         if (event.side != Side.SERVER || event.phase != TickEvent.Phase.END || !hasSubscribers()) return;
+        List<TrailSample> pending=blasts.remove(event.world);
+        if(pending!=null) for(Session session:sessions.values()) {
+            EntityPlayerMP player=session.player;
+            if(player.worldObj!=event.world || (session.settings.flags & (1<<TrailSample.HBM))==0) continue;
+            double range=Math.min(session.settings.distance,Config.Server.distantTrailRelayDistance.get());
+            List<TrailSample> visible=new ArrayList<TrailSample>();
+            for(TrailSample sample:pending) if(player.getDistanceSq(sample.x,sample.y,sample.z)>sample.mz*1024D*sample.mz*1024D && player.getDistanceSq(sample.x,sample.y,sample.z)<=range*range) visible.add(sample);
+            if(!visible.isEmpty()) send(new Batch(player.dimension,visible),player);
+        }
         LinkedHashMap<String, Stream> streams=worlds.get(event.world);
         if (streams == null) return;
         long tick=event.world.getTotalWorldTime();
@@ -212,10 +240,10 @@ public final class TrailRelay
         }
     }
     @SubscribeEvent
-    public void unload(WorldEvent.Unload event) { if (!event.world.isRemote) worlds.remove(event.world); }
+    public void unload(WorldEvent.Unload event) { if (!event.world.isRemote) { worlds.remove(event.world);blasts.remove(event.world); } }
     public void clearServer()
     {
-        sessions.clear(); worlds.clear(); peers.clear(); requests.clear(); subscribed=false;
+        sessions.clear(); worlds.clear(); blasts.clear(); peers.clear(); requests.clear(); subscribed=false;
         java.util.Arrays.fill(reportedFamily,false);
     }
 

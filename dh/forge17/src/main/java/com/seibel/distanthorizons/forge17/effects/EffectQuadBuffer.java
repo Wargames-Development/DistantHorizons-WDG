@@ -12,7 +12,7 @@ public final class EffectQuadBuffer
     public final boolean[] lit;
     public final float[] alphaCutoff, fade, ox, oy, oz;
     public final double[] distance;
-    private final int[] priority, heap;
+    private final int[] priority, heap, sortScratch;
     public final int capacity;
     public int size;
     public EffectQuadBuffer() { this(CAPACITY); }
@@ -21,6 +21,7 @@ public final class EffectQuadBuffer
     {
         if(capacity<1 || capacity>HbmDrawRules.NEAR_CAPACITY) throw new IllegalArgumentException("geometry capacity");
         this.capacity=capacity;
+        sortScratch=new int[capacity];
         vertices=new int[capacity*INTS_PER_QUAD];
         texture=new int[capacity];sourceBlend=new int[capacity];destinationBlend=new int[capacity];
         family=new int[capacity];order=new int[capacity];traceBin=new int[capacity];traceOrigin=new int[capacity];
@@ -68,11 +69,17 @@ public final class EffectQuadBuffer
     }
     public void sortBackToFront()
     {
-        for (int i=1;i<size;i++)
-        {
-            int q=order[i],j=i-1;
-            while (j>=0 && distance[order[j]]<distance[q]) { order[j+1]=order[j];j--; }
-            order[j+1]=q;
+        // Reused scratch storage; larger native plume/model buffers must not use O(n^2) sorting.
+        for(int width=1;width<size;width*=2) {
+            for(int start=0;start<size;start+=2*width) {
+                int middle=Math.min(start+width,size),end=Math.min(start+2*width,size);
+                int left=start,right=middle;
+                for(int out=start;out<end;out++) {
+                    if(left<middle && (right>=end || distance[order[left]]>=distance[order[right]])) sortScratch[out]=order[left++];
+                    else sortScratch[out]=order[right++];
+                }
+            }
+            System.arraycopy(sortScratch,0,order,0,size);
         }
     }
     public boolean sameState(int a,int b)

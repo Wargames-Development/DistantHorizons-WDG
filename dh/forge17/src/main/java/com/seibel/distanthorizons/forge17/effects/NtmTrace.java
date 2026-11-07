@@ -17,6 +17,7 @@ public final class NtmTrace
     private static final int[] ageMin=new int[BINS*KINDS],ageMax=new int[BINS*KINDS];
     private static long queueEvictions;
     private static int scans,unclassified,examined;
+    private static int bodies,trackedBodies,nativeOwners,nativeDraws,proxyDraws,lastBodyId;
     private NtmTrace() { }
     public static int bin(double depth) {
         return !Double.isFinite(depth)?6:depth<128?0:depth<192?1:depth<256?2:depth<320?3:depth<512?4:5;
@@ -59,6 +60,11 @@ public final class NtmTrace
     }
     public static void frame() {
         Arrays.fill(dispatch,0);Arrays.fill(near,0);Arrays.fill(far,0);Arrays.fill(selected,0);
+        bodies=trackedBodies=nativeOwners=nativeDraws=proxyDraws=0;lastBodyId=-1;
+    }
+    static void body(int id,boolean tracked,boolean nativeOwner,boolean nativeDraw,boolean proxyDraw) {
+        bodies++;lastBodyId=id;if(tracked) trackedBodies++;if(nativeOwner) nativeOwners++;
+        if(nativeDraw) nativeDraws++;if(proxyDraw) proxyDraws++;
     }
     public static void dispatched(EntityFX p) {
         if(EffectSources.family(p)==TrailSample.HBM) dispatch[index(p)]++;
@@ -92,7 +98,8 @@ public final class NtmTrace
         return s.toString();
     }
     public static synchronized String snapshot() {
-        StringBuilder s=new StringBuilder("NTM stages v1 depth=clipW metres; N/R/U=native/relay/unattributed; input/trim/born=cumulative; queueEvicted="+queueEvictions+" unclassified="+unclassified+" liveScan="+examined);
+        StringBuilder s=new StringBuilder("NTM stages v2 depth=clipW metres; N/R/U=native/relay/unattributed; input/trim/born=cumulative; queueEvicted="+queueEvictions+" unclassified="+unclassified+" liveScan="+examined
+            +" body calls/tracked/nativeOwner/nativeObserved/proxySelected="+bodies+"/"+trackedBodies+"/"+nativeOwners+"/"+nativeDraws+"/"+proxyDraws+" lastId="+lastBodyId);
         for(int b=0;b<BINS;b++) s.append(" | ").append(LABELS[b]).append(": in/full/part=").append(input[b]).append('/').append(fullTrim[b]).append('/').append(partialTrim[b])
             .append(" born=").append(triplet(births,b)).append(" live=").append(triplet(live,b)).append(" flameAge=").append(ages(b)).append(" calls=").append(triplet(dispatch,b))
             .append(" near=").append(triplet(near,b)).append(" far=").append(triplet(far,b)).append(" selected=").append(triplet(selected,b));

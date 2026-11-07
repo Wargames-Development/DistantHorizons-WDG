@@ -30,6 +30,11 @@ public final class TrailClient
     private boolean flightHistoryActive;
 
     private final boolean[] failed=new boolean[4];
+    private final Map<Integer,MissileVisual> bodiesByEntityId=new HashMap<Integer,MissileVisual>();
+    private final Map<UUID,MissileVisual> bodies=new HashMap<UUID,MissileVisual>();
+    private final TrailBirthQueue trailBirths=new TrailBirthQueue();
+    private boolean scheduledBirth;
+    private boolean bodyCreationFailed;
     private World world;
     private int clientTick,lastFlags=-1,lastDistance=-1,births,received,deduplicated,dropped;
     private boolean acknowledged;
@@ -44,6 +49,20 @@ public final class TrailClient
     {
         INSTANCE=this;
         TrailRelay.INSTANCE.setClientReceiver(batch -> { if(!incoming.offer(batch)) { incoming.poll();NtmTrace.queueEvicted();incoming.offer(batch); } });
+    }
+    /** A single owner for model and exhaust, including the native far-plane crossing. */
+    public static boolean ownsMissile(Entity entity) {
+        TrailClient client=INSTANCE;
+        if(client==null || entity==null || !entity.worldObj.isRemote || client.world!=entity.worldObj
+            || !DistantSmokeRenderer.canRenderBodies()) return false;
+        MissileVisual body=client.bodiesByEntityId.get(entity.getEntityId());
+        return body!=null && body.matchesNative(entity) && body.ownsModel() && !client.bodyCreationFailed;
+    }
+    public static void nativeMissileRendered(Entity entity) {
+        TrailClient client=INSTANCE;
+        if(client==null || entity==null || entity.worldObj!=client.world) return;
+        MissileVisual body=client.bodiesByEntityId.get(entity.getEntityId());
+        if(body!=null && body.matchesNative(entity)) body.nativeRendered(DistantSmokeRenderer.frameId());
     }
     public static void nativeEmission(Entity entity)
     {
@@ -70,7 +89,7 @@ public final class TrailClient
         Minecraft mc=Minecraft.getMinecraft();
         if(world!=mc.theWorld)
         {
-            world=mc.theWorld;nativeEmissions.clear();incoming.clear();EffectSources.clear();NtmTrace.clear();
+            world=mc.theWorld;bodiesByEntityId.clear();trailBirths.clear();bodyCreationFailed=false;bodies.clear();nativeEmissions.clear();incoming.clear();EffectSources.clear();NtmTrace.clear();
             probe=null;probeTicks=0;acknowledged=false;lastFlags=-1;flightHistory.clear();flightHistoryActive=false;
         }
         if(world==null || mc.thePlayer==null) return;
@@ -79,6 +98,10 @@ public final class TrailClient
         if(TrailRelay.INSTANCE.serverPresent() && (flags!=lastFlags || distance!=lastDistance || clientTick%100==0))
         {
             TrailRelay.INSTANCE.subscribe(flags,distance);lastFlags=flags;lastDistance=distance;
+        }
+        for(Iterator<MissileVisual> it=bodies.values().iterator();it.hasNext();) {
+            MissileVisual body=it.next();
+            if(body.isDead) { bodiesByEntityId.remove(body.sourceId(),body);it.remove(); }
         }
         long tick=world.getTotalWorldTime();
         for(Iterator<Map.Entry<Integer,Emission>> it=nativeEmissions.entrySet().iterator();it.hasNext();)
@@ -100,7 +123,36 @@ public final class TrailClient
                 lastFamilyDistance[sample.family]=(int)Math.round(Math.sqrt(dx*dx+dy*dy+dz*dz));
                 if(dx*dx+dy*dy+dz*dz>distance*(double)distance) continue;
                 if(tick-sample.tick>10 || sample.tick-tick>200) { dropped++;continue; }
+                if(sample.family==TrailSample.HBM && (sample.style.startsWith("dhBody.") || sample.style.equals("dhNativeBlast"))) {
+                    if(sample.style.startsWith("dhBody.")) {
+                        if(bodyCreationFailed) continue;
+                        try {
+                            MissileVisual body=bodies.get(sample.uuid);
+                            if(body==null && bodies.size()<128) {
+                                body=new MissileVisual(world,sample);
+                                mc.effectRenderer.addEffect(body);
+                                MissileVisual previous=bodiesByEntityId.put(sample.entityId,body);
+                                if(previous!=null && previous!=body) previous.setDead();
+                                bodies.put(sample.uuid,body);
+                                LogManager.getLogger("DistantHorizons").info("DH NTM body received: "+sample.uuid);
+                            }
+                            if(body!=null) body.refresh(sample);
+                        } catch(RuntimeException | LinkageError error) {
+                            bodyCreationFailed=true;
+                            for(MissileVisual body:bodies.values()) body.setDead();
+                            bodies.clear();bodiesByEntityId.clear();
+                            LogManager.getLogger("DistantHorizons").error("Distant missile bodies disabled for this world after creation failure; trail relay remains active",error);
+                        }
+                    } else nativeBlast(sample);
+                    continue;
+                }
+                MissileVisual engine=sample.family==TrailSample.HBM?bodies.get(sample.uuid):null;
+                if(engine!=null && engine.ownsModel()) {
+                    engine.observeExhaust(sample,clientTick);
+                    continue;
+                }
                 Emission emission=nativeEmissions.get(sample.entityId);
+                if(sample.family==TrailSample.HBM && bodies.containsKey(sample.uuid) && bodies.get(sample.uuid).ownsModel()) emission=null;
                 double traceCovered=0;
                 if(emission!=null && (sample.family!=TrailSample.HBM || tick-emission.tick<=2))
                 {
@@ -115,10 +167,28 @@ public final class TrailClient
                 if(sample.family==TrailSample.HBM) NtmTrace.delivery(sample,traceCovered);
                 int count=Math.min(16,sample.count);
                 // Reduce distant sampling density, retaining the observed segment and original puff lifetime/size.
-                if(dx*dx+dy*dy+dz*dz>1024D*1024D) count=Math.max(2,(count+1)/2);
-                spawnSegment(sample,count);
+                if(sample.family!=TrailSample.HBM && dx*dx+dy*dy+dz*dz>1024D*1024D) count=Math.max(2,(count+1)/2);
+                if(sample.family==TrailSample.HBM) trailBirths.add(sample,count,clientTick);
+                else spawnSegment(sample,count);
             }
         }
+        for(MissileVisual body:bodies.values()) {
+            if(births>=128) break;
+            body.emitExhaust(clientTick,sample -> spawnScheduled(sample));
+        }
+        trailBirths.drain(clientTick,sample -> {
+            MissileVisual body=sample.family==TrailSample.HBM?bodies.get(sample.uuid):null;
+            if(body!=null && body.ownsModel()) return body.presentationTick();
+            // A body packet may follow a nozzle packet in the same batch. Do not
+            // release unsupported future exhaust while waiting for the owner.
+            if(sample.family==TrailSample.HBM && body==null && !bodyCreationFailed && DistantSmokeRenderer.canRenderBodies())
+                return Double.NEGATIVE_INFINITY;
+            return Double.NaN;
+        },sample -> {
+            MissileVisual owner=sample.family==TrailSample.HBM?bodies.get(sample.uuid):null;
+            if(owner!=null && owner.ownsModel()) return;
+            else spawnScheduled(sample);
+        });
         recordFlightHistory();
         if(probe!=null && probeTicks>0)
         {
@@ -126,6 +196,30 @@ public final class TrailClient
             if(clientTick%100==0) logStatus();
             if(--probeTicks==0) { probe=null;logStatus(); }
         }
+    }
+    private void spawnScheduled(TrailSample sample) {
+        scheduledBirth=true;
+        try { spawnSegment(sample,1); }
+        finally { scheduledBirth=false; }
+    }
+    private void nativeBlast(TrailSample s) {
+        EffectOrigin.Source previous=EffectOrigin.enter(null,TrailSample.HBM,true);
+        try {
+            if(hbmEffect==null) {
+                hbmProxy=Class.forName("com.hbm.main.MainRegistry").getField("proxy").get(null);
+                hbmEffect=hbmProxy.getClass().getMethod("effectNT",NBTTagCompound.class);
+            }
+            NBTTagCompound nbt=new NBTTagCompound();nbt.setString("type","explosionLarge");
+            nbt.setDouble("posX",s.x);nbt.setDouble("posY",s.y);nbt.setDouble("posZ",s.z);
+            nbt.setByte("cloudCount",(byte)s.count);nbt.setFloat("cloudScale",s.scale);
+            nbt.setFloat("cloudSpeedMult",s.mx);nbt.setFloat("waveScale",s.my*4F);
+            // Distant visuals use the original cloud and wave factories. Debris needs local blocks.
+            nbt.setByte("debrisCount",(byte)0);nbt.setFloat("soundRange",0);
+            hbmEffect.invoke(hbmProxy,nbt);
+            LogManager.getLogger("DistantHorizons").info("DH native NTM explosion delivered at "+s.x+","+s.y+","+s.z);
+        } catch(ReflectiveOperationException | RuntimeException error) {
+            LogManager.getLogger("DistantHorizons").warn("Native distant NTM explosion failed",error);
+        } finally { EffectOrigin.restore(previous); }
     }
     /** Automatic bounded diagnostics: no screenshot or precisely timed command needed. */
     private void recordFlightHistory()
@@ -150,7 +244,7 @@ public final class TrailClient
     private void spawnSegment(TrailSample sample,int count)
     {
         if(failed[sample.family]) return;
-        creationAge=sample==probe?0:(int)Math.max(0,Math.min(10,world.getTotalWorldTime()-sample.tick));
+        creationAge=sample==probe || scheduledBirth?0:(int)Math.max(0,Math.min(10,world.getTotalWorldTime()-sample.tick));
         EffectOrigin.Source previous=EffectOrigin.enter(null,sample.family,true);
         try
         {
@@ -172,6 +266,7 @@ public final class TrailClient
     public static boolean acceptBirth(net.minecraft.client.particle.EntityFX particle)
     {
         EffectOrigin.Source origin=EffectOrigin.get();
+        if(origin!=null && !origin.remote && origin.family==TrailSample.HBM && ownsMissile(origin.emitter)) return false;
         if(origin==null || !origin.remote || INSTANCE==null) return true;
         if(INSTANCE.births>=128) { INSTANCE.dropped++;return false; }
         INSTANCE.births++;INSTANCE.familyBirths[origin.family]++;return true;
@@ -254,7 +349,7 @@ public final class TrailClient
     }
     public String deliveryDiagnostic()
     {
-        return "Trail delivery: received M/H/F="+familyReceived[1]+"/"+familyReceived[2]+"/"+familyReceived[3]
+        return "Trail delivery: body proxies="+bodies.size()+"; received M/H/F="+familyReceived[1]+"/"+familyReceived[2]+"/"+familyReceived[3]
             +"; births M/H/F="+familyBirths[1]+"/"+familyBirths[2]+"/"+familyBirths[3]+"; NTM native emitter=preserved"
             +"; last H="+lastSample(TrailSample.HBM)+" F="+lastSample(TrailSample.FLANS);
     }

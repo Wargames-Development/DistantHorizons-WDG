@@ -20,7 +20,7 @@ import com.seibel.distanthorizons.forge17.ForgeMain;
 import cpw.mods.fml.common.eventhandler.Event;
 import cpw.mods.fml.common.eventhandler.EventBus;
 
-@Mixin(EntityRenderer.class)
+@Mixin(value=EntityRenderer.class,priority=900)
 public abstract class MixinEntityRenderer 
 {
 	@Unique

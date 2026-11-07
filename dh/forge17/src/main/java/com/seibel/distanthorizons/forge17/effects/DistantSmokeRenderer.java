@@ -37,11 +37,16 @@ public final class DistantSmokeRenderer
     private int lateNearCaptured,lateNearDrawn,lateNearFallbacks;
     private final DhApiRenderParam frame=new DhApiRenderParam();
     private final DhApiMat4f nativeMatrix=new DhApiMat4f();
+    private final DhApiMat4f shaderTerrainMatrix=new DhApiMat4f();
     private final EntityFX[] owners=new EntityFX[8];
     private final int[] scopeQuads=new int[8];
+    private final EffectQuadBuffer plumeQuads=new EffectQuadBuffer(8192);
+    private final EffectQuadBuffer missileQuads=new EffectQuadBuffer(32768);
     private int depth, observed, captured, rendered, batches, rejected, cullingHandoffs;
     private final int[] seen=new int[4];
-    private boolean frameReady,failed;
+    private boolean frameReady,failed,projectionKnown;
+    private long renderFrame,fadeDistanceFrame=-1;
+    private double vanillaFadeStart;
     private Field mchCamera;
     private boolean cameraChecked,alphaResolved;
     private Method alphaEnabled,alphaState,alphaReference;
@@ -51,7 +56,20 @@ public final class DistantSmokeRenderer
     private final LightMapWrapper lightmap=new LightMapWrapper();
     private final ByteBuffer upload=org.lwjgl.BufferUtils.createByteBuffer(EffectQuadBuffer.CAPACITY*6*32);
     private static final int[] TRIANGLES={0,1,2,0,2,3};
-    private int extendedMvp,nativeMvp,dhOffset,useLightmap,alphaCutoff,reverseDepth,nearPass;
+    private int extendedMvp,nativeMvp,dhOffset,useLightmap,alphaCutoff,reverseDepth,nearPass,wholeModel,shaderPass,nativeDepthSampler;
+    private final ShaderCloudOcclusion shaderClouds=new ShaderCloudOcclusion();
+    private int cloudDepthSampler,cloudRange,cloudEnabled,nativeView;
+    private int shaderFramebuffer;
+    private boolean drawingShaderPass,shaderFailed,lastShaderActive;
+    private long shaderDrawFrame=-1;
+    private Method mchFlush;
+    private boolean mchFlushResolved;
+    private String shaderPipeline="not sampled";
+    private final ShaderEffectsProbe shaderProbe=new ShaderEffectsProbe();
+    private int diagnosticStage;
+    private boolean probeFrame,probing;
+    private final ByteBuffer colourMask=org.lwjgl.BufferUtils.createByteBuffer(4);
+    private final IntBuffer shaderDrawBuffers=org.lwjgl.BufferUtils.createIntBuffer(2);
     private String status="waiting for frame";
     private float lastFar;
     private int nativeNearQuads;
@@ -92,11 +110,11 @@ public final class DistantSmokeRenderer
             {
                 if(!EffectSources.enabled()) return;
                 IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
-                if(iris!=null && iris.isShaderPackInUse()) return;
+                if(iris!=null && iris.isRenderingShadowPass()) return;
                 frame.update(event.value);
-                nativeMatrix.set(frame.mcProjectionMatrix);nativeMatrix.multiply(frame.mcModelViewMatrix);
+                nativeMatrix.set(frame.mcProjectionMatrix);nativeMatrix.multiply(frame.mcModelViewMatrix);projectionKnown=true;
                 DhVec3d p=MinecraftRenderWrapper.INSTANCE.getCameraExactPosition();dhX=p.x;dhY=p.y;dhZ=p.z;
-                frameReady=true;
+                frameReady=true;ShaderEffectsTarget.invalidate();
             }
         });
     }
@@ -105,14 +123,20 @@ public final class DistantSmokeRenderer
     {
         if(event.phase!=TickEvent.Phase.START) return;
         if(hbmNear!=null) hbmNear.clear();lateNearCaptured=0;lateNearDrawn=0;lateNearFallbacks=0;
+        IIrisAccessor activeIris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        boolean activeShaders=activeIris!=null && activeIris.isShaderPackInUse();
+        if(activeShaders!=lastShaderActive) { shaderFailed=false;lastShaderActive=activeShaders; }
+        renderFrame++;ShaderEffectsTarget.invalidate();shaderClouds.clear();
         NtmTrace.frame();
-        frameReady=false;quads.clear();depth=0;observed=0;rejected=0;cullingHandoffs=0;nativeNearQuads=0;nativeStateRead=false;
+        frameReady=false;quads.clear();missileQuads.clear();plumeQuads.clear();depth=0;observed=0;rejected=0;cullingHandoffs=0;nativeNearQuads=0;nativeStateRead=false;
         for(int i=0;i<seen.length;i++) seen[i]=0;
     }
     /** Reviewed visible effects bypass terrain-viewport culling; native depth still occludes near quads. */
     public static boolean needsExtendedDispatch(EntityFX particle)
     {
         DistantSmokeRenderer r=INSTANCE;
+        IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        if(iris!=null && iris.isRenderingShadowPass()) return false;
         if(r==null || !r.frameReady || r.failed || particle.isDead
             || !cpw.mods.fml.common.Loader.isModLoaded("angelica")
             || !EffectSources.enabled(EffectSources.family(particle))) return false;
@@ -122,6 +146,48 @@ public final class DistantSmokeRenderer
         if(!EffectFrustum.withinExtendedView(r.nativeMatrix,x,y,z,64)) return false;
         r.cullingHandoffs++;
         return true;
+    }
+    public static boolean canRenderBodies() {
+        DistantSmokeRenderer r=INSTANCE;
+        if(r==null || r.failed || !EffectSources.enabled(TrailSample.HBM) || DhApiRenderProxy.activeOpenGlDhDepthTextureId<=0) return false;
+        IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        return iris==null || !iris.isShaderPackInUse() || (!r.shaderFailed && !iris.isRenderingShadowPass() && ShaderEffectsTarget.current()!=null);
+    }
+    static long frameId() { return INSTANCE==null?-1:INSTANCE.renderFrame; }
+    static boolean nativeModelVisible(net.minecraft.entity.Entity entity,double radius) {
+        DistantSmokeRenderer r=INSTANCE;
+        Minecraft mc=Minecraft.getMinecraft();
+        net.minecraft.entity.Entity camera=mc.renderViewEntity;
+        if(camera!=null && !MissileViewRules.insideClientChunks(entity.posX-camera.posX,entity.posZ-camera.posZ,
+            mc.gameSettings.renderDistanceChunks,radius)) return false;
+        if(r==null || !r.projectionKnown) return true; // actual native draw observation still guards the handoff
+        IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        boolean fading=(iris==null || !iris.isShaderPackInUse()) && Config.Client.Advanced.Graphics.Quality.vanillaFadeMode.get()
+            !=com.seibel.distanthorizons.api.enums.config.EDhApiMcRenderingFadeMode.NONE;
+        if(fading) {
+            if(r.fadeDistanceFrame!=r.renderFrame) {
+                // Match GlDhVanillaFadeShader, including client RD, aspect ratio,
+                // overdraw settings, altitude and fast-camera adjustments.
+                r.vanillaFadeStart=MissileViewRules.fadeStart(com.seibel.distanthorizons.core.util.RenderUtil.getNearClipPlaneInBlocks());
+                r.fadeDistanceFrame=r.renderFrame;
+            }
+            double dx=entity.posX-r.dhX,dy=entity.posY-r.dhY,dz=entity.posZ-r.dhZ;
+            if(!MissileViewRules.beforeNativeFade(Math.sqrt(dx*dx+dy*dy+dz*dz),radius,r.vanillaFadeStart,true)) return false;
+        }
+        double x=entity.posX-EntityFX.interpPosX,y=entity.posY-EntityFX.interpPosY,z=entity.posZ-EntityFX.interpPosZ;
+        double zc=r.nativeMatrix.m20*x+r.nativeMatrix.m21*y+r.nativeMatrix.m22*z+r.nativeMatrix.m23;
+        double wc=r.nativeMatrix.m30*x+r.nativeMatrix.m31*y+r.nativeMatrix.m32*z+r.nativeMatrix.m33;
+        double a=r.nativeMatrix.m30-r.nativeMatrix.m20,b=r.nativeMatrix.m31-r.nativeMatrix.m21,c=r.nativeMatrix.m32-r.nativeMatrix.m22;
+        return MissileViewRules.nativeOwns(wc,zc,a,b,c,radius);
+    }
+    /** Loaded entities can remain tracked beyond the native projection's far plane. */
+    public static boolean insideNativeProjection(double x,double y,double z) {
+        DistantSmokeRenderer r=INSTANCE;
+        if(r==null || !r.frameReady) return false;
+        x-=EntityFX.interpPosX;y-=EntityFX.interpPosY;z-=EntityFX.interpPosZ;
+        double clipZ=r.nativeMatrix.m20*x+r.nativeMatrix.m21*y+r.nativeMatrix.m22*z+r.nativeMatrix.m23;
+        double clipW=r.nativeMatrix.m30*x+r.nativeMatrix.m31*y+r.nativeMatrix.m32*z+r.nativeMatrix.m33;
+        return clipW>0 && clipZ<=clipW;
     }
     /** Final dispatch target installed after mixin injection, so culling redirects cannot orphan it. */
     public static void renderParticle(EntityFX particle,Tessellator tess,float partial,
@@ -139,6 +205,8 @@ public final class DistantSmokeRenderer
         // Overlapping compatibility wrappers must not capture a source quad twice.
         if(r.depth>0 && r.owners[r.depth-1]==particle) return false;
         int family=EffectSources.family(particle);
+        IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        if(iris!=null && iris.isRenderingShadowPass()) return false;
         if(!EffectSources.enabled(family)) return false;
         r.readNativeState();
         NtmTrace.dispatched(particle);
@@ -187,10 +255,20 @@ public final class DistantSmokeRenderer
         if(!Double.isFinite(distance) || distance>max*max) return;
         int family=EffectSources.family(owner);
         if(cpw.mods.fml.common.Loader.isModLoaded("mcheli") && !normalMchCamera(owner)) return;
-        if(GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=Minecraft.getMinecraft().getFramebuffer().framebufferObject) return;
+        IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        if((iris==null || !iris.isShaderPackInUse()) && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=Minecraft.getMinecraft().getFramebuffer().framebufferObject) return;
+        boolean shaderScene=iris!=null && iris.isShaderPackInUse();
+        ShaderEffectsTarget shaderTarget=shaderScene && !shaderFailed?ShaderEffectsTarget.current():null;
+        // Do not remove native vertices unless the replacement pass is available.
+        if(shaderScene && shaderTarget==null) return;
+        boolean shaderRelay=shaderScene && EffectSources.isRelayed(owner);
+        if(shaderScene) shaderClouds.observe(shaderTarget);
+        boolean nativePlume=owner.getClass().getName().equals("com.hbm.particle.ParticleRocketFlame");
+        EffectQuadBuffer quads=owner instanceof MissileVisual?missileQuads:nativePlume?plumeQuads:this.quads;
+        if((owner instanceof MissileVisual || nativePlume) && quads.size+(end-start)/32>quads.capacity) return;
         int[] raw=data.dh$getRawBuffer();
         NtmTrace.geometry(owner,raw,start,end,nativeMatrix);
-        int limit=Math.min(EffectQuadBuffer.CAPACITY,Config.Client.Advanced.Graphics.GenericRendering.distantSmokeParticleBudget.get());
+        int limit=owner instanceof MissileVisual?missileQuads.capacity:nativePlume?plumeQuads.capacity:Math.min(EffectQuadBuffer.CAPACITY,Config.Client.Advanced.Graphics.GenericRendering.distantSmokeParticleBudget.get());
         int texture=-1,src=0,dst=0,srcAlpha=0,dstAlpha=0;
         float cutoff=0;
         double ox=EntityFX.interpPosX,oy=EntityFX.interpPosY,oz=EntityFX.interpPosZ;
@@ -214,8 +292,8 @@ public final class DistantSmokeRenderer
                 double clipW=nativeMatrix.m30*px+nativeMatrix.m31*py+nativeMatrix.m32*pz+nativeMatrix.m33;
                 far|=clipW>0 && clipZ>clipW;
             }
-            if(!far) { nativeNearQuads++;continue; }
-            if(scopeQuads[depth-1]>=2) break;
+            if(!far && !(owner instanceof MissileVisual) && !shaderRelay) { nativeNearQuads++;continue; }
+            if(scopeQuads[depth-1]>=(owner instanceof MissileVisual?4096:owner.getClass().getSimpleName().equals("ParticleRocketFlame")?10:2)) break;
             int ordinal=scopeQuads[depth-1]++;
             int rank=owner.getEntityId()*0x9e3779b9+ordinal*0x7f4a7c15;
             rank^=rank>>>16;rank&=0x7fffffff;
@@ -231,9 +309,10 @@ public final class DistantSmokeRenderer
             quads.alphaSourceBlend[q]=srcAlpha;quads.alphaDestinationBlend[q]=dstAlpha;
             quads.texture[q]=texture;quads.sourceBlend[q]=src;quads.destinationBlend[q]=dst;
             quads.traceBin[q]=NtmTrace.quadBin(raw,v,nativeMatrix);quads.traceOrigin[q]=NtmTrace.origin(owner);
-            quads.lit[q]=data.dh$hasBrightness();quads.alphaCutoff[q]=cutoff;quads.family[q]=family;
+            quads.lit[q]=!(owner instanceof MissileVisual) && data.dh$hasBrightness();quads.alphaCutoff[q]=cutoff;quads.family[q]=family;
             quads.ox[q]=(float)(ox-dhX);quads.oy[q]=(float)(oy-dhY);quads.oz[q]=(float)(oz-dhZ);
             quads.distance[q]=distance;quads.fade[q]=(float)Math.min(1,Math.max(0,(max-Math.sqrt(distance))/32));
+            if(shaderRelay) for(int corner=0;corner<4;corner++) raw[v+corner*8+5]&=java.nio.ByteOrder.nativeOrder()==java.nio.ByteOrder.LITTLE_ENDIAN?0x00ffffff:0xffffff00;
         }
         relocateHbmNear(owner,data,raw,start,end,distance,ox,oy,oz);
     }
@@ -242,6 +321,8 @@ public final class DistantSmokeRenderer
     private void relocateHbmNear(EntityFX owner,MixinTessellatorAccess data,int[] raw,int start,int end,
         double distance,double ox,double oy,double oz)
     {
+        IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        if(iris!=null && iris.isShaderPackInUse()) return; // shader pack owns native particles and their compositing
         if(!owner.getClass().getName().equals("com.hbm.particle.ParticleRocketFlame")
             || Config.Client.Advanced.Graphics.Quality.vanillaFadeMode.get()
                 ==com.seibel.distanthorizons.api.enums.config.EDhApiMcRenderingFadeMode.NONE
@@ -319,40 +400,91 @@ public final class DistantSmokeRenderer
     {
         DistantSmokeRenderer r=INSTANCE;
         if(r==null) return;
+        IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        // Angelica has already composited and finalized here. Never borrow this FBO.
+        if(iris!=null && iris.isShaderPackInUse()) return;
         try { r.render(partialTicks); }
         finally { r.quads.clear();if(r.hbmNear!=null) r.hbmNear.clear(); }
     }
+    /** Called immediately before Angelica's actual finalizeLevelRendering invocation. */
+    public static void beforeShaderComposite() {
+        DistantSmokeRenderer r=INSTANCE;
+        if(r==null || r.shaderDrawFrame==r.renderFrame) return;
+        IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
+        if(iris==null || !iris.isShaderPackInUse() || iris.isRenderingShadowPass()) return;
+        r.shaderDrawFrame=r.renderFrame;
+        ShaderEffectsTarget.invalidate();
+        // WDG MCHeli normally flushes this queue at Forge world-last, after shader
+        // finalization. Its native method clears the queue; that event then no-ops.
+        if(EffectSources.enabled(TrailSample.MCH) && cpw.mods.fml.common.Loader.isModLoaded("mcheli")) {
+            try {
+                if(!r.mchFlushResolved) {
+                    r.mchFlushResolved=true;
+                    r.mchFlush=Class.forName("mcheli.particles.MCH_EntityParticleSmoke").getMethod("renderQueued",float.class);
+                }
+                if(r.mchFlush!=null) r.mchFlush.invoke(null,r.frame.partialTicks);
+            } catch(ReflectiveOperationException | RuntimeException | LinkageError error) {
+                LogManager.getLogger("DistantHorizons").warn("Cannot flush optional MCHeli smoke before shader composites",error);
+                r.mchFlush=null;
+            }
+        }
+        try { r.render(r.frame.partialTicks); }
+        finally { r.quads.clear();r.missileQuads.clear();r.plumeQuads.clear(); }
+    }
     private void render(float partialTicks)
     {
-        captured=quads.size;rendered=0;batches=0;lateNearCaptured=hbmNear==null?0:hbmNear.size;lateNearDrawn=0;
-        for(int i=0;i<quads.size;i++) if(quads.family[i]==TrailSample.HBM) NtmTrace.selected(quads.traceBin[i],quads.traceOrigin[i]);
+        shaderProbe.poll();
+        captured=quads.size+missileQuads.size+plumeQuads.size;rendered=0;batches=0;lateNearCaptured=hbmNear==null?0:hbmNear.size;lateNearDrawn=0;
+        traceSelected(quads);traceSelected(missileQuads);traceSelected(plumeQuads);
         if(!EffectSources.enabled()) { status="disabled";return; }
         if(failed) { status="disabled after render error (see log)";return; }
         if(!frameReady) { status="no DH terrain frame";return; }
         lastFar=(float)(frame.mcProjectionMatrix.m23/(frame.mcProjectionMatrix.m22+1.0D));
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
-        if(iris!=null && iris.isShaderPackInUse()) { status="shader pack unsupported";return; }
+        if(iris!=null && iris.isRenderingShadowPass()) { status="shadow pass skipped";return; }
+        if(iris!=null && iris.isShaderPackInUse() && shaderFailed) { status="shader effect target disabled after render failure";return; }
+        ShaderEffectsTarget shaderTarget=iris!=null && iris.isShaderPackInUse()?ShaderEffectsTarget.current():null;
+        if(iris!=null && iris.isShaderPackInUse() && shaderTarget==null) { status="shader DH target unavailable";return; }
         Minecraft mc=Minecraft.getMinecraft();
-        if(GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getFramebuffer().framebufferObject)
+        if(shaderTarget==null && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getFramebuffer().framebufferObject)
         { status="non-main framebuffer";return; }
         if(DhApiRenderProxy.activeOpenGlDhDepthTextureId<=0) { status="no DH depth texture";return; }
-        if(quads.size==0 && lateNearCaptured==0) { status="ready; no captured geometry";return; }
-        try { draw(mc,partialTicks);status="active"; }
+        if(quads.size==0 && missileQuads.size==0 && plumeQuads.size==0 && lateNearCaptured==0) { status="ready; no captured geometry";return; }
+        try { draw(mc,partialTicks,shaderTarget);status=shaderTarget==null?"active":"active in shader scene before composites"; }
         catch(RuntimeException | LinkageError error)
         {
-            failed=true;status="render error";
-            LogManager.getLogger("DistantHorizons").warn("Distant effects disabled for this session; original effects unchanged",error);
+            if(shaderTarget!=null) shaderFailed=true;else failed=true;
+            status="render error";
+            LogManager.getLogger("DistantHorizons").warn(shaderTarget!=null
+                ?"Shader distant effects disabled until shaders are toggled; shaderless and native effects retained"
+                :"Distant effects disabled for this session; original effects unchanged",error);
         }
     }
-    private void draw(Minecraft mc,float partial)
+    private static void traceSelected(EffectQuadBuffer buffer) {
+        for(int i=0;i<buffer.size;i++) if(buffer.family[i]==TrailSample.HBM) NtmTrace.selected(buffer.traceBin[i],buffer.traceOrigin[i]);
+    }
+    private void draw(Minecraft mc,float partial,ShaderEffectsTarget target)
     {
+        boolean materialTarget=target!=null && target.particleMaterial>0;
+        boolean materialBlend=materialTarget && GL30.glIsEnabledi(GL11.GL_BLEND,1);
+        int readFramebuffer=LWJGL.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        int activeTexture=LWJGL.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        LWJGL.glActiveTexture(GL13.GL_TEXTURE4);int oldTexture4=LWJGL.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);LWJGL.glActiveTexture(activeTexture);
+        if(target!=null) shaderClouds.refreshAtDraw(target);
         try(GLState saved=new GLState())
         {
+            drawingShaderPass=target!=null;
+            if(target!=null) bindShaderTarget(target);
             if(shader==null)
             {
                 shader=new GlShaderProgram("assets/distanthorizons/shaders/distant_smoke.vert","assets/distanthorizons/shaders/distant_smoke.frag",
-                    new String[]{"aPosition","aUv","aColor","aLight"});
+                    new String[]{"aPosition","aUv","aColor","aLight"},new String[]{"fragColor","fragParticleMaterial"});
                 nearPass=shader.getUniformLocation("uNearPass");
+                wholeModel=shader.getUniformLocation("uWholeModel");
+                diagnosticStage=shader.getUniformLocation("uDiagnosticStage");
+                cloudDepthSampler=shader.getUniformLocation("uCloudDepth");cloudRange=shader.getUniformLocation("uCloudRenderDistance");
+                cloudEnabled=shader.getUniformLocation("uUseCloudDepth");nativeView=shader.getUniformLocation("uNativeView");
+                shaderPass=shader.getUniformLocation("uShaderPass");nativeDepthSampler=shader.getUniformLocation("uNativeDepth");
                 extendedMvp=shader.getUniformLocation("uExtendedMvp");nativeMvp=shader.getUniformLocation("uNativeMvp");
                 dhOffset=shader.getUniformLocation("uDhOriginOffset");useLightmap=shader.getUniformLocation("uUseLightmap");
                 alphaCutoff=shader.getUniformLocation("uAlphaCutoff");reverseDepth=shader.getUniformLocation("uDhReverseDepth");
@@ -366,23 +498,95 @@ public final class DistantSmokeRenderer
                 LWJGL.glVertexAttribPointer(3,2,GL11.GL_SHORT,false,32,28);
                 for(int i=0;i<4;i++) LWJGL.glEnableVertexAttribArray(i);
             }
-            shader.bind();shader.setUniform(extendedMvp,frame.dhMvmProjMatrix);shader.setUniform(nativeMvp,nativeMatrix);
+            shader.bind();shader.setUniform(diagnosticStage,0);shader.setUniform(nativeView,frame.mcModelViewMatrix);
+            shader.setUniform(cloudDepthSampler,4);shader.setUniform(cloudRange,shaderClouds.distance);
+            shader.setUniform(cloudEnabled,target!=null && shaderClouds.texture>0);
+            if(target!=null && shaderClouds.texture>0) { LWJGL.glActiveTexture(GL13.GL_TEXTURE4);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,shaderClouds.texture); }
+            shader.setUniform(shaderPass,target!=null);shader.setUniform(nativeDepthSampler,3);
+            if(target!=null) {
+                // The actual pack terrain projection owns both sampled depth
+                // textures and the live depth attachment. Keep DH's existing
+                // camera-origin conversion/model view, changing only projection.
+                shaderTerrainMatrix.set(target.terrainProjection);shaderTerrainMatrix.multiply(frame.dhModelViewMatrix);
+            }
+            shader.setUniform(extendedMvp,target==null?frame.dhMvmProjMatrix:shaderTerrainMatrix);shader.setUniform(nativeMvp,nativeMatrix);
             shader.setUniform(reverseDepth,com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector.INSTANCE
                 .get(com.seibel.distanthorizons.core.wrapperInterfaces.render.AbstractDhRenderApiDefinition.class).getDepthDirection()
                 ==com.seibel.distanthorizons.api.enums.config.EDhApiDepthDirection.REVERSE_Z);
             LWJGL.glActiveTexture(GL13.GL_TEXTURE1);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,lightmap.getOpenGlId());
-            LWJGL.glActiveTexture(GL13.GL_TEXTURE2);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,DhApiRenderProxy.activeOpenGlDhDepthTextureId);
+            LWJGL.glActiveTexture(GL13.GL_TEXTURE2);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,target==null?DhApiRenderProxy.activeOpenGlDhDepthTextureId:target.terrainDepth);
+            if(target!=null) { LWJGL.glActiveTexture(GL13.GL_TEXTURE3);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,target.nativeSceneDepth); }
             LWJGL.glActiveTexture(GL13.GL_TEXTURE0);
-            LWJGL.glEnable(GL11.GL_BLEND);LWJGL.glEnable(GL11.GL_DEPTH_TEST);LWJGL.glDepthFunc(GL11.GL_LEQUAL);
+            LWJGL.glEnable(GL11.GL_BLEND);LWJGL.glEnable(GL11.GL_DEPTH_TEST);LWJGL.glDepthFunc(target!=null && com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector.INSTANCE
+                .get(com.seibel.distanthorizons.core.wrapperInterfaces.render.AbstractDhRenderApiDefinition.class).getDepthDirection()
+                ==com.seibel.distanthorizons.api.enums.config.EDhApiDepthDirection.REVERSE_Z?GL11.GL_GEQUAL:GL11.GL_LEQUAL);
+            // Metadata must replace, including for additive explosion waves.
+            // Scene-colour blending retains each source renderer's original state.
+            if(materialTarget) GL30.glDisablei(GL11.GL_BLEND,1);
             LWJGL.glDepthMask(false);LWJGL.glDisable(GL11.GL_CULL_FACE);
+            probeFrame=target!=null && (missileQuads.size>0 || plumeQuads.size>0 || quads.size>0)
+                && shaderProbe.start(mc.theWorld,shaderPipeline);
+            LWJGL.glEnable(GL11.GL_CULL_FACE);LWJGL.glCullFace(GL11.GL_BACK);
+            missileQuads.sortBackToFront();drawWithProbe(missileQuads,0);
+            LWJGL.glDisable(GL11.GL_CULL_FACE);
+            plumeQuads.sortBackToFront();drawWithProbe(plumeQuads,1);
             quads.sortBackToFront();
-            drawBuffer(quads,false);
+            drawWithProbe(quads,2);
             if(hbmNear!=null) drawBuffer(hbmNear,true); // Preserve the original native append order.
+        } finally {
+            if(materialTarget) { if(materialBlend) GL30.glEnablei(GL11.GL_BLEND,1);else GL30.glDisablei(GL11.GL_BLEND,1); }
+            drawingShaderPass=false;LWJGL.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,readFramebuffer);
+            LWJGL.glActiveTexture(GL13.GL_TEXTURE4);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,oldTexture4);LWJGL.glActiveTexture(activeTexture);
         }
+    }
+    private void drawWithProbe(EffectQuadBuffer buffer,int kind) {
+        if(!probeFrame || buffer.size==0) { drawBuffer(buffer,false);return; }
+        shaderProbe.begin(kind,3);
+        try { drawBuffer(buffer,false); } finally { shaderProbe.end(); }
+        colourMask.clear();GL11.glGetBoolean(GL11.GL_COLOR_WRITEMASK,colourMask);
+        probing=true;
+        try {
+            GL11.glColorMask(false,false,false,false);
+            for(int stage=1;stage<=3;stage++) {
+                shader.setUniform(diagnosticStage,stage);
+                if(stage==1) LWJGL.glDisable(GL11.GL_DEPTH_TEST);else LWJGL.glEnable(GL11.GL_DEPTH_TEST);
+                shaderProbe.begin(kind,stage-1);
+                try { drawBuffer(buffer,false); } finally { shaderProbe.end(); }
+            }
+        } finally {
+            probing=false;shader.setUniform(diagnosticStage,0);LWJGL.glEnable(GL11.GL_DEPTH_TEST);
+            GL11.glColorMask(colourMask.get(0)!=0,colourMask.get(1)!=0,colourMask.get(2)!=0,colourMask.get(3)!=0);
+        }
+    }
+    /** Use the colortex0 input of the upcoming composites, independently of the
+     * last hand/weather program's output layout and this frame's parity. */
+    private void bindShaderTarget(ShaderEffectsTarget target) {
+        int source=LWJGL.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        int oldColour=source==0?0:LWJGL.glGetFramebufferAttachmentParameteri(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+        shaderPipeline="pre-composite frame="+renderFrame+" sourceFbo="+source+" sourceColour="+oldColour
+            +" scene="+target.sceneColour+" alt="+target.colourFlipped+" depth/live/copy/native="+target.sceneDepth+"/"+target.terrainDepth+"/"+target.nativeSceneDepth
+            +" cloud="+shaderClouds.texture+" resolved="+target.cloudDepth+" alt="+target.cloudFlipped+" range="+shaderClouds.distance
+            +" particleMaterial="+target.particleMaterial
+            +" projectionNear/core="+target.terrainProjection.m23/(target.terrainProjection.m22-1)+"/"+frame.dhProjectionMatrix.m23/(frame.dhProjectionMatrix.m22-1)
+            +" quads/body/plume="+quads.size+"/"+missileQuads.size+"/"+plumeQuads.size;
+        if(shaderFramebuffer==0 || !GL30.glIsFramebuffer(shaderFramebuffer)) shaderFramebuffer=LWJGL.glGenFramebuffers();
+        LWJGL.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,shaderFramebuffer);
+        LWJGL.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,target.sceneColour,0);
+        // BountifulStars' native particles write mask 254 into colortex6, opting
+        // out of terrain-history TAA. Only that pack family gets this attachment.
+        LWJGL.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT1,GL11.GL_TEXTURE_2D,target.particleMaterial,0);
+        LWJGL.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,target.sceneDepth,0);
+        shaderDrawBuffers.clear();shaderDrawBuffers.put(GL30.GL_COLOR_ATTACHMENT0);
+        if(target.particleMaterial>0) shaderDrawBuffers.put(GL30.GL_COLOR_ATTACHMENT1);
+        shaderDrawBuffers.flip();GL20.glDrawBuffers(shaderDrawBuffers);
+        if(LWJGL.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE)
+            throw new IllegalStateException("Shader effect framebuffer is incomplete");
     }
     private void drawBuffer(EffectQuadBuffer buffer,boolean near)
     {
         shader.setUniform(nearPass,near);
+        shader.setUniform(wholeModel,buffer==missileQuads);
+        LWJGL.glDepthMask(!probing && drawingShaderPass && buffer==missileQuads);
         for(int chunk=0;chunk<buffer.size;chunk+=EffectQuadBuffer.CAPACITY) {
             int end=Math.min(buffer.size,chunk+EffectQuadBuffer.CAPACITY);
             upload.clear();IntBuffer words=upload.asIntBuffer();
@@ -396,8 +600,8 @@ public final class DistantSmokeRenderer
                 LWJGL.glBlendFuncSeparate(buffer.sourceBlend[q],buffer.destinationBlend[q],buffer.alphaSourceBlend[q],buffer.alphaDestinationBlend[q]);
                 shader.setUniform(useLightmap,buffer.lit[q]);shader.setUniform(alphaCutoff,buffer.alphaCutoff[q]);
                 LWJGL.glUniform3f(dhOffset,buffer.ox[q],buffer.oy[q],buffer.oz[q]);
-                do { i++;if(near) lateNearDrawn++;else rendered++; } while(i<end && buffer.sameState(q,buffer.order[i]));
-                LWJGL.glDrawArrays(GL11.GL_TRIANGLES,(first-chunk)*6,(i-first)*6);batches++;
+                do { i++;if(!probing) { if(near) lateNearDrawn++;else rendered++; } } while(i<end && buffer.sameState(q,buffer.order[i]));
+                LWJGL.glDrawArrays(GL11.GL_TRIANGLES,(first-chunk)*6,(i-first)*6);if(!probing) batches++;
             }
         }
     }
@@ -425,6 +629,7 @@ public final class DistantSmokeRenderer
     public String diagnostic()
     {
         return "DH effects: "+status+"; native far="+Math.round(lastFar)+"m; native near quads="+nativeNearQuads+"; "+nativeState+"; observed M/H/F="+seen[1]+"/"+seen[2]+"/"+seen[3]
-            +"; NTM post-fade near="+lateNearCaptured+"/"+lateNearDrawn+" fallback="+lateNearFallbacks+"; culling handoffs="+cullingHandoffs+"; captured/drawn="+captured+"/"+rendered+" quads in "+batches+" batches; budget drops="+rejected;
+            +"; NTM post-fade near="+lateNearCaptured+"/"+lateNearDrawn+" fallback="+lateNearFallbacks+"; culling handoffs="+cullingHandoffs+"; captured/drawn="+captured+"/"+rendered+" quads in "+batches+" batches; budget drops="+rejected
+            +(lastShaderActive?"; shader pipeline: "+shaderPipeline+"; last probe: "+shaderProbe.diagnostic():"");
     }
 }

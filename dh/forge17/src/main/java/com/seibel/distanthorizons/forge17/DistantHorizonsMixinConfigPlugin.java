@@ -54,6 +54,11 @@ public class DistantHorizonsMixinConfigPlugin implements IMixinConfigPlugin
 	@Override
 	public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo)
 	{
+        if (mixinClassName.endsWith(".MixinEntityRenderer"))
+        {
+            int hooks=EffectCaptureTransformer.patchShaderFinalization(targetClass);
+            LOGGER.info("DH effects shader pre-composite hooks="+hooks+" (zero is expected without Angelica)");
+        }
         if (mixinClassName.endsWith(".MixinEffectCapture"))
         {
             int hooks=EffectCaptureTransformer.patch(targetClass);
