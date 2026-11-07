@@ -107,6 +107,22 @@ public final class MissileVisual extends EntityFX {
     @Override public int getFXLayer() { return 3; }
     @Override public void renderParticle(Tessellator t,float partial,float rx,float rz,float ryz,float rxy,float rxz) {
         if(!EffectSources.enabled(TrailSample.HBM)) return;
+        // Vanilla draws layer 3 before renderParticles refreshes interpPos. Use
+        // this view's current origin for both model vertices and tess.draw capture.
+        double oldX=interpPosX,oldY=interpPosY,oldZ=interpPosZ;
+        try {
+            Entity view=Minecraft.getMinecraft().renderViewEntity;
+            if(view!=null) {
+                interpPosX=view.lastTickPosX+(view.posX-view.lastTickPosX)*partial;
+                interpPosY=view.lastTickPosY+(view.posY-view.lastTickPosY)*partial;
+                interpPosZ=view.lastTickPosZ+(view.posZ-view.lastTickPosZ)*partial;
+            }
+            renderBody(t,partial,rx,rz,ryz,rxy,rxz);
+        } finally {
+            interpPosX=oldX;interpPosY=oldY;interpPosZ=oldZ;
+        }
+    }
+    private void renderBody(Tessellator t,float partial,float rx,float rz,float ryz,float rxy,float rxz) {
         if(!shouldDrawProxy()) return;
         displayPose(partial,pose);
         double x=pose[0]-interpPosX,y=pose[1]-interpPosY,z=pose[2]-interpPosZ;

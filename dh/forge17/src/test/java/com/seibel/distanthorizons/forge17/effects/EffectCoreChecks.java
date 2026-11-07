@@ -416,6 +416,7 @@ public final class EffectCoreChecks
         check(TrailRules.coveredFraction(0,0,0,20,0,0,5,0,0)==0.25,"lagging tracked missile trims only its actually covered trail");
         check(TrailRules.coveredFraction(0,200,0,0,180,0,0,190,0)==0.5,"descending native coverage trims only the covered half");
         checkNativeEmitter();
+        checks+=MissileCameraOriginChecks.run();
         checkShaderStages(args);
         checkProjectionCopy();
         checkProbeFailureIsolation();
