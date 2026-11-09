@@ -19,6 +19,7 @@
 
 package com.seibel.distanthorizons.core.level;
 
+import com.seibel.distanthorizons.core.file.structure.LegacySaveFolderMigration;
 import com.google.common.cache.CacheBuilder;
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.config.eventHandlers.IgnoredDimensionCsvHandler;
@@ -121,21 +122,8 @@ public class DhClientLevel extends AbstractDhLevel implements IDhClientLevel
 		File saveFolder = saveStructure.getSaveFolder(clientLevelWrapper);
 		File pre23Folder = saveStructure.getPre23SaveFolder(clientLevelWrapper);
 		
-		saveFolder.mkdirs();
-		
-		if (pre23Folder.exists())
-		{
-			if (!pre23Folder.renameTo(saveFolder))
-			{
-				throw new RuntimeException("Could not move old save data folder: [" + pre23Folder.getAbsolutePath() + "] to [" + saveFolder.getAbsolutePath() + "].");
-			}
-		}
-		
-		if (!saveFolder.exists())
-		{
-			throw new IOException("unable to create save folder at ["+saveFolder.getPath()+"]. If you're on Windows you may need to enable long file paths.");
-		}
-		
+		LegacySaveFolderMigration.prepare(saveFolder, pre23Folder);
+
 		this.levelWrapper = clientLevelWrapper;
 		this.levelWrapper.setDhLevel(this);
 		this.saveStructure = saveStructure;

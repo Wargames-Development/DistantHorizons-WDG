@@ -46,6 +46,7 @@ public class DhClientWorld extends AbstractDhWorld implements IDhClientWorld
 	
 	
 	private final ConcurrentHashMap<String, DhClientLevel> clientLevelByDhId;
+	private final LevelLoadRetryGate levelLoadRetryGate = new LevelLoadRetryGate(java.util.concurrent.TimeUnit.SECONDS.toNanos(30));
 	/**
 	 * Having a set of level wrappers is done to handle an issue where the client 
 	 * level would get unloaded when jumping back and forth between dimensions. <br><br>
@@ -127,6 +128,11 @@ public class DhClientWorld extends AbstractDhWorld implements IDhClientWorld
 	}
 	private DhClientLevel createClientLevel(@NotNull IClientLevelWrapper clientLevelWrapper)
 	{
+		String levelId = clientLevelWrapper.getDhIdentifier();
+		if (!this.levelLoadRetryGate.canAttempt(levelId, System.nanoTime()))
+		{
+			return null;
+		}
 		try
 		{
 			if (!this.ensureLevelKeyWhenAvailable(clientLevelWrapper))
@@ -140,20 +146,25 @@ public class DhClientWorld extends AbstractDhWorld implements IDhClientWorld
 			ApiEventInjector.INSTANCE.fireAllEvents(DhApiLevelLoadEvent.class, new DhApiLevelLoadEvent.EventParam(clientLevelWrapper));
 			ClientApi.INSTANCE.loadWaitingChunksForLevel(clientLevelWrapper);
 			
+			this.levelLoadRetryGate.clear(levelId);
 			return level;
 		}
 		catch (Exception e)
 		{
-			LOGGER.fatal("Failed to load client level, error: ["+e.getMessage()+"].", e);
+			boolean firstFailure = this.levelLoadRetryGate.recordFailure(levelId, System.nanoTime());
+			LOGGER.error("Failed to load client level [" + levelId + "]; retrying in 30 seconds, error: [" + e.getMessage() + "].", e);
 			
 			String r = MinecraftTextFormat.RED;
 			String y = MinecraftTextFormat.YELLOW;
 			String cf = MinecraftTextFormat.CLEAR_FORMATTING;
 			
-			ClientApi.INSTANCE.queueSlowChatMessage(
-				r + "Distant Horizons: Client level loading failed." + cf + "\n" +
-				"Unable to load level ["+y+clientLevelWrapper.getDhIdentifier()+cf+"], LODs may not appear. See log for more information. \n" +
-				"");
+			if (firstFailure)
+			{
+				ClientApi.INSTANCE.queueSlowChatMessage(
+					r + "Distant Horizons: Client level loading failed." + cf + "\n" +
+					"Unable to load level ["+y+levelId+cf+"], LODs may not appear. Retrying in 30 seconds. See log for more information. \n" +
+					"");
+			}
 			
 			return null;
 		}
@@ -226,6 +237,8 @@ public class DhClientWorld extends AbstractDhWorld implements IDhClientWorld
 			return false;
 		}
 		
+		this.levelLoadRetryGate.clear(wrapper.getDhIdentifier());
+
 		if (this.clientLevelByDhId.containsKey(wrapper.getDhIdentifier()))
 		{
 			LOGGER.info("Unloading level [" + this.clientLevelByDhId.get(wrapper.getDhIdentifier()) + "].");
@@ -279,6 +292,7 @@ public class DhClientWorld extends AbstractDhWorld implements IDhClientWorld
 		LevelShutdown.awaitAll(closeFutures);
 		
 		this.clientLevelByDhId.clear();
+		this.levelLoadRetryGate.clearAll();
 		this.clientLevelWrapperSetByDhId.clear();
 		this.levelInitRequestedClientLevels.clear();
 		this.clientTickTimer.cancel();
