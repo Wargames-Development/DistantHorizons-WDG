@@ -14,7 +14,7 @@ public final class ModelScene implements AutoCloseable {
     private boolean reverse,ready;
     private GLState saved;
     public void prepare(int width,int height) {
-        if(width<=0 || height<=0 || (long)width*height>8388608L) throw new IllegalArgumentException("Actor scene budget");
+        if(!ModelCapture.supportsSize(width,height)) throw new IllegalArgumentException("Actor scene budget: "+width+"x"+height);
         int oldRead=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),oldDraw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
         try(GLState state=new GLState()) { ensure(width,height);compositor.prepareCompositor(); }
         finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldDraw); }
@@ -24,7 +24,7 @@ public final class ModelScene implements AutoCloseable {
         read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
         saved=new GLState();GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);ready=false;this.reverse=reverse;
         try {
-            if(width<=0 || height<=0 || (long)width*height>8388608L) throw new IllegalArgumentException("Actor scene budget");
+            if(!ModelCapture.supportsSize(width,height)) throw new IllegalArgumentException("Actor scene budget: "+width+"x"+height);
             ensure(width,height);GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);GL11.glViewport(0,0,width,height);
             GL11.glDisable(GL11.GL_SCISSOR_TEST);GL11.glColorMask(true,true,true,true);GL11.glDepthMask(true);
             GL11.glClearColor(0,0,0,0);GL11.glClearDepth(reverse?0:1);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT|GL11.GL_DEPTH_BUFFER_BIT);

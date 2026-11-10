@@ -5,6 +5,9 @@ import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 public final class ModelProjectionChecks {
     public static int run() {
         int checks=0;
+        require(ModelCapture.supportsSize(5120,2880),"5K full-resolution actor targets supported");checks++;
+        require(!ModelCapture.supportsSize(0,2880) && !ModelCapture.supportsSize(7680,4320),"invalid and oversized targets remain bounded");checks++;
+        require(!ModelCapture.supportsSize(Integer.MAX_VALUE,Integer.MAX_VALUE),"pixel budget calculation cannot overflow");checks++;
         DhApiMat4f nativeProjection=new DhApiMat4f();nativeProjection.m00=1.3F;nativeProjection.m11=1.7F;
         nativeProjection.m22=-1.001F;nativeProjection.m23=-.1F;nativeProjection.m32=-1;
         nativeProjection.m02=.03F;nativeProjection.m12=-.02F;

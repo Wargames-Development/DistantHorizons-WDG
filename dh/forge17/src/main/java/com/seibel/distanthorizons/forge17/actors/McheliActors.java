@@ -21,7 +21,7 @@ public final class McheliActors {
         if(!Boolean.getBoolean("dh.experimentalMcheliModels") || !Loader.isModLoaded("mcheli") || !FmurPlayerBridge.supportsViews()) return;
         try {
             Class<?> api=Class.forName("mcheli.lod.MCH_ExternalVehicleRenderer",false,getClass().getClassLoader());
-            if(api.getField("API_VERSION").getInt(null)!=3) return;
+            if(api.getField("API_VERSION").getInt(null)!=4) return;
             create=api.getMethod("create",World.class);nativeRadius=api.getMethod("nativeRadius",Entity.class);Class<?> context=create.getReturnType();
             observe=context.getMethod("observe",byte[].class,UUID.class,int.class,double.class,double.class,double.class,long.class,long.class,int.class,int.class);
             sample=context.getMethod("sample",long.class,double[].class);prepare=context.getMethod("prepare");

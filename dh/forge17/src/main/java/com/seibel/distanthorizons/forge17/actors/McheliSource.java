@@ -13,7 +13,7 @@ public final class McheliSource {
             resolved=true;
             if(Loader.isModLoaded("mcheli")) try {
                 Class<?> api=Class.forName("mcheli.lod.MCH_ExternalVehiclePresentation",false,McheliSource.class.getClassLoader());
-                if(api.getField("API_VERSION").getInt(null)==3) { capture=api.getMethod("capture",Entity.class);eligible=api.getMethod("eligible",Entity.class);available=true; }
+                if(api.getField("API_VERSION").getInt(null)==4) { capture=api.getMethod("capture",Entity.class);eligible=api.getMethod("eligible",Entity.class);available=true; }
             } catch(ReflectiveOperationException | RuntimeException | LinkageError unsupported) { available=false; }
         }
         return available;

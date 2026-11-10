@@ -132,6 +132,7 @@ public final class ActorRenderer {
         if(terrainDepth<=0 || !terrain.begin(source,mc.theWorld,generation)) return;
         int width=target==null?mc.getFramebuffer().framebufferWidth:target.sceneWidth;
         int height=target==null?mc.getFramebuffer().framebufferHeight:target.sceneHeight;
+        if(!ModelCapture.supportsSize(width,height)) { status="unsupported target "+width+"x"+height;terrain.clear();return; }
         status="preparing models";
         try {
             if(preparedWidth!=width || preparedHeight!=height) {

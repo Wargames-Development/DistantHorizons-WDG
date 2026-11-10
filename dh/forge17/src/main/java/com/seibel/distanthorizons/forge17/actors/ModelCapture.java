@@ -14,7 +14,9 @@ import org.lwjgl.opengl.*;
  */
 @SideOnly(Side.CLIENT)
 public final class ModelCapture implements AutoCloseable {
-    private static final long MAX_PIXELS=8388608L;
+    // Two RGBA/depth targets remain bounded while supporting a full-resolution 5K view.
+    public static final long MAX_PIXELS=16777216L;
+    public static boolean supportsSize(int width,int height) { return width>0 && height>0 && (long)width*height<=MAX_PIXELS; }
     private int framebuffer,colour,depth,width,height,vao,vbo;
     private int savedRead,savedDraw,savedMatrixMode;
     private int left,bottom,right,top;
@@ -32,7 +34,7 @@ public final class ModelCapture implements AutoCloseable {
     public void prepareCompositor() { try(GLState state=new GLState()) { ensureShader(); } }
     public void prepare(int width,int height) {
         int read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-        if(width<=0 || height<=0 || (long)width*height>MAX_PIXELS) throw new IllegalArgumentException("Actor target budget");
+        if(!supportsSize(width,height)) throw new IllegalArgumentException("Actor target budget: "+width+"x"+height);
         try(GLState state=new GLState()) { ensure(width,height);ensureShader(); }
         finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,draw); }
     }
