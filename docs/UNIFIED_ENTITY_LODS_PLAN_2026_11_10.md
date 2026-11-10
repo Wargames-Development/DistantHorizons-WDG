@@ -1,0 +1,115 @@
+# DH-owned player, vehicle and weapon LODs
+
+Status: implementation plan, 10 November 2026. No runtime migration implemented yet.
+
+## Scope and branch safety
+
+- DH owns distant visual delivery, render scheduling, terrain coverage decisions and depth integration. Flan's/FMUR and MCHELI remain the owners of gameplay, assets, model definitions and their animation rules.
+- Work in DH first. Optional adapters may initially live entirely in DH. Make narrowly scoped companion changes only where a supported ownership, animation or state interface is needed; do not remove legacy implementations.
+- Do not change WGMap or remove its terrain/occlusion systems. Existing unrelated consumers remain intact. NTM should need no source changes; if essential, use its current default branch as requested.
+- Current companion baselines: MCHELI main `3c111ec`, FMUR main `00cc485`; both have new `feature/dh-lods` branches. WGMap remains unchanged on main.
+- DH tested source is `010aa4c95` on `feature/dh-3.3-wdg`. Local main was promoted through merge `c8e94d2f6`, preserving that exact file tree and retaining divergent upstream history. Implementation branch: `feature/mchr-fmur-player-lods`.
+- The temporary `feature/dh-unified-entity-lods` branch and old branches remain available. No resets, deletes or force pushes are needed.
+- Main's previous upstream changes include a large rendering API migration, stale Forge ticket release, and player-wrapper guards. They are retained in history, not included in the tested tree. Review useful fixes separately; do not silently introduce that renderer migration here.
+- Runtime reference: the user's current **Wargames Launcher Prism pack**. Identify its exact instance and installed jar versions before testing. Use a staging copy for jar swaps; do not assume an older development instance is current.
+- Use GitHub Desktop for publishing new feature branches. Do not request tokens. Do not push to upstream or publish main without an explicit instruction.
+
+## What the current code establishes
+
+DH's `forge17/effects` package owns the optional NTM/MCHELI/Flan's effects hooks, bounded `DHVisualTrails` relay and native missile mesh presentation. `DistantSmokeRenderer` binds DH terrain depth, native scene depth and supported shader-cloud depth. `distant_smoke.frag` performs per-fragment depth rejection. This establishes a usable rendering mechanism, not universal runtime acceptance.
+
+FMUR's `PlayerLodServer` currently uses a server range default of **512 blocks**, clamped to 1024. It filters dimension, alive/invisibility/team/spectator state, carries appearance revisions and sends bounded snapshots. `PlayerLodRenderer`, `PlayerLodDepthLayer` and `PlayerLodTerrain` own interpolation/model presentation, local self-depth and WGMap terrain-depth integration. The WGMap bridge explicitly requests unloaded-chunk depth coverage.
+
+MCHELI's `VehicleLodRenderDistance` defaults to **750 blocks**, but its description explicitly makes this a **client visual limit**, independent of tracking/radar/locks/missiles. `MCH_RenderFarVehicle` draws loaded aircraft and snapshot-only contacts, preserves animated poses and uses WGMap occlusion. Its existing entity-info stream has other consumers: replacing the visual path must not disable radar, targeting or countermeasure data.
+
+WGMap's `DistantHorizonsWaypointCompatibility` only detects DH and returns false for an external render path. Its world renderer uses vanilla camera-relative placement. The reported moving waypoint defect needs reproduction; its cause is not yet proven.
+
+DH quality presets are client config listeners. A generic common command initializer has an owner permission check, but that alone does not establish the cause in the Forge 1.7.10 GUI. Investigate the actual pack, GUI route, session overrides and command registration before changing permissions.
+
+## Four support toggles
+
+User confirmed the following split. Native nearby rendering continues normally when distant support is disabled.
+
+| Toggle | Distant features it owns |
+| --- | --- |
+| NTM LOD support | Existing supported NTM missile bodies, exhaust, trails and supported explosion effects. |
+| MCHELI LOD support | Supported distant vehicles and their animations, plus MCHELI weapon smoke/trails/effects. |
+| FMUR LOD support | Supported FMUR weapon effects; FMUR armour, guns and associated player presentation when Player support is also enabled. **Excludes FMUR vehicles.** |
+| Player LOD support | Distant player body, skin, movement/pose animations and ordinary equipment; works without FMUR installed. |
+
+| Player | FMUR | Result |
+| --- | --- | --- |
+| Off | Off | Neither DH distant players nor FMUR extensions. |
+| Off | On | FMUR weapon effects; no DH distant player body or floating player equipment. |
+| On | Off | Player body/skin/normal equipment; suppress FMUR-specific distant armour/gun layers. |
+| On | On | Player body with supported FMUR equipment and animation integration. |
+
+Explain this dependency in hover text. FMUR armour suppression must not leave body holes from an armour-hiding rule. Toggles must not edit server gameplay state or ordinary native player rendering. Keep one presentation timeline for body, armour and gun; do not spawn independent accessory actors.
+
+Preserve existing saved effect settings (`enableDistantMcheliSmoke`, `extendMcheliTrails`, `extendHbmTrails`, `extendFlansTrails`) through an explicit one-time migration/compatibility mapping. Do not reinterpret saved false values as enabled. Fresh-install support toggles can default on once supported; in-development providers remain gated until their milestone passes. Quality presets must not silently change support toggles or server policy.
+
+## Server authority and visual state
+
+1. Negotiate support and protocol versions before sending distant actors. Server advertises category permissions, maximum ranges and bounded update policy. Missing/incompatible server support means no new snapshot-only actors; nearby native rendering remains usable.
+2. Initial DH server maxima: players **512 blocks**, MCHELI vehicles **750 blocks**. Preserve existing effect ranges during the first migration. Operator configuration controls maxima; zero disables a category. Server checks actual viewer/target positions, world, dimension and visibility permissions. Client requests may reduce delivery, never increase the server ceiling.
+3. Effective client distance is the minimum of server maximum, client preference and usable terrain coverage. Visibility never generates or force-loads chunks. Rendering distance does not extend simulation, hits, locks or native entity tracking.
+4. Reuse existing authoritative data where complete and permitted. Inventory exact animation fields and their origin first: server fields such as limb/swing values must be verified as meaningful on a dedicated server, not merely serialized because they exist. Derive cosmetic walk cycles from authoritative movement when appropriate. Forward gun/reload/fire pose only from existing authoritative state/events; never invent shots.
+5. DH owns its visual stream and cache. Prefer small, versioned companion snapshot/provider hooks when direct reuse is unsafe. Do not maintain a second simultaneous full-rate visual stream after takeover; leave independent radar/gameplay streams intact. A DH-only first implementation can use version-checked optional hooks, but must not rely on mutable private stores as a permanent interface.
+6. Bound actors, decoded bytes, batch counts, pending queues, appearance NBT/strings and update rates before enabling delivery. Use nearest-first selection and per-viewer spatial candidate reuse; avoid a new world/entity scan per frame or one scan per recipient. Benchmark actual server tick and traffic costs before raising limits.
+7. Key actors by connection/world epoch, dimension and stable identity; verify entity IDs against identity. Sequence snapshots, revision appearances, reject stale/wrong-session data, and expire actors after bounded staleness. Remove on range exit, death, disconnect, dimension change or lost permission. Pending appearances stay hidden.
+8. Interpolate buffered authoritative poses with bounded latency; use one timestamp for attached parts. Never extrapolate indefinitely or fabricate gameplay entities in the world lists. Teleports reset interpolation. Minimise additional presentation delay on transitions from tracked entities.
+
+## Terrain visibility and rendering contract
+
+**Per-pixel visibility means accuracy against the native/DH terrain actually rendered for that view. It cannot mean block-exact world geometry when DH deliberately renders simplified terrain.** This limitation must remain explicit in acceptance and UI descriptions.
+
+- Reuse the established DH camera-origin conversion, terrain projection/depth direction and native/shader depth integration. Generalise a small reusable view/depth context rather than treating all models as smoke quads or replacing the working effects renderer wholesale.
+- Separate unknown terrain from visible sky. A clear depth texel proves neither known air nor a fully covered camera-to-target corridor. A section existing on disk, or `canRender()` returning true, also does not by itself prove complete current-view coverage.
+- Default **hide when terrain coverage is unknown**. Track valid, current-world native/DH coverage and gaps across the relevant sight corridor/target envelope, with conservative rejection when coverage cannot be established. Known empty sections may count only with explicit valid-empty provenance. Resolve vanilla/DH overlap, unloaded native sections, pending meshes and changed terrain. Keep metadata tied to render/data generations so obsolete coverage cannot authorise drawing.
+- First prove conservative coverage on a bounded prototype. If adequate provenance is unavailable, add the smallest explicit DH coverage contract; do not use WGMap as a hidden fallback. Avoid synchronous GPU readback, disk reads or per-actor unbounded corridor walks. Cache bounded coverage results and invalidate on relevant terrain/view changes. False hiding is preferable to exposing actors through missing terrain.
+- Gate detailed animation/model preparation behind category/range/session checks, cheap bounds/frustum rejection and conservative coverage. Reuse suitable DH visibility results, but do not apply terrain-only assumptions to moving actors. GPU depth tests then decide partially covered pixels.
+- Depth rejection alone does not save CPU model work. Start with cheap conservative gates, cached static model geometry, pooled frame buffers and bounded updates. Add delayed, nonblocking coarse occlusion queries or hierarchical depth only if profiling justifies them; validate disocclusion and camera movement. Never block on a current-frame query.
+- Opaque and alpha-tested models need self-depth, depth writes and correct opaque ordering; transparent rotor/glass/effect layers need the existing material rules and bounded sorting. Preserve normals, lighting, textures, alpha cutouts and glint. The particle material marker and smoke blend state are not a general model material contract.
+- Choose one owner per actor and **per view**: native tracked model, legacy distant model, or DH distant model. Secure required data/render resources before takeover; suppress legacy draws only for that object/view. Provide explicit provider capability/version checks and safe rollback. A frame with unknown DH coverage must not accidentally fall back to a legacy through-terrain draw.
+- Existing legacy code stays present. In DH mode, suppress only replaced distant visual entry points; never remove underlying state handlers or gameplay behaviour. If a companion hook is necessary for clean ownership, add it on `feature/dh-lods` rather than brittle broad cancellation.
+
+## Scopes, thermals, cameras and equipment
+
+Each render context needs its own view/projection, camera origin, framebuffer, coverage/depth validity and ownership decisions. Main camera matrices must never leak into scope, MCHELI camera, remote/UAV, thermal, shadow or reflection passes.
+
+Inventory supported passes before enabling them. Preserve FMUR thermal heat masks as well as colour; existing `MissileVisual` heat handling is a reference, not proof of full animated model compatibility. Preserve MCHELI thermal/camera rules and FMUR scope zoom/reticle layering. Unsupported or depth-invalid auxiliary passes withhold DH actors, with a diagnostic, until an adapter is validated. Do not silently advertise them as supported.
+
+Player acceptance includes walking, running, sneaking, turning/head yaw, swing, item use, riding, sleeping where currently supported, skin changes, ordinary armour/items, FMUR armour, held guns and supported aiming/reload/fire poses. Vehicle acceptance inventories animated rotors, turret/barrel aim, wheels/tracks, gear, hatches and other parts actually supported by each content model. Snapshot-only animation parity may require companion data additions; record missing fields rather than estimating gameplay actions.
+
+## Quality preset and waypoint work
+
+- Reproduce preset changes as non-op and op in the same server/pack, through GUI and any command route. Trace whether the issue is permission gating, server constraints, config override, failed persistence or a listener restoring CUSTOM. Keep local quality controls available to non-ops while retaining server generation/bandwidth/visibility limits. Report the diagnosed cause before claiming a fix; never remove blanket command permissions as a guess.
+- Reproduce waypoint world anchoring by strafing, vertical motion, rotation, third person, terrain transitions and zoom/camera views at known coordinates. Capture the actual render event matrices and compare with native and DH origins. Inspect long-range placement/clamping as well as timing/double camera subtraction. Do not label the report a confirmed DH bug yet.
+- WGMap remains the waypoint data/permission owner. First fix DH matrix/GL state leakage if proven. A DH-side optional adapter may consume an existing public snapshot/render contract only if one actually fits. If a proper fix requires a WGMap change, document the smallest interface/fix and defer its edit until authorised; do not duplicate its waypoint store or patch unrelated code merely to stay DH-only.
+
+## Implementation milestones and completion gates
+
+1. **Baseline and diagnostics:** inventory source versions, optional-mod boundaries, pack jars, animation/state fields, draw/thermal events and legacy ownership; capture performance and visibility scenarios. Reproduce preset and waypoint reports. No removal or mass refactor.
+2. **Configuration and authority:** implement four toggles/migration, server policy negotiation and validated bounded actor state lifecycle. Add focused protocol/lifecycle/config tests; verify optional-mod absence and dedicated-server loading. No snapshot-only rendering without a negotiated authoritative policy.
+3. **Coverage and opaque model proof:** implement reusable view/depth context and conservative unknown-terrain gating; render a bounded moving test model with self-depth, alpha cuts and native handover. Prove full hiding, partial cover and missing-terrain rejection before player/vehicle rollout.
+4. **Player baseline:** DH-owned server delivery and plain animated player rendering, skin/ordinary equipment, no FMUR dependency. Integrate legacy ownership hooks where necessary. Verify toggle transitions, appearance repair and no doubled body.
+5. **FMUR equipment and effects:** attach supported armour/gun layers to the same pose; route existing Flan's trails through FMUR toggle. Preserve content assets and animation rules; validate thermal/scope contexts. Explicitly exclude FMUR vehicles.
+6. **MCHELI vehicles:** integrate validated vehicle visual snapshots/model adapters and animated parts; enforce server 750 ceiling by default; preserve radar/gameplay stream consumers. Route MCHELI trails through its toggle. Validate cameras/thermals, native handover and snapshot-only parity.
+7. **NTM regression and reported defects:** connect NTM toggle without changing NTM source where possible. Finish diagnosed preset fixes and the authorised portion of waypoint anchoring work. Unknown external dependency stays clearly reported, not silently marked complete.
+8. **Performance and pack acceptance:** measure main/render thread, GPU and server tick/traffic against baseline in the current pack. Test many occluded and visible actors and fast camera movement. Review dedicated-server boundaries and resource lifecycle. Publish coherent feature milestones using GitHub Desktop. Legacy deletion is a separate later decision after acceptance.
+
+Each milestone follows implement, read-only review, minimal fixes, focused tests and final verification. Use the smallest complete milestone; no placeholder framework for future features. This planning turn does not implement these runtime changes.
+
+## Verification matrix
+
+- Automated: effective server/client range and category matrix; old config migration; snapshot sequencing/identity/session resets; malformed/oversized packets; expiry/removal; interpolation/teleport/angle wrap; coverage invalidation/known air/gaps; normal/reverse-Z projection and camera-origin math; ownership on all toggle combinations; dedicated-server/optional-mod classloading.
+- Existing regression task: from `dh`, use the 1.7.10 configuration (`-PmcVer=1.7.10`) with `:forge17:compileJava` and `:forge17:checkDistantEffects`, confirming wrapper/task configuration before execution. Add focused checks using the established harness. Run further core checks only where affected. Builds may increment build metadata; report it.
+- Actual GPU/in-game: fully hidden/partly exposed hills and structures, missing/unloaded/rebuilding terrain, known empty sky, terrain edits, native/DH boundaries in both directions, near plane, far range, world border and large coordinates, shaders off and supported shaders, changes in DH quality/detail.
+- Multiplayer: non-op/op GUI preset changes, server limit updates, death/respawn, invisibility/team/spectator rules, join/leave, reconnect, dimension changes, teleport, packet delay/staleness and native entity ID reuse. Client range cannot cause out-of-policy delivery.
+- Compatibility: Player without FMUR; FMUR without MCHELI; MCHELI without FMUR; WGMap absent/present; each support toggle combination; supported scope/thermal/camera views. Ordinary nearby rendering must continue with all four toggles off.
+- Performance: report baseline versus candidate under identical pack/world/camera/actor counts: CPU model/animation time, GPU frame time, draw calls, queue/memory bounds, server tick time and bytes per viewer. Hidden/out-of-view actors should incur no detailed model build; overload must degrade within bounds.
+- Record screenshots/video and frame diagnostics for partial cover and auxiliary views. Unit tests or compilation alone do not establish pixel visibility, animation parity or acceptable frame time. Acceptance requires runtime evidence; no promise of zero network latency or block-exact simplified LOD terrain.
+
+## Planning-turn result
+
+Only this plan is added. No Java, shader, packet, config or companion source changes yet. Source-history promotion was verified by exact tree comparison with `feature/dh-3.3-wdg`; no runtime tests were necessary for that identical tree. Planned tests above have not been run in this turn.
