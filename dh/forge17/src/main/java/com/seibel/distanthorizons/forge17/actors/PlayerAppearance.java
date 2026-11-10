@@ -9,6 +9,7 @@ import java.util.UUID;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.*;
+import cpw.mods.fml.common.registry.GameRegistry;
 
 /** Bounded, immutable appearance bytes; NBT is decoded only on the client thread. */
 public final class PlayerAppearance {
@@ -42,7 +43,7 @@ public final class PlayerAppearance {
         if(tag==null || input.available()!=0) throw new IOException("Trailing appearance NBT");
         return tag;
     }
-    static byte[] capture(EntityPlayerMP player) throws IOException {
+    static byte[] capture(EntityPlayerMP player,boolean fmur) throws IOException {
         NBTTagCompound tag=new NBTTagCompound();
         String name=player.getGameProfile().getName();
         if(name==null || name.length()>16 || name.isEmpty()) throw new IOException("Invalid profile name");
@@ -56,10 +57,17 @@ public final class PlayerAppearance {
         }
         NBTTagList equipment=new NBTTagList();
         for(int slot=0;slot<5;slot++) {
-            NBTTagCompound item=new NBTTagCompound();ItemStack stack=player.getEquipmentInSlot(slot);
+            NBTTagCompound item=new NBTTagCompound();ItemStack stack=visibleEquipment(player.getEquipmentInSlot(slot),fmur);
             if(stack!=null) stack.writeToNBT(item);item.setByte("slot",(byte)slot);equipment.appendTag(item);
         }
-        tag.setTag("equipment",equipment);FmurPlayerBridge.appendAppearance(player,tag);return encode(tag);
+        tag.setTag("equipment",equipment);if(fmur) FmurPlayerBridge.appendAppearance(player,tag);return encode(tag);
+    }
+    static ItemStack visibleEquipment(ItemStack stack,boolean fmur) {
+        if(stack!=null && !fmur) {
+            GameRegistry.UniqueIdentifier owner=GameRegistry.findUniqueIdentifierFor(stack.getItem());
+            if(owner!=null && "flansmod".equals(owner.modId)) return null;
+        }
+        return stack;
     }
     static byte[] encode(NBTTagCompound tag) throws IOException {
         final ByteArrayOutputStream bytes=new ByteArrayOutputStream();

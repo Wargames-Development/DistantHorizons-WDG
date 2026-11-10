@@ -52,6 +52,10 @@ public final class PlayerFrameCache {
     public long received() { return lastReceived; }
     public boolean safe() { return (capabilities & PlayerFrame.SAFE)!=0; }
     public boolean ownsLegacy() { return (capabilities & PlayerFrame.OWNED)!=0; }
+    public boolean fmurEnabled(int sampledFlags,boolean clientEnabled) {
+        // A live server revocation wins immediately; re-enable waits for a compatible sampled pose.
+        return clientEnabled && (capabilities & PlayerFrame.FMUR)!=0 && (sampledFlags & PlayerFrame.POSE_FMUR)!=0;
+    }
     public int interval() { return interval; }
     public List<PlayerFrame.Pose> players() { return players; }
     public int range() { return range; }

@@ -272,7 +272,7 @@ public final class ActorRenderer {
         public boolean prepare() throws Exception {
             PlayerAppearance appearance=PlayerClient.INSTANCE.frames().appearance(uuid,sample.entityId,sample.revision);
             if(appearance==null) return false;
-            boolean fmur=Config.Client.Advanced.Graphics.GenericRendering.extendFlansTrails.get();
+            boolean fmur=PlayerClient.INSTANCE.frames().fmurEnabled(sample.flags,Config.Client.Advanced.Graphics.GenericRendering.extendFlansTrails.get());
             if(actor==null || actor.getEntityId()!=sample.entityId || revision!=sample.revision) {
                 PlayerAppearance.Decoded decoded=appearance.appearance();if(actor!=null) actor.close();
                 actor=new VisualPlayerActor(Minecraft.getMinecraft().theWorld,decoded.profile,sample.entityId);

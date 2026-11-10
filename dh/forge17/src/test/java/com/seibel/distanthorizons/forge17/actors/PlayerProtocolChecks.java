@@ -146,13 +146,29 @@ public final class PlayerProtocolChecks {
         }
         for(PlayerFrame.Pose candidate:population) check(sent.get(candidate.uuid)>=196,"repairs rotate across all recipients");
         invalid(()->new PlayerFrame(1,1,VIEWER,0,0,PlayerFrame.OWNED,2,Collections.emptyList()),"ownership without compatible policy accepted");
-        invalid(()->new PlayerFrame(1,1,VIEWER,0,0,4,2,Collections.emptyList()),"unknown ownership capabilities accepted");
+        invalid(()->new PlayerFrame(1,1,VIEWER,0,0,8,2,Collections.emptyList()),"unknown ownership capabilities accepted");
         invalid(()->new PlayerFrame(1,1,VIEWER,0,0,1,0,Collections.emptyList()),"zero update interval accepted");
         cache.reset(connection,1,0,VIEWER);
         check(cache.accept(connection,new PlayerFrame(1,1,VIEWER,0,0,PlayerFrame.SAFE,2,Collections.emptyList()),0)
             && cache.safe() && !cache.ownsLegacy(),"policy probe cannot claim legacy presentation");
         check(cache.accept(connection,new PlayerFrame(1,2,VIEWER,0,0,PlayerFrame.SAFE|PlayerFrame.OWNED,2,Collections.emptyList()),1)
             && cache.ownsLegacy() && cache.players().isEmpty(),"server ownership acknowledgement works with player toggle off");
+        for(int server=0;server<2;server++) {
+            PlayerFrame policy=new PlayerFrame(1,3+server,VIEWER,0,0,PlayerFrame.SAFE|PlayerFrame.OWNED|(server==1?PlayerFrame.FMUR:0),2,Collections.emptyList());
+            ByteBuf bytes=Unpooled.buffer();
+            try { policy.write(bytes);check(cache.accept(connection,PlayerFrame.read(bytes),2+server),"FMUR server policy round trips through the actual wire/cache"); }
+            finally { bytes.release(); }
+            for(int sampled=0;sampled<2;sampled++) for(int client=0;client<2;client++)
+                check(cache.fmurEnabled(sampled==1?PlayerFrame.POSE_FMUR:0,client==1)==(server==1 && sampled==1 && client==1),
+                    "FMUR server revocation and sampled/client policy combine without enabling an incompatible pose");
+        }
+        PlayerFrame.Pose fmurPose=new PlayerFrame.Pose(TARGET,2,0,65,0,0,0,0,0,0,255,100,0,1,0,0,new byte[]{1});
+        ByteBuf policyPacket=Unpooled.buffer();
+        try {
+            new PlayerFrame(1,10,VIEWER,0,512,PlayerFrame.SAFE|PlayerFrame.OWNED|PlayerFrame.FMUR,2,Collections.singletonList(fmurPose)).write(policyPacket);
+            PlayerFrame restored=PlayerFrame.read(policyPacket);
+            check(restored.players.get(0).flags==255 && restored.players.get(0).extension()[0]==1,"FMUR pose bit preserves all original action bits on the wire");
+        } finally { policyPacket.release(); }
         try(java.io.InputStream input=PlayerProtocolChecks.class.getResourceAsStream("/net/minecraft/entity/player/EntityPlayer.class")) {
             org.spongepowered.asm.lib.tree.ClassNode player=new org.spongepowered.asm.lib.tree.ClassNode();
             new org.spongepowered.asm.lib.ClassReader(input).accept(player,0);

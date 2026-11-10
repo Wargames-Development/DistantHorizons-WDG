@@ -1,7 +1,6 @@
 package com.seibel.distanthorizons.forge17.actors;
 
 import com.mojang.authlib.GameProfile;
-import cpw.mods.fml.common.registry.GameRegistry;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 import net.minecraft.client.entity.EntityOtherPlayerMP;
@@ -22,11 +21,7 @@ public final class VisualPlayerActor extends EntityOtherPlayerMP implements Auto
     public void appearance(PlayerAppearance.Decoded appearance,boolean fmur) throws ReflectiveOperationException {
         this.appearance=appearance;this.fmur=fmur;
         for(int slot=0;slot<5;slot++) {
-            ItemStack stack=appearance.equipment(slot);
-            if(stack!=null && !fmur) {
-                GameRegistry.UniqueIdentifier owner=GameRegistry.findUniqueIdentifierFor(stack.getItem());
-                if(owner!=null && "flansmod".equals(owner.modId)) stack=null;
-            }
+            ItemStack stack=PlayerAppearance.visibleEquipment(appearance.equipment(slot),fmur);
             setCurrentItemOrArmor(slot,stack);
         }
         extension.appearance(appearance.extension(),fmur);

@@ -9,11 +9,11 @@ import java.util.UUID;
 
 /** Immutable, bounded authoritative poses. Actors are presentation data, never hitboxes. */
 public final class PlayerFrame {
-    public static final int VERSION=4, MAX_PLAYERS=64, MAX_RANGE=1024, MAX_BYTES=12288, MAX_EXTENSION_BYTES=48;
+    public static final int VERSION=5, MAX_PLAYERS=64, MAX_RANGE=1024, MAX_BYTES=12288, MAX_EXTENSION_BYTES=48;
     public final long subscription, sequence;
     public final UUID viewer;
     public final int dimension, range,capabilities,interval;
-    public static final int SAFE=1,OWNED=2;
+    public static final int SAFE=1,OWNED=2,FMUR=4,POSE_FMUR=128;
     public final List<Pose> players;
 
     public PlayerFrame(long subscription,long sequence,UUID viewer,int dimension,int range,List<Pose> players) {
@@ -21,7 +21,7 @@ public final class PlayerFrame {
     }
     public PlayerFrame(long subscription,long sequence,UUID viewer,int dimension,int range,int capabilities,int interval,List<Pose> players) {
         if (subscription==0 || sequence<0 || viewer==null || range<0 || range>MAX_RANGE || players.size()>MAX_PLAYERS
-                || (range==0 && !players.isEmpty()) || (capabilities & ~3)!=0
+                || (range==0 && !players.isEmpty()) || (capabilities & ~7)!=0
                 || ((capabilities & OWNED)!=0 && (capabilities & SAFE)==0) || interval<1 || interval>20) throw new IllegalArgumentException("Invalid player frame");
         HashSet<UUID> ids=new HashSet<UUID>();
         HashSet<Integer> entityIds=new HashSet<Integer>();
@@ -84,7 +84,7 @@ public final class PlayerFrame {
             if(uuid==null || entityId<0 || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
                     || Math.abs(x)>30000000 || Math.abs(z)>30000000 || Math.abs(y)>65536
                     || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(headYaw) || !Float.isFinite(bodyYaw)
-                    || useTicks<0 || useTicks>1000000 || !Float.isFinite(bedYaw) || appearanceRevision<0 || !Float.isFinite(swing) || swing<0 || swing>1 || (flags & ~127)!=0 || age<0 || (brightness & ~0x00F000F0)!=0)
+                    || useTicks<0 || useTicks>1000000 || !Float.isFinite(bedYaw) || appearanceRevision<0 || !Float.isFinite(swing) || swing<0 || swing>1 || (flags & ~255)!=0 || age<0 || (brightness & ~0x00F000F0)!=0)
                 throw new IllegalArgumentException("Invalid player pose");
             this.useTicks=useTicks;this.bedYaw=bedYaw;this.appearanceRevision=appearanceRevision;this.uuid=uuid;this.entityId=entityId;this.x=x;this.y=y;this.z=z;this.yaw=yaw;this.pitch=pitch;
             this.headYaw=headYaw;this.bodyYaw=bodyYaw;this.swing=swing;this.flags=flags;this.age=age;this.brightness=brightness;

@@ -34,6 +34,7 @@ public final class PlayerRelay {
     private boolean initialized;
     private long sequence;
     private boolean legacySafe;
+    private static final byte[] NO_EXTENSION=new byte[0];
     private PlayerRelay() { }
     public void initialize() {
         if(initialized) return;initialized=true;
@@ -77,6 +78,7 @@ public final class PlayerRelay {
         }
         int interval=Math.max(1,Math.min(20,Config.Server.playerLodUpdateIntervalTicks.get()));
         if(sessions.isEmpty() || sequence%interval!=0) return;
+        boolean fmur=Config.Server.allowFmurLodSupport.get();
         boolean anyRange=false;for(Session s:sessions.values()) anyRange|=s.settings.range>0;
         // Snapshot the existing player list once, not a loaded-entity scan per viewer.
         Map<net.minecraft.world.World,Map<Long,List<EntityPlayerMP>>> grid=new IdentityHashMap<>();
@@ -87,9 +89,9 @@ public final class PlayerRelay {
             live.add(target.getUniqueID());
             try {
                 AppearanceState previous=appearances.get(target.getUniqueID());
-                byte[] data=previous!=null && previous.player==target && sequence%4!=0?previous.data:PlayerAppearance.capture(target);
-                if(previous==null || previous.player!=target || !Arrays.equals(previous.data,data))
-                    appearances.put(target.getUniqueID(),new AppearanceState(target,data,++appearanceRevision));
+                byte[] data=previous!=null && previous.player==target && previous.fmur==fmur && sequence%4!=0?previous.data:PlayerAppearance.capture(target,fmur);
+                if(previous==null || previous.player!=target || previous.fmur!=fmur || !Arrays.equals(previous.data,data))
+                    appearances.put(target.getUniqueID(),new AppearanceState(target,data,++appearanceRevision,fmur));
                 failedAppearances.remove(target.getUniqueID());
             } catch(java.io.IOException | RuntimeException invalid) {
                 appearances.remove(target.getUniqueID());
@@ -131,17 +133,17 @@ public final class PlayerRelay {
                 AppearanceState appearance=appearances.get(p.getUniqueID());
                 if(appearance==null) continue;
                 int flags=(p.isSneaking()?1:0)|(p.isSprinting()?2:0)|(p.isInvisible()?4:0)|(p.isBurning()?8:0)|(p.isRiding()?16:0)
-                    |(p.isPlayerSleeping()?32:0)|(p.isUsingItem()?64:0);
+                    |(p.isPlayerSleeping()?32:0)|(p.isUsingItem()?64:0)|(fmur?PlayerFrame.POSE_FMUR:0);
                 try {
                     byte[] visual=visualPoses.get(p.getUniqueID());
-                    if(visual==null) { visual=FmurPlayerBridge.capturePose(p);visualPoses.put(p.getUniqueID(),visual); }
+                    if(visual==null) { visual=fmur?FmurPlayerBridge.capturePose(p):NO_EXTENSION;visualPoses.put(p.getUniqueID(),visual); }
                     poses.add(new PlayerFrame.Pose(p.getUniqueID(),p.getEntityId(),p.posX,p.posY,p.posZ,p.rotationYaw,
                         p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision,Math.max(0,Math.min(1000000,((com.seibel.distanthorizons.forge17.mixin.MixinPlayerUseState)p).dh$getItemInUseCount())),bedYaw(p),visual));
                 } catch(IllegalArgumentException invalid) { continue; }
                 if(poses.size()==PlayerFrame.MAX_PLAYERS) break;
             }
             try {
-                NETWORK.sendTo(new FrameMessage(new PlayerFrame(session.settings.token,sequence,viewer.getUniqueID(),viewer.dimension,range,(legacySafe?PlayerFrame.SAFE:0)|(legacySafe && session.settings.takeover?PlayerFrame.OWNED:0),interval,poses)),viewer);
+                NETWORK.sendTo(new FrameMessage(new PlayerFrame(session.settings.token,sequence,viewer.getUniqueID(),viewer.dimension,range,(legacySafe?PlayerFrame.SAFE:0)|(legacySafe && session.settings.takeover?PlayerFrame.OWNED:0)|(fmur?PlayerFrame.FMUR:0),interval,poses)),viewer);
                 Set<UUID> retained=new HashSet<>();int bytes=32768,count=0;
                 for(PlayerFrame.Pose pose:poses) retained.add(pose.uuid);
                 List<PlayerFrame.Pose> order=AppearanceDeliveryOrder.ordered(poses,session.known,session.sent);
@@ -197,8 +199,8 @@ public final class PlayerRelay {
         Session(EntityPlayerMP player,Settings settings,long renewed) { this.player=player;this.settings=settings;this.renewed=renewed; }
     }
     private static final class AppearanceState {
-        final EntityPlayerMP player;final byte[] data;final long revision;
-        AppearanceState(EntityPlayerMP player,byte[] data,long revision) { this.player=player;this.data=data;this.revision=revision; }
+        final EntityPlayerMP player;final byte[] data;final long revision;final boolean fmur;
+        AppearanceState(EntityPlayerMP player,byte[] data,long revision,boolean fmur) { this.player=player;this.data=data;this.revision=revision;this.fmur=fmur; }
     }
     private static final class Request {
         final EntityPlayerMP player;final Settings settings;
