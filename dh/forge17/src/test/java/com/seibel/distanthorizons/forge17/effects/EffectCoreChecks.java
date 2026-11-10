@@ -149,7 +149,7 @@ public final class EffectCoreChecks
         fixtures.add(compileFixture);
         for(String file:fixtures) try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(file);
             java.io.InputStream input=zip.getInputStream(zip.getEntry("com/gtnewhorizons/angelica/mixins/early/shaders/MixinEntityRenderer.class"))) {
-            checkShaderStage(input);checkProjectionSupplier(zip);System.out.println("Checked actual Angelica shader stage/projection: "+file);
+            checkShaderStage(input);checkProjectionSupplier(zip);checks+=ShaderCloudContractChecks.run(zip);System.out.println("Checked actual Angelica shader stage/projection/cloud API: "+file);
         } catch(java.io.IOException error) { throw new AssertionError(error); }
         check(com.seibel.distanthorizons.forge17.EffectCaptureTransformer.patchShaderFinalization(new org.spongepowered.asm.lib.tree.ClassNode())==0,
             "shaderless renderer receives no optional pipeline hook");

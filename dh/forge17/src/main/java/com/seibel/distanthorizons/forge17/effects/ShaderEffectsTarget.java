@@ -18,10 +18,12 @@ final class ShaderEffectsTarget {
     private static final FloatBuffer projectionValues=org.lwjgl.BufferUtils.createFloatBuffer(16);
     final int sceneDepth,terrainDepth,nativeSceneDepth,sceneColour,cloudDepth,particleMaterial;
     final int sceneWidth,sceneHeight;
+    final Object pipelineIdentity;
     final DhApiMat4f terrainProjection;
     final boolean colourFlipped,cloudFlipped;
     final boolean complementaryClouds;
-    private ShaderEffectsTarget(int depth,int copy,int nativeDepth,String pack,int colour,int cloud,int material,java.util.Set<?> flips,DhApiMat4f terrainProjection,long size) {
+    private ShaderEffectsTarget(int depth,int copy,int nativeDepth,String pack,int colour,int cloud,int material,java.util.Set<?> flips,DhApiMat4f terrainProjection,long size,Object pipelineIdentity) {
+        this.pipelineIdentity=pipelineIdentity;
         this.terrainProjection=terrainProjection;
         sceneDepth=depth;terrainDepth=copy;nativeSceneDepth=nativeDepth;sceneColour=colour;cloudDepth=cloud;
         // A shader pack may render at a different scale from the Minecraft window.
@@ -94,7 +96,7 @@ final class ShaderEffectsTarget {
             projectionValues.clear();writeProjection.invoke(projection.invoke(null),projectionValues);
             DhApiMat4f terrainProjection=readColumnMajorProjection(projectionValues);
             cached=d>0 && copy>0 && n>0 && colour>0 && d!=copy && d!=n
-                ?new ShaderEffectsTarget(d,copy,n,String.valueOf(packName.invoke(null)),colour,cloud,material,flips,terrainProjection,size):null;
+                ?new ShaderEffectsTarget(d,copy,n,String.valueOf(packName.invoke(null)),colour,cloud,material,flips,terrainProjection,size,p):null;
             return cached;
         } catch(ReflectiveOperationException | RuntimeException | LinkageError error) {
             unsupported=true;

@@ -38,10 +38,10 @@ public final class ModelScene implements AutoCloseable {
             saved=null;ready=completed;
         }
     }
-    public void composite(DhApiMat4f inverseDh,DhApiMat4f dhMvp,DhApiMat4f nativeFromDh,int terrainDepth,int nativeDepth,boolean shaderScene) {
+    public void composite(DhApiMat4f inverseDh,DhApiMat4f dhMvp,DhApiMat4f nativeFromDh,DhApiMat4f nativeView,int terrainDepth,int nativeDepth,boolean shaderScene,int cloudTexture,float cloudDistance) {
         if(!ready || saved!=null) throw new IllegalStateException("Incomplete actor scene");
         compositor.compositeSource(colour,depth,width,height,0,0,width,height,reverse,inverseDh,dhMvp,nativeFromDh,
-            0,0,0,terrainDepth,nativeDepth,reverse,shaderScene);
+            0,0,0,terrainDepth,nativeDepth,reverse,shaderScene,nativeView,cloudTexture,cloudDistance);
     }
     public int colourTexture() { return ready && saved==null?colour:0; }
     public int depthTexture() { return ready && saved==null?depth:0; }

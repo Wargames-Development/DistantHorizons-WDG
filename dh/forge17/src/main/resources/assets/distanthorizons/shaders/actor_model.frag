@@ -3,6 +3,10 @@ uniform sampler2D uModelColour;
 uniform sampler2D uModelDepth;
 uniform sampler2D uDhDepth;
 uniform sampler2D uNativeDepth;
+uniform sampler2D uCloudDepth;
+uniform bool uUseCloudDepth;
+uniform float uCloudRenderDistance;
+uniform mat4 uNativeView;
 uniform mat4 uInverseModelMvp;
 uniform mat4 uDhMvp;
 uniform mat4 uNativeMvp;
@@ -38,6 +42,12 @@ void main() {
         if(any(lessThan(nativePosition.xy,vec2(0.0))) || any(greaterThan(nativePosition.xy,vec2(1.0)))) discard;
         float nativeDepth=texture(uNativeDepth,nativePosition.xy).r;
         if(nativeDepth<1.0 && nativePosition.z>nativeDepth+0.00000006) discard;
+    }
+    if(uUseCloudDepth) {
+        ivec2 size=textureSize(uCloudDepth,0);
+        float cloud=texelFetch(uCloudDepth,clamp(ivec2(nativePosition.xy*vec2(size)),ivec2(0),size-1),0).a;
+        float distance=length((uNativeView*model).xyz);
+        if(cloud>0.0 && cloud*cloud*uCloudRenderDistance<min(distance,uCloudRenderDistance)) discard;
     }
     // Model captures use premultiplied colour. Preserve their original alpha.
     fragColor=colour;

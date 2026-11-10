@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-static GLuint program,textures[4];static int checks;
+static GLuint program,textures[5];static int checks;
 static GLuint compile(GLenum type,const char *path) {
     FILE *f=fopen(path,"rb");if(!f) { perror(path);exit(1); }
     fseek(f,0,SEEK_END);long n=ftell(f);rewind(f);char *source=calloc(n+1,1);
@@ -92,6 +92,24 @@ static void partial_cover_check(void) {
     if(left[0]>.001f || fabsf(right[0]-.5f)>.003f) { fprintf(stderr,"FAIL partial model cover\n");exit(1); }
     checks++;printf("PASS terrain hides only covered model pixels\n");
 }
+static void cloud_check(void) {
+    matrix("uInverseModelMvp",0);matrix("uNativeMvp",0);matrix("uDhMvp",0);matrix("uNativeView",-100);
+    uniform("uDhReverseDepth",0);uniform("uWriteDhDepth",0);uniform("uModelReverseDepth",0);uniform("uUseNativeDepth",0);
+    tex(0,.5,.25,.125,1);tex(1,.5,0,0,1);tex(2,1,0,0,1);
+    glUniform1f(glGetUniformLocation(program,"uCloudRenderDistance"),1024);uniform("uUseCloudDepth",1);
+    tex(4,0,0,0,.2);check("dense shader clouds occlude actor pixels",0,0);
+    tex(4,0,0,0,.5);check("actors before shader clouds remain visible",1,.5);
+    tex(4,0,0,0,0);check("empty cloud distance does not occlude actors",1,.5);
+    tex(4,0,0,0,1);check("cloud horizon does not occlude actors",1,.5);
+    tex(4,0,0,0,.2);uniform("uUseCloudDepth",0);check("cloud-disabled variant ignores retained mask",1,.5);
+    uniform("uUseCloudDepth",1);
+    float cloud[64];for(int i=0;i<16;i++) { cloud[i*4]=cloud[i*4+1]=cloud[i*4+2]=0;cloud[i*4+3]=i%4<2?.2f:.5f; }
+    glActiveTexture(GL_TEXTURE4);glBindTexture(GL_TEXTURE_2D,textures[4]);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA32F,4,4,0,GL_RGBA,GL_FLOAT,cloud);
+    glClearColor(0,0,0,0);glClearDepth(.9);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glDrawArrays(GL_TRIANGLES,0,6);
+    float left[4],right[4];glReadPixels(0,2,1,1,GL_RGBA,GL_FLOAT,left);glReadPixels(3,2,1,1,GL_RGBA,GL_FLOAT,right);
+    if(left[0]>.001f || fabsf(right[0]-.5f)>.003f) { fprintf(stderr,"FAIL partial cloud cover\n");exit(1); }
+    checks++;printf("PASS clouds hide only covered actor pixels\n");uniform("uUseCloudDepth",0);
+}
 int main(int argc,char **argv) {
     if(argc!=3) return 1;
     CGLPixelFormatAttribute attrs[]={kCGLPFAOpenGLProfile,(CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,kCGLPFAAllowOfflineRenderers,0};
@@ -100,10 +118,11 @@ int main(int argc,char **argv) {
     program=glCreateProgram();glAttachShader(program,compile(GL_VERTEX_SHADER,argv[1]));glAttachShader(program,compile(GL_FRAGMENT_SHADER,argv[2]));
     glBindAttribLocation(program,0,"aPosition");glBindFragDataLocation(program,0,"fragColor");glBindFragDataLocation(program,1,"fragActorMaterial");glLinkProgram(program);
     GLint ok;glGetProgramiv(program,GL_LINK_STATUS,&ok);if(!ok) return 1;glUseProgram(program);
-    glGenTextures(4,textures);
-    for(int i=0;i<4;i++) { glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,textures[i]);
+    glGenTextures(5,textures);
+    for(int i=0;i<5;i++) { glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,textures[i]);
         glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST); }
     uniform("uModelColour",0);uniform("uModelDepth",1);uniform("uDhDepth",2);uniform("uNativeDepth",3);
+    uniform("uCloudDepth",4);uniform("uUseCloudDepth",0);tex(4,0,0,0,0);
     matrix("uInverseModelMvp",0);matrix("uDhMvp",0);matrix("uNativeMvp",0);
     uniform("uWriteDhDepth",1);
     GLuint fbo,colour,depth;glGenFramebuffers(1,&fbo);glBindFramebuffer(GL_FRAMEBUFFER,fbo);
@@ -139,5 +158,6 @@ int main(int argc,char **argv) {
         float distances[]={64,128,256,512,750,1024,4096};perspective_check(distances[i],reverse);
     }
     scene_check(0);scene_check(1);partial_cover_check();
+    cloud_check();
     printf("PASS %d actor model GPU checks\n",checks);return 0;
 }

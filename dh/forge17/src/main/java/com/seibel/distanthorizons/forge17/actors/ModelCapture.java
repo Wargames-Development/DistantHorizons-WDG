@@ -22,6 +22,7 @@ public final class ModelCapture implements AutoCloseable {
     private boolean ready;
     private GlShaderProgram shader;
     private int inverseUniform,dhUniform,nativeUniform,reverseUniform,useNativeUniform,writeDepthUniform,reverseModelUniform,offsetUniform;
+    private int viewUniform,cloudSamplerUniform,cloudEnabledUniform,cloudRangeUniform;
     private final int[] samplerUniforms=new int[4];
     private final FloatBuffer matrix=BufferUtils.createFloatBuffer(16);
     private final float[] rows=new float[16];
@@ -78,13 +79,13 @@ public final class ModelCapture implements AutoCloseable {
                           boolean reverseDepth,boolean writeDhDepth) {
         if(!ready || captureState!=null) throw new IllegalStateException("No completed model capture");
         compositeSource(colour,depth,width,height,left,bottom,right,top,false,inverseCapture,dhMvp,nativeMvp,
-            offsetX,offsetY,offsetZ,terrainDepth,nativeDepth,reverseDepth,writeDhDepth);
+            offsetX,offsetY,offsetZ,terrainDepth,nativeDepth,reverseDepth,writeDhDepth,nativeMvp,0,0);
     }
     public void compositeSource(int sourceColour,int sourceDepth,int sourceWidth,int sourceHeight,
                                 int x0,int y0,int x1,int y1,boolean sourceReverseDepth,
                                 DhApiMat4f inverseCapture,DhApiMat4f dhMvp,DhApiMat4f nativeMvp,
                                 float offsetX,float offsetY,float offsetZ,int terrainDepth,int nativeDepth,
-                                boolean reverseDepth,boolean writeDhDepth) {
+                                boolean reverseDepth,boolean writeDhDepth,DhApiMat4f nativeView,int cloudTexture,float cloudDistance) {
         if(captureState!=null || sourceColour<=0 || sourceDepth<=0 || sourceWidth<=0 || sourceHeight<=0
                 || (long)sourceWidth*sourceHeight>MAX_PIXELS || x0<0 || y0<0 || x1>sourceWidth || y1>sourceHeight || x0>=x1 || y0>=y1)
             throw new IllegalArgumentException("Invalid model composite input");
@@ -97,6 +98,9 @@ public final class ModelCapture implements AutoCloseable {
             if(attachment==terrainDepth || attachment==nativeDepth || attachment==sourceDepth) throw new IllegalArgumentException("Depth feedback loop");
         }
         int read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        // GLState restores units 0..3 only. Preserve the additional cloud unit explicitly.
+        int active=GL11.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
+        GL13.glActiveTexture(GL13.GL_TEXTURE4);int cloudBinding=GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);GL13.glActiveTexture(active);
         try(GLState state=new GLState()) {
             GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
             try {
@@ -106,6 +110,10 @@ public final class ModelCapture implements AutoCloseable {
                 shader.setUniform(useNativeUniform,nativeDepth>0);
                 shader.setUniform(writeDepthUniform,writeDhDepth);
                 shader.setUniform(reverseModelUniform,sourceReverseDepth);
+                shader.setUniform(viewUniform,nativeView);shader.setUniform(cloudSamplerUniform,4);
+                shader.setUniform(cloudEnabledUniform,cloudTexture>0 && cloudDistance>0);
+                shader.setUniform(cloudRangeUniform,cloudDistance);
+                GL13.glActiveTexture(GL13.GL_TEXTURE4);GL11.glBindTexture(GL11.GL_TEXTURE_2D,cloudTexture);
                 GL20.glUniform3f(offsetUniform,offsetX,offsetY,offsetZ);
                 bindTexture(0,sourceColour);bindTexture(1,sourceDepth);bindTexture(2,terrainDepth);bindTexture(3,nativeDepth);
                 GL11.glViewport(0,0,sourceWidth,sourceHeight);GL11.glEnable(GL11.GL_SCISSOR_TEST);GL11.glScissor(x0,y0,x1-x0,y1-y0);
@@ -116,6 +124,7 @@ public final class ModelCapture implements AutoCloseable {
                 GL30.glBindVertexArray(vao);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,6);
             } finally { GL11.glPopAttrib(); }
         } finally {
+            GL13.glActiveTexture(GL13.GL_TEXTURE4);GL11.glBindTexture(GL11.GL_TEXTURE_2D,cloudBinding);GL13.glActiveTexture(active);
             GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,draw);
         }
     }
@@ -160,6 +169,8 @@ public final class ModelCapture implements AutoCloseable {
         nativeUniform=shader.getUniformLocation("uNativeMvp");reverseUniform=shader.getUniformLocation("uDhReverseDepth");
         useNativeUniform=shader.getUniformLocation("uUseNativeDepth");writeDepthUniform=shader.getUniformLocation("uWriteDhDepth");
         reverseModelUniform=shader.getUniformLocation("uModelReverseDepth");offsetUniform=shader.getUniformLocation("uDhOriginOffset");
+        viewUniform=shader.getUniformLocation("uNativeView");cloudSamplerUniform=shader.getUniformLocation("uCloudDepth");
+        cloudEnabledUniform=shader.getUniformLocation("uUseCloudDepth");cloudRangeUniform=shader.getUniformLocation("uCloudRenderDistance");
         String[] names={"uModelColour","uModelDepth","uDhDepth","uNativeDepth"};
         for(int unit=0;unit<4;unit++) samplerUniforms[unit]=shader.getUniformLocation(names[unit]);
         vao=GL30.glGenVertexArrays();vbo=GL15.glGenBuffers();GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,vbo);

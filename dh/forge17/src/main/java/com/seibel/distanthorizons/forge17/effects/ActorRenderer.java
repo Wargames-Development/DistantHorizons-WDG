@@ -32,6 +32,7 @@ public final class ActorRenderer {
     private DhApiRenderParam source;
     private final ModelCapture capture=new ModelCapture();
     private final ModelScene scene=new ModelScene();
+    private final ShaderActorClouds clouds=new ShaderActorClouds();
     private final ActorTerrainVisibility terrain=new ActorTerrainVisibility();
     private final Map<UUID,Contact> contacts=new LinkedHashMap<>();
     private final Set<UUID> nativeDrawn=new HashSet<>(),nativeVehicles=new HashSet<>();
@@ -125,6 +126,7 @@ public final class ActorRenderer {
         if(!playersWanted && !vehiclesWanted) return;
         ShaderEffectsTarget target=shaders?ShaderEffectsTarget.current():null;
         if(shaders && target==null) { status="unsupported shader target";return; }
+        if(!clouds.refresh(target)) { status="waiting for shader cloud contract";return; }
         if(!shaders && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getFramebuffer().framebufferObject) return;
         int terrainDepth=target==null?com.seibel.distanthorizons.core.render.DhApiRenderProxy.activeOpenGlDhDepthTextureId:target.terrainDepth;
         if(terrainDepth<=0 || !terrain.begin(source,mc.theWorld,generation)) return;
@@ -182,7 +184,7 @@ public final class ActorRenderer {
             int oldRead=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),oldDraw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
             try {
                 if(target!=null) bindTarget(target);
-                scene.composite(inverseScene,dhMvp,nativeMvp,terrainDepth,target==null?0:target.nativeSceneDepth,shaders);
+                scene.composite(inverseScene,dhMvp,nativeMvp,frame.mcModelViewMatrix,terrainDepth,target==null?0:target.nativeSceneDepth,shaders,clouds.texture,clouds.distance);
                 sceneComplete=true;
             } finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldDraw); }
         } catch(Exception | LinkageError error) {
