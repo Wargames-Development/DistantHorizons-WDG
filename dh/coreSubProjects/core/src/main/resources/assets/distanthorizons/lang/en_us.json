@@ -200,16 +200,22 @@
     "Enable Generic Rendering",
   "distanthorizons.config.client.advanced.graphics.genericRendering.enableGenericRendering.@tooltip":
     "If true non terrain objects will be rendered by DH. \ni.e. beacon beams and clouds.",
+  "distanthorizons.config.server.allowNtmLodSupport": "Allow NTM LOD Support",
+  "distanthorizons.config.server.allowMcheliLodSupport": "Allow MCHELI LOD Support",
+  "distanthorizons.config.server.allowFmurLodSupport": "Allow FMUR LOD Support",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendMcheliTrails.@tooltip": "Enable supported distant MCHELI weapon effects. Vehicle presentation is pending the vehicle LOD provider. Requires Experimental Distant Weapon Effects.",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendHbmTrails.@tooltip": "Enable supported distant NTM missile bodies, exhaust, trails and explosion effects. Requires Experimental Distant Weapon Effects.",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendFlansTrails.@tooltip": "Enable supported distant FMUR weapon effects. Excludes FMUR vehicles. Player armour and guns are pending the player LOD provider. Requires Experimental Distant Weapon Effects.",
   "distanthorizons.config.server.enableDistantTrailRelay": "Enable Distant Missile Trail Relay",
   "distanthorizons.config.server.distantTrailRelayDistance": "Maximum Distant Trail Delivery Radius",
-  "distanthorizons.config.client.advanced.graphics.genericRendering.extendMcheliTrails": "Extend MC Heli Trails",
-  "distanthorizons.config.client.advanced.graphics.genericRendering.extendHbmTrails": "Extend HBM Missile Trails",
-  "distanthorizons.config.client.advanced.graphics.genericRendering.extendFlansTrails": "Extend FMUR Missile Trails",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendMcheliTrails": "MCHELI LOD Support",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendHbmTrails": "NTM LOD Support",
+  "distanthorizons.config.client.advanced.graphics.genericRendering.extendFlansTrails": "FMUR LOD Support",
   "distanthorizons.config.client.advanced.graphics.genericRendering.showDistantEffectDiagnostics": "Show Distant Effect Diagnostics in F3",
   "distanthorizons.config.client.advanced.graphics.genericRendering.enableDistantMcheliSmoke":
     "Experimental Distant Weapon Effects",
   "distanthorizons.config.client.advanced.graphics.genericRendering.enableDistantMcheliSmoke.@tooltip":
-    "Forge 1.7.10 only. Extends supported MC Heli, HBM and FMUR effects. The optional DH server relay continues real trail emissions beyond entity tracking. Source smoke rules and puff lifetimes are preserved. Off by default; shader packs are unsupported.",
+    "Forge 1.7.10 only. Extends supported MC Heli, HBM and FMUR effects. The optional DH server relay continues real trail emissions beyond entity tracking. Source smoke rules and puff lifetimes are preserved. Off by default. Supported shader integrations use terrain and native scene depth.",
   "distanthorizons.config.client.advanced.graphics.genericRendering.distantSmokeDistance":
     "Distant Smoke Maximum Distance",
   "distanthorizons.config.client.advanced.graphics.genericRendering.distantSmokeDistance.@tooltip":

@@ -54,6 +54,10 @@ public final class TrailRelay
         FMLCommonHandler.instance().bus().register(this);
         MinecraftForge.EVENT_BUS.register(this);
     }
+    private static int allowedFlags() {
+        return EffectSupportPolicy.allowedFlags(Config.Server.allowNtmLodSupport.get(),
+            Config.Server.allowMcheliLodSupport.get(), Config.Server.allowFmurLodSupport.get());
+    }
     public boolean hasSubscribers() { return subscribed && Config.Server.enableDistantTrailRelay.get(); }
     public boolean serverPresent() { return serverPresent; }
     public void setClientReceiver(Consumer<Batch> receiver) { clientReceiver=receiver; }
@@ -81,6 +85,7 @@ public final class TrailRelay
     public void offer(Entity entity, TrailSample sample)
     {
         if (!hasSubscribers() || entity == null || entity.worldObj == null || entity.worldObj.isRemote || entity.isDead) return;
+        if (!EffectSupportPolicy.permits(allowedFlags(),sample.family)) return;
         sample.uuid=entity.getUniqueID(); sample.entityId=entity.getEntityId(); sample.tick=entity.worldObj.getTotalWorldTime();
         sample.x=entity.posX+sample.ox; sample.y=entity.posY+sample.oy; sample.z=entity.posZ+sample.oz;
         sample.x0=entity.prevPosX+sample.ox; sample.y0=entity.prevPosY+sample.oy; sample.z0=entity.prevPosZ+sample.oz;
@@ -122,7 +127,7 @@ public final class TrailRelay
     }
 
     public void explosion(World world,double x,double y,double z,int clouds,float scale,float speed,float wave,float nativeRange) {
-        if(world.isRemote || !hasSubscribers()) return;
+        if(world.isRemote || !hasSubscribers() || !EffectSupportPolicy.permits(allowedFlags(),TrailSample.HBM)) return;
         TrailSample sample=new TrailSample();sample.family=TrailSample.HBM;sample.style="dhNativeBlast";
         sample.uuid=UUID.randomUUID();sample.entityId=-1;sample.tick=world.getTotalWorldTime();sample.count=Math.max(1,Math.min(32,clouds));
         sample.x0=sample.x=x;sample.y0=sample.y=y;sample.z0=sample.z=z;sample.scale=scale;
@@ -166,10 +171,11 @@ public final class TrailRelay
     public void worldTick(TickEvent.WorldTickEvent event)
     {
         if (event.side != Side.SERVER || event.phase != TickEvent.Phase.END || !hasSubscribers()) return;
+        int allowed=allowedFlags();
         List<TrailSample> pending=blasts.remove(event.world);
         if(pending!=null) for(Session session:sessions.values()) {
             EntityPlayerMP player=session.player;
-            if(player.worldObj!=event.world || (session.settings.flags & (1<<TrailSample.HBM))==0) continue;
+            if(player.worldObj!=event.world || !EffectSupportPolicy.permits(session.settings.flags & allowed,TrailSample.HBM)) continue;
             double range=Math.min(session.settings.distance,Config.Server.distantTrailRelayDistance.get());
             List<TrailSample> visible=new ArrayList<TrailSample>();
             for(TrailSample sample:pending) if(player.getDistanceSq(sample.x,sample.y,sample.z)>sample.mz*1024D*sample.mz*1024D && player.getDistanceSq(sample.x,sample.y,sample.z)<=range*range) visible.add(sample);
@@ -200,7 +206,7 @@ public final class TrailRelay
             {
                 int index=cursor++ % Math.max(1,streams.size());
                 if ((pass==0 && index<skip) || (pass==1 && index>=skip)) continue;
-                if (tick-s.latest.tick > 1 || (session.settings.flags & (1 << s.latest.family)) == 0
+                if (tick-s.latest.tick > 1 || !EffectSupportPolicy.permits(session.settings.flags & allowed,s.latest.family)
                     || p.getDistanceSq(s.latest.x,s.latest.y,s.latest.z)>distance*(double)distance) continue;
                 TrailSample sample=s.latest.copy();
                 sample.x0=s.startX; sample.y0=s.startY; sample.z0=s.startZ;

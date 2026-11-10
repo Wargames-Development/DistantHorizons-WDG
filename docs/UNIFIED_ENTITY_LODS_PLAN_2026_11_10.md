@@ -113,3 +113,12 @@ Each milestone follows implement, read-only review, minimal fixes, focused tests
 ## Planning-turn result
 
 Only this plan is added. No Java, shader, packet, config or companion source changes yet. Source-history promotion was verified by exact tree comparison with `feature/dh-3.3-wdg`; no runtime tests were necessary for that identical tree. Planned tests above have not been run in this turn.
+
+## Implementation progress — server family controls
+
+- Added server-side NTM/MCHELI/FMUR visual-family switches. The relay checks policy before capture and again before dispatch, including pending NTM blasts, so client subscription bits cannot override a disabled family. Existing radius and bounded queues remain in force. Defaults preserve existing behaviour. This is a cosmetic delivery control, not a claim of authoritative gameplay secrecy for native effects.
+- Reused the three existing client config keys for support labels, preserving saved values and the existing opt-in master switch. Tooltips identify pending player/vehicle providers and exclude FMUR vehicles. Player support remains unexposed until functional. Corrected stale blanket shader-unsupported wording.
+- Validation: baseline compilation/checkDistantEffects passed 16,901 checks. Changed-source compilation/checkDistantEffects passed 17,291 checks, including all server-family/client-request combinations and invalid family values. Language JSON parsing and git diff --check passed. No jar task/build-number change.
+- Dedicated-server review: policy helper uses primitives and existing common TrailSample constants; server config and relay introduce no client imports or optional-mod class links. No protocol IDs or packet layouts changed.
+- Runtime still required: toggle each family on a dedicated server with active subscribers; verify delivery stops independently and re-enables on fresh emissions, native effects remain normal, pending blasts are denied, and reconnect works.
+- Remaining milestones: authoritative actor negotiation/delivery, explicit coverage provenance, players/equipment/vehicles, view adapters and runtime performance/defect acceptance.

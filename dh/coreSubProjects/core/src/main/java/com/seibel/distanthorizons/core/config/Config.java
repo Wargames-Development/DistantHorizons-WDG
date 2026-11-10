@@ -376,15 +376,18 @@ public class Config
 							+ "")
 						.build();
 					
-                    public static ConfigEntry<Boolean> extendMcheliTrails = new ConfigEntry.Builder<Boolean>().set(true).build();
-                    public static ConfigEntry<Boolean> extendHbmTrails = new ConfigEntry.Builder<Boolean>().set(true).build();
-                    public static ConfigEntry<Boolean> extendFlansTrails = new ConfigEntry.Builder<Boolean>().set(true).build();
+                    public static ConfigEntry<Boolean> extendMcheliTrails = new ConfigEntry.Builder<Boolean>().set(true)
+                        .comment("Enable supported distant MCHELI weapon effects. Vehicle presentation is added by the vehicle LOD provider.").build();
+                    public static ConfigEntry<Boolean> extendHbmTrails = new ConfigEntry.Builder<Boolean>().set(true)
+                        .comment("Enable supported distant NTM missile bodies, exhaust, trails and explosion effects.").build();
+                    public static ConfigEntry<Boolean> extendFlansTrails = new ConfigEntry.Builder<Boolean>().set(true)
+                        .comment("Enable supported distant FMUR weapon effects. Excludes FMUR vehicles. Player equipment requires the player LOD provider.").build();
                     public static ConfigEntry<Boolean> showDistantEffectDiagnostics = new ConfigEntry.Builder<Boolean>().set(false).build();
 
 					public static ConfigEntry<Boolean> enableDistantMcheliSmoke = new ConfigEntry.Builder<Boolean>()
 						.set(false)
 						.comment("Experimental Forge 1.7.10 MC Heli, HBM and FMUR effect extension. Preserves existing source emission rules. "
-							+ "Opt-in DH server relay continues real trail emissions beyond entity tracking. No projectile simulation changes. Shader packs are unsupported.")
+							+ "Opt-in DH server relay continues real trail emissions beyond entity tracking. No projectile simulation changes. Supported shader integrations use terrain and native scene depth.")
 						.build();
 					public static ConfigEntry<Integer> distantSmokeDistance = new ConfigEntry.Builder<Integer>()
 						.setMinDefaultMax(64, 4096, 16384)
@@ -1957,6 +1960,12 @@ public class Config
 	
 	public static class Server
 	{
+        public static ConfigEntry<Boolean> allowNtmLodSupport = new ConfigEntry.Builder<Boolean>()
+            .set(true).comment("Allow subscribed clients to receive supported NTM distant visual samples. Does not alter gameplay or native tracking.").build();
+        public static ConfigEntry<Boolean> allowMcheliLodSupport = new ConfigEntry.Builder<Boolean>()
+            .set(true).comment("Allow subscribed clients to receive supported MCHELI distant visual samples. Does not alter radar, locks or gameplay.").build();
+        public static ConfigEntry<Boolean> allowFmurLodSupport = new ConfigEntry.Builder<Boolean>()
+            .set(true).comment("Allow subscribed clients to receive supported FMUR distant weapon effects. Excludes FMUR vehicles.").build();
         public static ConfigEntry<Boolean> enableDistantTrailRelay = new ConfigEntry.Builder<Boolean>()
             .set(true).comment("Allow explicitly subscribed compatible DH clients to receive cosmetic missile trail emissions. No chunk loads or entity tracking changes.").build();
         public static ConfigEntry<Integer> distantTrailRelayDistance = new ConfigEntry.Builder<Integer>()

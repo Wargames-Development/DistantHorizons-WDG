@@ -438,6 +438,16 @@ public final class EffectCoreChecks
         check(TrailRules.coveredFraction(0,0,0,20,0,0,0,0,0)==0,"stale native emission cannot suppress the advancing server trail");
         check(TrailRules.coveredFraction(0,0,0,20,0,0,5,0,0)==0.25,"lagging tracked missile trims only its actually covered trail");
         check(TrailRules.coveredFraction(0,200,0,0,180,0,0,190,0)==0.5,"descending native coverage trims only the covered half");
+        for (int server=0;server<8;server++) {
+            int allowed=EffectSupportPolicy.allowedFlags((server & 1)!=0,(server & 2)!=0,(server & 4)!=0);
+            for (int requested=0;requested<16;requested++) {
+                check(EffectSupportPolicy.permits(requested & allowed,TrailSample.HBM)==((server & 1)!=0 && (requested & 4)!=0),"NTM server policy intersection");
+                check(EffectSupportPolicy.permits(requested & allowed,TrailSample.MCH)==((server & 2)!=0 && (requested & 2)!=0),"MCHELI server policy intersection");
+                check(EffectSupportPolicy.permits(requested & allowed,TrailSample.FLANS)==((server & 4)!=0 && (requested & 8)!=0),"FMUR server policy intersection");
+            }
+        }
+        for (int invalid:new int[]{Integer.MIN_VALUE,-1,0,4,32,Integer.MAX_VALUE})
+            check(!EffectSupportPolicy.permits(-1,invalid),"unknown visual families fail closed");
         checkNativeEmitter();
         checkPrivateCameraScope();
         checks+=MissileCameraOriginChecks.run();
