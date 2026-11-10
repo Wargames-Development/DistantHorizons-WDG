@@ -69,7 +69,7 @@ public final class DistantSmokeRenderer
     private static final int[] TRIANGLES={0,1,2,0,2,3};
     private int extendedMvp,nativeMvp,dhOffset,useLightmap,alphaCutoff,reverseDepth,nearPass,wholeModel,shaderPass,nativeDepthSampler;
     private final ShaderCloudOcclusion shaderClouds=new ShaderCloudOcclusion();
-    private int cloudDepthSampler,cloudRange,cloudEnabled,nativeView;
+    private int cloudDepthSampler,cloudRange,cloudEnabled,nativeView,actorDepthSampler,actorColourSampler,actorDepthEnabled;
     private int shaderFramebuffer;
     private boolean drawingShaderPass,shaderFailed,lastShaderActive;
     private long shaderDrawFrame=-1;
@@ -493,7 +493,9 @@ public final class DistantSmokeRenderer
         boolean materialBlend=materialTarget && GL30.glIsEnabledi(GL11.GL_BLEND,1);
         int readFramebuffer=LWJGL.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         int activeTexture=LWJGL.glGetInteger(GL13.GL_ACTIVE_TEXTURE);
-        LWJGL.glActiveTexture(GL13.GL_TEXTURE4);int oldTexture4=LWJGL.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);LWJGL.glActiveTexture(activeTexture);
+        LWJGL.glActiveTexture(GL13.GL_TEXTURE4);int oldTexture4=LWJGL.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        LWJGL.glActiveTexture(GL13.GL_TEXTURE5);int oldTexture5=LWJGL.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        LWJGL.glActiveTexture(GL13.GL_TEXTURE6);int oldTexture6=LWJGL.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);LWJGL.glActiveTexture(activeTexture);
         if(target!=null) shaderClouds.refreshAtDraw(target);
         try(GLState saved=new GLState())
         {
@@ -507,6 +509,7 @@ public final class DistantSmokeRenderer
                 wholeModel=shader.getUniformLocation("uWholeModel");
                 diagnosticStage=shader.getUniformLocation("uDiagnosticStage");
                 cloudDepthSampler=shader.getUniformLocation("uCloudDepth");cloudRange=shader.getUniformLocation("uCloudRenderDistance");
+                actorDepthSampler=shader.getUniformLocation("uActorDepth");actorColourSampler=shader.getUniformLocation("uActorColour");actorDepthEnabled=shader.getUniformLocation("uUseActorDepth");
                 cloudEnabled=shader.getUniformLocation("uUseCloudDepth");nativeView=shader.getUniformLocation("uNativeView");
                 shaderPass=shader.getUniformLocation("uShaderPass");nativeDepthSampler=shader.getUniformLocation("uNativeDepth");
                 extendedMvp=shader.getUniformLocation("uExtendedMvp");nativeMvp=shader.getUniformLocation("uNativeMvp");
@@ -523,6 +526,10 @@ public final class DistantSmokeRenderer
                 for(int i=0;i<4;i++) LWJGL.glEnableVertexAttribArray(i);
             }
             shader.bind();shader.setUniform(diagnosticStage,0);shader.setUniform(nativeView,frame.mcModelViewMatrix);
+            int actorDepth=PlayerActorRenderer.actorDepth(),actorColour=PlayerActorRenderer.actorColour();
+            shader.setUniform(actorDepthSampler,5);shader.setUniform(actorColourSampler,6);shader.setUniform(actorDepthEnabled,actorDepth>0 && actorColour>0);
+            LWJGL.glActiveTexture(GL13.GL_TEXTURE5);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,actorDepth);
+            LWJGL.glActiveTexture(GL13.GL_TEXTURE6);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,actorColour);
             shader.setUniform(cloudDepthSampler,4);shader.setUniform(cloudRange,shaderClouds.distance);
             shader.setUniform(cloudEnabled,target!=null && shaderClouds.texture>0);
             if(target!=null && shaderClouds.texture>0) { LWJGL.glActiveTexture(GL13.GL_TEXTURE4);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,shaderClouds.texture); }
@@ -560,7 +567,9 @@ public final class DistantSmokeRenderer
         } finally {
             if(materialTarget) { if(materialBlend) GL30.glEnablei(GL11.GL_BLEND,1);else GL30.glDisablei(GL11.GL_BLEND,1); }
             drawingShaderPass=false;LWJGL.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,readFramebuffer);
-            LWJGL.glActiveTexture(GL13.GL_TEXTURE4);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,oldTexture4);LWJGL.glActiveTexture(activeTexture);
+            LWJGL.glActiveTexture(GL13.GL_TEXTURE4);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,oldTexture4);
+            LWJGL.glActiveTexture(GL13.GL_TEXTURE5);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,oldTexture5);
+            LWJGL.glActiveTexture(GL13.GL_TEXTURE6);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,oldTexture6);LWJGL.glActiveTexture(activeTexture);
         }
     }
     private void drawWithProbe(EffectQuadBuffer buffer,int kind) {

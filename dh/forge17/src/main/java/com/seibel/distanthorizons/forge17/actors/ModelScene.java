@@ -43,6 +43,8 @@ public final class ModelScene implements AutoCloseable {
         compositor.compositeSource(colour,depth,width,height,0,0,width,height,reverse,inverseDh,dhMvp,nativeFromDh,
             0,0,0,terrainDepth,nativeDepth,reverse,shaderScene);
     }
+    public int colourTexture() { return ready && saved==null?colour:0; }
+    public int depthTexture() { return ready && saved==null?depth:0; }
     private void ensure(int width,int height) {
         if(framebuffer!=0 && this.width==width && this.height==height) return;
         if(width>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE) || height>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE)) throw new IllegalArgumentException("Actor scene texture limit");

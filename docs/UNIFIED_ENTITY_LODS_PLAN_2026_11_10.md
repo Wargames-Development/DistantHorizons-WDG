@@ -184,3 +184,11 @@ A terrain invalidation revision now survives a late older mesh upload. Invalidat
 Validation: DH compile and 63,842 component checks passed; the full core suite passed 120 tests across 26 suites. FMUR Java 8 compilation, 2,030 presentation/animation checks, 10,110 existing LOD assertions and expanded server boundary checks passed. Runtime primary/auxiliary-view validation and MCHELI provider work remain outstanding.
 
 Report investigation: no operator-permission check appears in DH's local preset configuration/GUI path. A reproduction is still needed before changing policy. WGMap's distant waypoint display clamps X/Z toward the camera's vanilla range, but its beam endpoints retain unscaled world Y; that is a concrete candidate for distant beam drift/distortion. The optional marker-follows-player-height setting is also intentional behaviour to distinguish from the report. WGMap remains unedited; no fix is claimed without reproducing the observed failure.
+
+### Actor/effect depth ordering checkpoint
+
+The current actor scene can now occlude subsequent DH missile/trail replay using DH depth at native screen coordinates, including shaderless actors beyond the native far plane. Only alpha-complete scene pixels reject effects; transparent/empty pixels leave effects visible. The sampler is enabled only after the current primary actor scene completed, reset each frame, and its extra texture bindings are restored explicitly. This is still the primary opaque/alpha-test integration; intersecting multilayer transparency needs runtime material acceptance and is not claimed universally exact.
+
+Validation: Forge compile and 63,842 component checks passed. The real smoke GLSL/VBO GPU fixture passed 91 checks, adding normal/reverse actor occlusion, foreground smoke, transparent/empty actor pixels and expired-scene rejection. Existing 52 actor GPU checks remain the preceding verified result.
+
+MCHELI companion source API v1 on feature/dh-lods now captures immutable, bounded source-valid vehicle pose/part inputs without touching radar packets, legacy rendering or WGMap. Java 8 compilation and all 228 MCHELI tests (45 suites) passed, including four new snapshot/side-boundary tests. This adapter alone does not provide DH vehicle rendering or impose the future 750-block DH delivery limit; the relay/provider integration remains next.

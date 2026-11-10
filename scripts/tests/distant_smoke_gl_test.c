@@ -288,6 +288,21 @@ int main(int argc,char **argv) {
     float behindGround=actualFar/(actualFar-actualNear)*(1-actualNear/340.0f);
     check("matched projection still hides geometry behind ground",2,behindGround,behindGround,0);
     physical_projection=0;
+    glUniform1i(glGetUniformLocation(program,"uShaderPass"),0);
+    glUniform1i(glGetUniformLocation(program,"uActorDepth"),5);glUniform1i(glGetUniformLocation(program,"uActorColour"),6);
+    glUniform1i(glGetUniformLocation(program,"uUseActorDepth"),1);
+    float actorFront[4]={.4,.4,.4,1},actorBehind[4]={.6,.6,.6,1};
+    float actorOpaque[4]={1,1,1,1},actorGlass[4]={.3,.3,.3,.5},actorEmpty[4]={0,0,0,0};
+    texture(5,actorFront);texture(6,actorOpaque);
+    check("opaque actor hides far smoke with native sky hardware depth",2,1,1,0);
+    texture(5,actorBehind);check("smoke in front of actor remains visible",2,1,1,1);
+    texture(5,actorFront);texture(6,actorGlass);check("transparent actor pixels do not become opaque occluders",2,1,1,1);
+    texture(6,actorEmpty);check("empty actor pixels leave later effects visible",2,1,1,1);
+    texture(6,actorOpaque);texture(5,actorBehind);glUniform1i(glGetUniformLocation(program,"uDhReverseDepth"),1);
+    check("reverse depth actor hides far smoke",2,0,1,0);
+    texture(5,actorFront);check("reverse depth smoke ahead of actor remains visible",2,0,1,1);
+    glUniform1i(glGetUniformLocation(program,"uDhReverseDepth"),0);glUniform1i(glGetUniformLocation(program,"uUseActorDepth"),0);
+    texture(5,actorFront);check("expired actor scene cannot occlude later frames",2,1,1,1);
     printf("Shader compile/link and %d Core-GL VBO pixel/depth checks passed (%s; %s).\n",checks,glGetString(GL_RENDERER),glGetString(GL_VERSION));
     CGLSetCurrentContext(NULL);CGLDestroyContext(context);CGLDestroyPixelFormat(format);return 0;
 }

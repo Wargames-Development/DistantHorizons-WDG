@@ -43,7 +43,7 @@ public final class PlayerActorRenderer {
     private long generation,sequence=-1,receipt;
     private double nx,ny,nz,dx,dy,dz;
     private int nativeFramebuffer,shaderFramebuffer;
-    private boolean valid,drawing,failed;
+    private boolean valid,drawing,failed,sceneComplete;
     private int drawn,unknown;
     private String status="waiting for terrain view";
     public String diagnostic() { return "DH player models: "+status+" drawn="+drawn+" native="+nativeDrawn.size()+" unknown="+unknown+" cached="+contacts.size(); }
@@ -75,7 +75,7 @@ public final class PlayerActorRenderer {
     }
     @SubscribeEvent public void start(TickEvent.RenderTickEvent event) {
         if(event.phase!=TickEvent.Phase.START) return;
-        valid=false;nativeDrawn.clear();drawn=unknown=0;status="waiting for terrain view";
+        valid=false;sceneComplete=false;nativeDrawn.clear();drawn=unknown=0;status="waiting for terrain view";
         Minecraft mc=Minecraft.getMinecraft();
         if(world!=mc.theWorld || connection!=mc.getNetHandler()) {
             clear();world=mc.theWorld;connection=mc.getNetHandler();sequence=-1;receipt=0;failed=false;
@@ -94,6 +94,8 @@ public final class PlayerActorRenderer {
         if(!drawing && valid && !shadow() && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)==nativeFramebuffer)
             nativeDrawn.add(event.entityPlayer.getUniqueID());
     }
+    static int actorDepth() { return INSTANCE!=null && INSTANCE.sceneComplete?INSTANCE.scene.depthTexture():0; }
+    static int actorColour() { return INSTANCE!=null && INSTANCE.sceneComplete?INSTANCE.scene.colourTexture():0; }
     private boolean owned() { return PlayerClient.INSTANCE!=null && PlayerClient.INSTANCE.ownsLegacy(); }
     public static void render(boolean shaders) {
         if(INSTANCE!=null) INSTANCE.draw(shaders);
@@ -159,6 +161,7 @@ public final class PlayerActorRenderer {
             try {
                 if(target!=null) bindTarget(target);
                 scene.composite(inverseScene,dhMvp,nativeMvp,terrainDepth,target==null?0:target.nativeSceneDepth,shaders);
+                sceneComplete=true;
             } finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldDraw); }
         } catch(Exception | LinkageError error) {
             failed=true;status="render failure (withheld)";org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").error("DH player presentation stopped after render failure",error);

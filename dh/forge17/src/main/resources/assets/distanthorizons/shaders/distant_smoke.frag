@@ -6,6 +6,9 @@ uniform bool uShaderPass;
 uniform int uDiagnosticStage;
 uniform sampler2D uNativeDepth;
 uniform sampler2D uCloudDepth;
+uniform sampler2D uActorDepth;
+uniform sampler2D uActorColour;
+uniform bool uUseActorDepth;
 uniform bool uUseCloudDepth;
 uniform float uCloudRenderDistance;
 in float viewDistance;
@@ -44,6 +47,15 @@ void main() {
             if (projected.z < terrainDepth - 0.000001) discard;
         } else {
             if (projected.z > terrainDepth + 0.000001) discard;
+        }
+    }
+    if(uUseActorDepth && dhClip.w>0.0) {
+        vec2 actorUv=nativeClip.xy/nativeClip.w*0.5+0.5;
+        if(all(greaterThanEqual(actorUv,vec2(0.0))) && all(lessThanEqual(actorUv,vec2(1.0)))) {
+            // Only fully opaque actor pixels occlude later effects. Shared scene depth is DH Z at native XY.
+            float alpha=texture(uActorColour,actorUv).a;
+            float actor=texture(uActorDepth,actorUv).r;
+            if(alpha>=0.999 && (uDhReverseDepth ? projected.z<actor-0.00000006 : projected.z>actor+0.00000006)) discard;
         }
     }
     if(uShaderPass) {
