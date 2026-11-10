@@ -18,8 +18,11 @@ public final class PlayerClient {
     private UUID viewer;
     private int requested=-1,ticks,dimension=Integer.MIN_VALUE;
     private long token;
+    private boolean serverSafe,takeover,renderingReady;
+    private final boolean fmurReady;
     public PlayerClient() {
         INSTANCE=this;
+        fmurReady=FmurPlayerBridge.registerClient(this::ownsLegacy);
         PlayerRelay.INSTANCE.setReceiver((source,frame)-> {
             Delivery delivery=new Delivery(source,frame);
             if(!pending.offer(delivery)) { pending.poll();pending.offer(delivery); }
@@ -36,26 +39,32 @@ public final class PlayerClient {
         int range=mc.thePlayer!=null && Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodSupport.get()
             ?PlayerFrame.effectiveRange(Config.Client.Advanced.Graphics.GenericRendering.playerLodDistance.get(),PlayerFrame.MAX_RANGE,true):0;
         int currentDimension=mc.thePlayer==null?0:mc.thePlayer.dimension;
-        if(connection!=mc.getNetHandler() || world!=mc.theWorld || !java.util.Objects.equals(viewer,currentViewer) || range!=requested || dimension!=currentDimension) {
-            connection=mc.getNetHandler();world=mc.theWorld;viewer=currentViewer;requested=range;dimension=currentDimension;
+        boolean newSession=connection!=mc.getNetHandler() || world!=mc.theWorld || !java.util.Objects.equals(viewer,currentViewer) || dimension!=currentDimension;
+        if(newSession) serverSafe=false;
+        boolean nextTakeover=fmurReady && renderingReady && serverSafe;
+        if(connection!=mc.getNetHandler() || world!=mc.theWorld || !java.util.Objects.equals(viewer,currentViewer) || range!=requested || dimension!=currentDimension || takeover!=nextTakeover) {
+            connection=mc.getNetHandler();world=mc.theWorld;viewer=currentViewer;requested=range;dimension=currentDimension;takeover=nextTakeover;
             do { token=ThreadLocalRandom.current().nextLong(); } while(token==0);
             pending.clear();incomingAppearance.clear();cache.reset(connection,token,mc.thePlayer==null?0:mc.thePlayer.dimension,viewer);
-            if(connection!=null) PlayerRelay.INSTANCE.subscribe(token,requested);
+            if(connection!=null) PlayerRelay.INSTANCE.subscribe(token,takeover?requested:0,takeover);
         }
         if(connection==null || world==null || viewer==null) { pending.clear();incomingAppearance.clear();return; }
         // Renew frequently enough that a rate-limited toggle request repairs promptly.
-        if(ticks%20==0) PlayerRelay.INSTANCE.subscribe(token,requested);
+        if(ticks%20==0) PlayerRelay.INSTANCE.subscribe(token,takeover?requested:0,takeover);
         Delivery delivery;
         long now=System.nanoTime();
-        while((delivery=pending.poll())!=null) if(requested>0 && delivery.frame.range<=requested) cache.accept(delivery.connection,delivery.frame,delivery.received);
+        while((delivery=pending.poll())!=null) if(delivery.frame.range<=requested && cache.accept(delivery.connection,delivery.frame,delivery.received)) serverSafe=cache.safe();
         AppearanceDelivery appearance;
         while((appearance=incomingAppearance.poll())!=null) if(requested>0) cache.accept(appearance.connection,appearance.appearance);
         cache.expire(now);
     }
+    public void setRenderingReady() { renderingReady=true; }
+    public boolean fmurReady() { return fmurReady; }
+    public boolean ownsLegacy() { return renderingReady && PlayerRelay.INSTANCE.serverPresent() && cache.ownsLegacy(); }
     public PlayerFrameCache frames() { return cache; }
     public String diagnostic() {
         return "DH player delivery: server="+PlayerRelay.INSTANCE.serverPresent()+" requested="+requested
-            +" effective="+cache.range()+" poses="+cache.players().size()+" (model provider pending)";
+            +" effective="+cache.range()+" poses="+cache.players().size()+" ownership="+cache.ownsLegacy()+" FMUR="+fmurReady;
     }
     private static final class AppearanceDelivery {
         final Object connection;final PlayerAppearance appearance;

@@ -58,6 +58,7 @@ public class RenderBufferHandler implements AutoCloseable
     private final it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<LodBufferContainer> coverageBuffers = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
     private RenderParams coverageView;
     private boolean coverageIndexReady;
+    private long coverageGeneration;
 
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
 	
@@ -151,6 +152,7 @@ public class RenderBufferHandler implements AutoCloseable
         this.coverageBuffers.clear();
         this.coverageView = renderParams;
         this.coverageIndexReady = false;
+        this.coverageGeneration++;
 		
 		
 		
@@ -293,6 +295,8 @@ public class RenderBufferHandler implements AutoCloseable
 	//================//
 	//region
 	
+    public long getCoverageGeneration() { return coverageGeneration; }
+
     private void ensureCoverageIndex() {
         if (!coverageIndexReady) {
             // No hash-index construction cost in frames without actor queries.
@@ -309,8 +313,8 @@ public class RenderBufferHandler implements AutoCloseable
 
     /** API event identity must match the exact view whose terrain buffers were selected. */
     public boolean isTerrainChunkKnown(com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiRenderParam view,
-                                       int chunkX,int chunkZ) {
-        if(coverageView==null || coverageView.apiCopy!=view || chunkX<-1875000 || chunkX>=1875000
+                                       long generation,int chunkX,int chunkZ) {
+        if(generation!=coverageGeneration || generation==0 || coverageView==null || coverageView.apiCopy!=view || chunkX<-1875000 || chunkX>=1875000
                 || chunkZ<-1875000 || chunkZ>=1875000) return false;
         ensureCoverageIndex();
         int blockX=chunkX<<4,blockZ=chunkZ<<4;
@@ -332,8 +336,8 @@ public class RenderBufferHandler implements AutoCloseable
      * Missing, dirty, replaced or disposed buffers fail closed; known terrain is
      * still subject to per-fragment depth testing by the caller.
      */
-    public boolean isTerrainKnown(RenderParams view, int blockX, int blockZ) {
-        if (view == null || coverageView != view) return false;
+    public boolean isTerrainKnown(RenderParams view,long generation, int blockX, int blockZ) {
+        if (generation!=coverageGeneration || generation==0 || view == null || coverageView != view) return false;
         ensureCoverageIndex();
         for (byte detail=DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL; detail<=30; detail++) {
             long pos=DhSectionPos.encode(detail,blockX >> detail,blockZ >> detail);

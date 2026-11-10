@@ -119,7 +119,9 @@ public final class DistantSmokeRenderer
         {
             public void beforeCleanup(DhApiEventParam<DhApiRenderParam> event)
             {
-                if(!EffectSources.enabled()) return;
+                if(!EffectSources.enabled() && !Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodSupport.get()
+                    && !(com.seibel.distanthorizons.forge17.actors.PlayerClient.INSTANCE!=null
+                        && com.seibel.distanthorizons.forge17.actors.PlayerClient.INSTANCE.ownsLegacy())) return;
                 IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
                 if(iris!=null && iris.isRenderingShadowPass()) return;
                 frame.update(event.value);
@@ -424,7 +426,7 @@ public final class DistantSmokeRenderer
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
         // Angelica has already composited and finalized here. Never borrow this FBO.
         if(iris!=null && iris.isShaderPackInUse()) return;
-        try { r.render(partialTicks); }
+        try { PlayerActorRenderer.render(false);r.render(partialTicks); }
         finally { r.quads.clear();if(r.hbmNear!=null) r.hbmNear.clear(); }
     }
     /** Called immediately before Angelica's actual finalizeLevelRendering invocation. */
@@ -435,6 +437,7 @@ public final class DistantSmokeRenderer
         if(iris==null || !iris.isShaderPackInUse() || iris.isRenderingShadowPass()) return;
         r.shaderDrawFrame=r.renderFrame;
         ShaderEffectsTarget.invalidate();
+        PlayerActorRenderer.render(true);
         // WDG MCHeli normally flushes this queue at Forge world-last, after shader
         // finalization. Its native method clears the queue; that event then no-ops.
         if(EffectSources.enabled(TrailSample.MCH) && cpw.mods.fml.common.Loader.isModLoaded("mcheli")) {

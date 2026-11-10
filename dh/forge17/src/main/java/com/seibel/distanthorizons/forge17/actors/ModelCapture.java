@@ -26,6 +26,13 @@ public final class ModelCapture implements AutoCloseable {
     private final FloatBuffer matrix=BufferUtils.createFloatBuffer(16);
     private final float[] rows=new float[16];
 
+    public void prepareCompositor() { try(GLState state=new GLState()) { ensureShader(); } }
+    public void prepare(int width,int height) {
+        int read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        if(width<=0 || height<=0 || (long)width*height>MAX_PIXELS) throw new IllegalArgumentException("Actor target budget");
+        try(GLState state=new GLState()) { ensure(width,height);ensureShader(); }
+        finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,draw); }
+    }
     /** The same unscaled XY projection is retained; only model near/far depth changes. */
     public boolean begin(int width,int height,int left,int bottom,int right,int top,DhApiMat4f projection) {
         if(captureState!=null) throw new IllegalStateException("Nested model capture");
@@ -70,13 +77,24 @@ public final class ModelCapture implements AutoCloseable {
                           float offsetX,float offsetY,float offsetZ,int terrainDepth,int nativeDepth,
                           boolean reverseDepth,boolean writeDhDepth) {
         if(!ready || captureState!=null) throw new IllegalStateException("No completed model capture");
+        compositeSource(colour,depth,width,height,left,bottom,right,top,false,inverseCapture,dhMvp,nativeMvp,
+            offsetX,offsetY,offsetZ,terrainDepth,nativeDepth,reverseDepth,writeDhDepth);
+    }
+    public void compositeSource(int sourceColour,int sourceDepth,int sourceWidth,int sourceHeight,
+                                int x0,int y0,int x1,int y1,boolean sourceReverseDepth,
+                                DhApiMat4f inverseCapture,DhApiMat4f dhMvp,DhApiMat4f nativeMvp,
+                                float offsetX,float offsetY,float offsetZ,int terrainDepth,int nativeDepth,
+                                boolean reverseDepth,boolean writeDhDepth) {
+        if(captureState!=null || sourceColour<=0 || sourceDepth<=0 || sourceWidth<=0 || sourceHeight<=0
+                || (long)sourceWidth*sourceHeight>MAX_PIXELS || x0<0 || y0<0 || x1>sourceWidth || y1>sourceHeight || x0>=x1 || y0>=y1)
+            throw new IllegalArgumentException("Invalid model composite input");
         int draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-        if(draw==framebuffer || terrainDepth<=0) throw new IllegalArgumentException("Invalid model composite target");
+        if((framebuffer!=0 && draw==framebuffer) || terrainDepth<=0) throw new IllegalArgumentException("Invalid model composite target");
         if(draw!=0 && GL30.glGetFramebufferAttachmentParameteri(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,
                 GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE)==GL11.GL_TEXTURE) {
             int attachment=GL30.glGetFramebufferAttachmentParameteri(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,
                 GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
-            if(attachment==terrainDepth || attachment==nativeDepth) throw new IllegalArgumentException("Depth feedback loop");
+            if(attachment==terrainDepth || attachment==nativeDepth || attachment==sourceDepth) throw new IllegalArgumentException("Depth feedback loop");
         }
         int read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         try(GLState state=new GLState()) {
@@ -87,10 +105,10 @@ public final class ModelCapture implements AutoCloseable {
                 shader.setUniform(reverseUniform,reverseDepth);
                 shader.setUniform(useNativeUniform,nativeDepth>0);
                 shader.setUniform(writeDepthUniform,writeDhDepth);
-                shader.setUniform(reverseModelUniform,false);
+                shader.setUniform(reverseModelUniform,sourceReverseDepth);
                 GL20.glUniform3f(offsetUniform,offsetX,offsetY,offsetZ);
-                bindTexture(0,colour);bindTexture(1,depth);bindTexture(2,terrainDepth);bindTexture(3,nativeDepth);
-                GL11.glViewport(0,0,width,height);GL11.glEnable(GL11.GL_SCISSOR_TEST);GL11.glScissor(left,bottom,right-left,top-bottom);
+                bindTexture(0,sourceColour);bindTexture(1,sourceDepth);bindTexture(2,terrainDepth);bindTexture(3,nativeDepth);
+                GL11.glViewport(0,0,sourceWidth,sourceHeight);GL11.glEnable(GL11.GL_SCISSOR_TEST);GL11.glScissor(x0,y0,x1-x0,y1-y0);
                 GL11.glDisable(GL11.GL_LIGHTING);GL11.glDisable(GL11.GL_FOG);GL11.glDisable(GL11.GL_ALPHA_TEST);GL11.glDisable(GL11.GL_CULL_FACE);
                 GL11.glEnable(GL11.GL_BLEND);GL11.glBlendFunc(GL11.GL_ONE,GL11.GL_ONE_MINUS_SRC_ALPHA);
                 GL11.glColorMask(true,true,true,true);GL11.glDepthMask(true);GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glDepthRange(0,1);
@@ -137,7 +155,7 @@ public final class ModelCapture implements AutoCloseable {
     private void ensureShader() {
         if(shader!=null) return;
         shader=new GlShaderProgram("assets/distanthorizons/shaders/actor_model.vert","assets/distanthorizons/shaders/actor_model.frag",
-            new String[]{"aPosition"},new String[]{"fragColor"});
+            new String[]{"aPosition"},new String[]{"fragColor","fragActorMaterial"});
         inverseUniform=shader.getUniformLocation("uInverseModelMvp");dhUniform=shader.getUniformLocation("uDhMvp");
         nativeUniform=shader.getUniformLocation("uNativeMvp");reverseUniform=shader.getUniformLocation("uDhReverseDepth");
         useNativeUniform=shader.getUniformLocation("uUseNativeDepth");writeDepthUniform=shader.getUniformLocation("uWriteDhDepth");

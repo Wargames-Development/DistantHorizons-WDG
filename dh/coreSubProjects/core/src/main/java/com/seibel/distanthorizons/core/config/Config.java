@@ -1967,6 +1967,8 @@ public class Config
 	
 	public static class Server
 	{
+        public static ConfigEntry<Integer> playerLodUpdateIntervalTicks = new ConfigEntry.Builder<Integer>()
+            .setMinDefaultMax(1,2,20).comment("Server player pose update interval in ticks. Two ticks is 10 updates per second; appearance work is separately budgeted.").build();
         public static ConfigEntry<Boolean> allowPlayerLodSupport = new ConfigEntry.Builder<Boolean>()
             .set(true).comment("Allow opt-in DH-owned cosmetic player pose delivery. No simulation or native tracking changes.").build();
         public static ConfigEntry<Integer> playerLodDistance = new ConfigEntry.Builder<Integer>()

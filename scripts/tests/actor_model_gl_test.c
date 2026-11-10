@@ -51,13 +51,54 @@ static void perspective_check(float distance,int reverse) {
     float occluder=distance-1;tex(2,((-da*occluder+db)/occluder+1)*.5f,0,0,1);
     check("physical distant model hidden by nearer terrain",0,0);
 }
+static void scene_check(int reverse) {
+    uniform("uDhReverseDepth",reverse);uniform("uWriteDhDepth",1);uniform("uUseNativeDepth",0);uniform("uModelReverseDepth",0);
+    matrix("uInverseModelMvp",0);matrix("uNativeMvp",0);
+    float dh[16]={.5f,0,0,0,0,.75f,0,0,0,0,reverse?-1:1,0,0,0,0,1};
+    glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,dh);
+    glUniform3f(glGetUniformLocation(program,"uDhOriginOffset"),0,0,0);tex(2,reverse?0:1,0,0,1);
+    glClearColor(0,0,0,0);glClearDepth(reverse?0:1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    glDepthFunc(reverse?GL_GEQUAL:GL_LEQUAL);
+    tex(0,.1,.1,.1,1);tex(1,.6,0,0,1);glDrawArrays(GL_TRIANGLES,0,6);
+    tex(0,.5,.25,.125,1);tex(1,.4,0,0,1);glDrawArrays(GL_TRIANGLES,0,6);
+    float pixel[4],d;glReadPixels(2,2,1,1,GL_RGBA,GL_FLOAT,pixel);glReadPixels(2,2,1,1,GL_DEPTH_COMPONENT,GL_FLOAT,&d);
+    if(fabsf(pixel[0]-.5f)>.003 || fabsf(d-(reverse?.6f:.4f))>.00001) { fprintf(stderr,"FAIL inter-actor depth\n");exit(1); }
+    checks++;
+    GLuint source[2];glGenTextures(2,source);
+    for(int i=0;i<2;i++) {
+        glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,source[i]);
+        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+        glCopyTexImage2D(GL_TEXTURE_2D,0,i==0?GL_RGBA8:GL_DEPTH_COMPONENT24,0,0,4,4,0);
+    }
+    // The second pass reconstructs from DH's scene coordinates, then writes native depth.
+    float mixedInverse[16]={1,0,0,0,0,1,0,0,0,0,reverse?-1:1,0,0,0,0,1};
+    glUniformMatrix4fv(glGetUniformLocation(program,"uInverseModelMvp"),1,GL_FALSE,mixedInverse);
+    tex(3,1,0,0,1);uniform("uUseNativeDepth",1);
+    uniform("uModelReverseDepth",reverse);uniform("uWriteDhDepth",0);glDepthFunc(GL_ALWAYS);
+    check("combined actor scene retains physical native depth",1,.4f);
+    glReadPixels(3,2,1,1,GL_RGBA,GL_FLOAT,pixel);
+    if(fabsf(pixel[0]-.5f)>.003f) { fprintf(stderr,"FAIL native/DH FOV mismatch reconstruction\n");exit(1); }
+    checks++;
+    glDeleteTextures(2,source);uniform("uModelReverseDepth",0);
+}
+static void partial_cover_check(void) {
+    matrix("uInverseModelMvp",0);matrix("uNativeMvp",0);matrix("uDhMvp",0);
+    uniform("uDhReverseDepth",0);uniform("uWriteDhDepth",1);uniform("uModelReverseDepth",0);uniform("uUseNativeDepth",0);
+    tex(0,.5,.25,.125,1);tex(1,.5,0,0,1);
+    float terrain[64];for(int i=0;i<16;i++) { terrain[i*4]=i%4<2?.25f:.75f;terrain[i*4+1]=terrain[i*4+2]=0;terrain[i*4+3]=1; }
+    glActiveTexture(GL_TEXTURE2);glBindTexture(GL_TEXTURE_2D,textures[2]);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA32F,4,4,0,GL_RGBA,GL_FLOAT,terrain);
+    glClearColor(0,0,0,0);glClearDepth(.9);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glDrawArrays(GL_TRIANGLES,0,6);
+    float left[4],right[4];glReadPixels(0,2,1,1,GL_RGBA,GL_FLOAT,left);glReadPixels(3,2,1,1,GL_RGBA,GL_FLOAT,right);
+    if(left[0]>.001f || fabsf(right[0]-.5f)>.003f) { fprintf(stderr,"FAIL partial model cover\n");exit(1); }
+    checks++;printf("PASS terrain hides only covered model pixels\n");
+}
 int main(int argc,char **argv) {
     if(argc!=3) return 1;
     CGLPixelFormatAttribute attrs[]={kCGLPFAOpenGLProfile,(CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,kCGLPFAAllowOfflineRenderers,0};
     CGLPixelFormatObj format;GLint count;CGLContextObj context;
     if(CGLChoosePixelFormat(attrs,&format,&count) || !count || CGLCreateContext(format,0,&context) || CGLSetCurrentContext(context)) return 1;
     program=glCreateProgram();glAttachShader(program,compile(GL_VERTEX_SHADER,argv[1]));glAttachShader(program,compile(GL_FRAGMENT_SHADER,argv[2]));
-    glBindAttribLocation(program,0,"aPosition");glBindFragDataLocation(program,0,"fragColor");glLinkProgram(program);
+    glBindAttribLocation(program,0,"aPosition");glBindFragDataLocation(program,0,"fragColor");glBindFragDataLocation(program,1,"fragActorMaterial");glLinkProgram(program);
     GLint ok;glGetProgramiv(program,GL_LINK_STATUS,&ok);if(!ok) return 1;glUseProgram(program);
     glGenTextures(4,textures);
     for(int i=0;i<4;i++) { glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,textures[i]);
@@ -97,5 +138,6 @@ int main(int argc,char **argv) {
     for(int reverse=0;reverse<2;reverse++) for(int i=0;i<7;i++) {
         float distances[]={64,128,256,512,750,1024,4096};perspective_check(distances[i],reverse);
     }
+    scene_check(0);scene_check(1);partial_cover_check();
     printf("PASS %d actor model GPU checks\n",checks);return 0;
 }

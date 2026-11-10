@@ -18,13 +18,15 @@ public final class ActorTerrainVisibility {
     private RenderBufferHandler buffers;
     private DhApiRenderParam view;
     private World world;
-    public boolean begin(DhApiRenderParam view,World world) {
+    private long generation;
+    public boolean begin(DhApiRenderParam view,World world,long generation) {
         clear();
         if(view==null || world==null || !(view.clientLevelWrapper instanceof IClientLevelWrapper)) return false;
         IClientLevelWrapper wrapper=(IClientLevelWrapper)view.clientLevelWrapper;
         if(wrapper.getWrappedMcObject()!=world || wrapper.getDhLevel()==null) return false;
         buffers=wrapper.getDhLevel().getRenderBufferHandler();if(buffers==null) return false;
-        this.view=view;this.world=world;corridor.reset(8192);
+        if(generation==0 || generation!=buffers.getCoverageGeneration()) return false;
+        this.view=view;this.world=world;this.generation=generation;corridor.reset(8192);
         if(!nativeFailed && Loader.isModLoaded("angelica")) try {
             if(nativeCoverage==null) nativeCoverage=new AngelicaTerrainCoverage();
             nativeReady=nativeCoverage.begin(world);
@@ -35,11 +37,11 @@ public final class ActorTerrainVisibility {
         return true;
     }
     public boolean isKnown(double cx,double cy,double cz,double x,double y,double z,double radius) {
-        return world!=null && corridor.known(cx,cy,cz,x,y,z,radius,columns);
+        return world!=null && buffers.getCoverageGeneration()==generation && corridor.known(cx,cy,cz,x,y,z,radius,columns);
     }
     private boolean known(int chunkX,int minY,int maxY,int chunkZ) {
         return (nativeReady && nativeCoverage.isKnown(world,chunkX<<4,minY,maxY,chunkZ<<4))
-            || buffers.isTerrainChunkKnown(view,chunkX,chunkZ);
+            || buffers.isTerrainChunkKnown(view,generation,chunkX,chunkZ);
     }
     public void clear() {
         world=null;view=null;buffers=null;nativeReady=false;corridor.reset(0);

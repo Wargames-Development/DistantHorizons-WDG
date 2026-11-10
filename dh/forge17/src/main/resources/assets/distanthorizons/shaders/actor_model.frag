@@ -13,6 +13,7 @@ uniform bool uWriteDhDepth;
 uniform bool uModelReverseDepth;
 in vec2 screenUv;
 out vec4 fragColor;
+out vec4 fragActorMaterial;
 void main() {
     float depth=texture(uModelDepth,screenUv).r;
     if(uModelReverseDepth ? depth<=0.0 : depth>=1.0) discard;
@@ -40,5 +41,6 @@ void main() {
     }
     // Model captures use premultiplied colour. Preserve their original alpha.
     fragColor=colour;
+    fragActorMaterial=vec4(0.0,254.0/255.0,0.0,1.0);
     gl_FragDepth=uWriteDhDepth ? clamp(dhPosition.z,0.0,1.0) : clamp(nativePosition.z,0.0,1.0);
 }

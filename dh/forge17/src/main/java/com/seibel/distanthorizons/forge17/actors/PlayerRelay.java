@@ -33,9 +33,11 @@ public final class PlayerRelay {
     private volatile boolean serverPresent;
     private boolean initialized;
     private long sequence;
+    private boolean legacySafe;
     private PlayerRelay() { }
     public void initialize() {
         if(initialized) return;initialized=true;
+        legacySafe=FmurPlayerBridge.registerServer(this::ownsLegacy);
         NETWORK.registerMessage(SettingsHandler.class,Settings.class,0,Side.SERVER);
         NETWORK.registerMessage(FrameHandler.class,FrameMessage.class,1,Side.CLIENT);
         NETWORK.registerMessage(AppearanceHandler.class,AppearanceMessage.class,2,Side.CLIENT);
@@ -44,7 +46,7 @@ public final class PlayerRelay {
     public void setReceiver(BiConsumer<Object,PlayerFrame> receiver) { this.receiver=receiver; }
     public void setAppearanceReceiver(BiConsumer<Object,PlayerAppearance> receiver) { appearanceReceiver=receiver; }
     public boolean serverPresent() { return serverPresent; }
-    public void subscribe(long token,int range) { if(serverPresent) NETWORK.sendToServer(new Settings(token,range)); }
+    public void subscribe(long token,int range,boolean takeover) { if(serverPresent) NETWORK.sendToServer(new Settings(token,range,takeover)); }
     @SubscribeEvent public void registered(FMLNetworkEvent.CustomPacketRegistrationEvent<?> event) {
         if(!event.registrations.contains(CHANNEL)) return;
         boolean present="REGISTER".equals(event.operation);
@@ -61,10 +63,9 @@ public final class PlayerRelay {
         for(int i=0;i<64 && (request=pending.poll())!=null;i++) {
             EntityPlayerMP p=request.player;
             if(p.playerNetServerHandler==null || !peers.containsKey(p.playerNetServerHandler.netManager)) continue;
-            if(request.settings.range==0) sessions.remove(p.getUniqueID());
-            else {
+            {
                 Session current=sessions.get(p.getUniqueID());
-                if(current!=null && current.player==p && current.settings.token==request.settings.token && current.settings.range==request.settings.range)
+                if(current!=null && current.player==p && current.settings.token==request.settings.token && current.settings.range==request.settings.range && current.settings.takeover==request.settings.takeover)
                     current.renewed=now;
                 else sessions.put(p.getUniqueID(),new Session(p,request.settings,now));
             }
@@ -74,17 +75,19 @@ public final class PlayerRelay {
             if(s.player.playerNetServerHandler==null || !peers.containsKey(s.player.playerNetServerHandler.netManager)
                     || now-s.renewed>30000000000L) it.remove();
         }
-        if(sessions.isEmpty() || sequence%4!=0) return;
+        int interval=Math.max(1,Math.min(20,Config.Server.playerLodUpdateIntervalTicks.get()));
+        if(sessions.isEmpty() || sequence%interval!=0) return;
+        boolean anyRange=false;for(Session s:sessions.values()) anyRange|=s.settings.range>0;
         // Snapshot the existing player list once, not a loaded-entity scan per viewer.
         Map<net.minecraft.world.World,Map<Long,List<EntityPlayerMP>>> grid=new IdentityHashMap<>();
         Set<UUID> live=new HashSet<>();
-        if(Config.Server.allowPlayerLodSupport.get() && Config.Server.playerLodDistance.get()>0) for(Object value:server.getConfigurationManager().playerEntityList) {
+        if(legacySafe && anyRange && Config.Server.allowPlayerLodSupport.get() && Config.Server.playerLodDistance.get()>0) for(Object value:server.getConfigurationManager().playerEntityList) {
             EntityPlayerMP target=(EntityPlayerMP)value;
             if(!validPosition(target) || !target.isEntityAlive() || !PlayerVisibility.allowed(target)) continue;
             live.add(target.getUniqueID());
             try {
-                byte[] data=PlayerAppearance.capture(target);
                 AppearanceState previous=appearances.get(target.getUniqueID());
+                byte[] data=previous!=null && previous.player==target && sequence%4!=0?previous.data:PlayerAppearance.capture(target);
                 if(previous==null || previous.player!=target || !Arrays.equals(previous.data,data))
                     appearances.put(target.getUniqueID(),new AppearanceState(target,data,++appearanceRevision));
                 failedAppearances.remove(target.getUniqueID());
@@ -104,7 +107,7 @@ public final class PlayerRelay {
         appearances.keySet().retainAll(live);failedAppearances.retainAll(live);
         for(Session session:sessions.values()) {
             EntityPlayerMP viewer=session.player;
-            int range=PlayerFrame.effectiveRange(session.settings.range,Config.Server.playerLodDistance.get(),Config.Server.allowPlayerLodSupport.get());
+            int range=PlayerFrame.effectiveRange(session.settings.range,Config.Server.playerLodDistance.get(),legacySafe && Config.Server.allowPlayerLodSupport.get());
             Comparator<EntityPlayerMP> nearest=(a,b)->Double.compare(a.getDistanceSqToEntity(viewer),b.getDistanceSqToEntity(viewer));
             PriorityQueue<EntityPlayerMP> selected=new PriorityQueue<>(PlayerFrame.MAX_PLAYERS,nearest.reversed());
             Map<Long,List<EntityPlayerMP>> cells=grid.get(viewer.worldObj);
@@ -130,12 +133,12 @@ public final class PlayerRelay {
                     |(p.isPlayerSleeping()?32:0)|(p.isUsingItem()?64:0);
                 try {
                     poses.add(new PlayerFrame.Pose(p.getUniqueID(),p.getEntityId(),p.posX,p.posY,p.posZ,p.rotationYaw,
-                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision));
+                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision,Math.max(0,Math.min(1000000,((com.seibel.distanthorizons.forge17.mixin.MixinPlayerUseState)p).dh$getItemInUseCount())),bedYaw(p)));
                 } catch(IllegalArgumentException invalid) { continue; }
                 if(poses.size()==PlayerFrame.MAX_PLAYERS) break;
             }
             try {
-                NETWORK.sendTo(new FrameMessage(new PlayerFrame(session.settings.token,sequence,viewer.getUniqueID(),viewer.dimension,range,poses)),viewer);
+                NETWORK.sendTo(new FrameMessage(new PlayerFrame(session.settings.token,sequence,viewer.getUniqueID(),viewer.dimension,range,(legacySafe?PlayerFrame.SAFE:0)|(legacySafe && session.settings.takeover?PlayerFrame.OWNED:0),interval,poses)),viewer);
                 Set<UUID> retained=new HashSet<>();int bytes=32768,count=0;
                 for(PlayerFrame.Pose pose:poses) retained.add(pose.uuid);
                 List<PlayerFrame.Pose> order=AppearanceDeliveryOrder.ordered(poses,session.known,session.sent);
@@ -155,6 +158,19 @@ public final class PlayerRelay {
                 org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").warn("DH player pose delivery stopped for closed peer",closed);
             }
         }
+    }
+    private boolean ownsLegacy(EntityPlayerMP player) {
+        Session session=player==null?null:sessions.get(player.getUniqueID());
+        return legacySafe && session!=null && session.player==player && session.settings.takeover
+            && player.playerNetServerHandler!=null && peers.containsKey(player.playerNetServerHandler.netManager)
+            && System.nanoTime()-session.renewed<=30000000000L;
+    }
+    private static float bedYaw(EntityPlayerMP player) {
+        if(!player.isPlayerSleeping() || player.playerLocation==null) return 0;
+        net.minecraft.util.ChunkCoordinates bed=player.playerLocation;
+        if(bed.posY<0 || bed.posY>255 || !player.worldObj.getChunkProvider().chunkExists(bed.posX>>4,bed.posZ>>4)) return 0;
+        int direction=player.worldObj.getChunkFromChunkCoords(bed.posX>>4,bed.posZ>>4).getBlockMetadata(bed.posX & 15,bed.posY,bed.posZ & 15) & 3;
+        return direction==0?90:direction==2?270:direction==3?180:0;
     }
     private static int light(EntityPlayerMP player) {
         int x=(int)Math.floor(player.posX),z=(int)Math.floor(player.posZ),y=Math.max(0,Math.min(255,(int)Math.floor(player.posY+1)));
@@ -186,15 +202,15 @@ public final class PlayerRelay {
         Request(EntityPlayerMP player,Settings settings) { this.player=player;this.settings=settings; }
     }
     public static final class Settings implements IMessage {
-        long token;int range;boolean valid;
+        long token;int range;boolean valid,takeover;
         public Settings() { }
-        Settings(long token,int range) { this.token=token;this.range=range; }
-        public void toBytes(ByteBuf out) { out.writeByte(PlayerFrame.VERSION).writeLong(token).writeShort(range); }
+        Settings(long token,int range,boolean takeover) { this.token=token;this.range=range;this.takeover=takeover; }
+        public void toBytes(ByteBuf out) { out.writeByte(PlayerFrame.VERSION).writeLong(token).writeShort(range).writeByte(takeover?1:0); }
         public void fromBytes(ByteBuf in) {
             valid=false;
-            if(in.readableBytes()!=11) return;
-            int version=in.readUnsignedByte();token=in.readLong();range=in.readUnsignedShort();
-            valid=version==PlayerFrame.VERSION && token!=0 && range<=PlayerFrame.MAX_RANGE;
+            if(in.readableBytes()!=12) return;
+            int version=in.readUnsignedByte();token=in.readLong();range=in.readUnsignedShort();int flags=in.readUnsignedByte();takeover=flags==1;
+            valid=flags<=1 && version==PlayerFrame.VERSION && token!=0 && range<=PlayerFrame.MAX_RANGE;
         }
     }
     public static final class SettingsHandler implements IMessageHandler<Settings,IMessage> {

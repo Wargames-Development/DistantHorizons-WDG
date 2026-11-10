@@ -59,7 +59,7 @@ public final class PlayerAppearance {
             NBTTagCompound item=new NBTTagCompound();ItemStack stack=player.getEquipmentInSlot(slot);
             if(stack!=null) stack.writeToNBT(item);item.setByte("slot",(byte)slot);equipment.appendTag(item);
         }
-        tag.setTag("equipment",equipment);return encode(tag);
+        tag.setTag("equipment",equipment);FmurPlayerBridge.appendAppearance(player,tag);return encode(tag);
     }
     static byte[] encode(NBTTagCompound tag) throws IOException {
         final ByteArrayOutputStream bytes=new ByteArrayOutputStream();
@@ -86,12 +86,14 @@ public final class PlayerAppearance {
             if(slot<0 || slot>=5 || (slots & (1<<slot))!=0) throw new IOException("Duplicate equipment slot");
             slots|=1<<slot;equipment[slot]=ItemStack.loadItemStackFromNBT(item);
         }
-        return new Decoded(profile,equipment);
+        return new Decoded(profile,equipment,tag.getCompoundTag("fmur"));
     }
     public static final class Decoded {
         public final GameProfile profile;
         private final ItemStack[] equipment;
-        private Decoded(GameProfile profile,ItemStack[] equipment) { this.profile=profile;this.equipment=equipment; }
+        private final NBTTagCompound extension;
+        private Decoded(GameProfile profile,ItemStack[] equipment,NBTTagCompound extension) { this.profile=profile;this.equipment=equipment;this.extension=extension; }
+        public NBTTagCompound extension() { return (NBTTagCompound)extension.copy(); }
         public ItemStack equipment(int slot) { return equipment[slot]==null?null:equipment[slot].copy(); }
     }
     private static void uuid(ByteBuf out,UUID id) { out.writeLong(id.getMostSignificantBits()).writeLong(id.getLeastSignificantBits()); }

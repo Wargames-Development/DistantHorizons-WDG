@@ -75,17 +75,24 @@ public final class PlayerProtocolChecks {
         for(int version:new int[]{0,PlayerFrame.VERSION,PlayerFrame.VERSION+1}) for(int range:new int[]{0,512,1024,1025,65535}) {
             out=Unpooled.buffer();
             try {
-                out.writeByte(version).writeLong(1).writeShort(range);
+                out.writeByte(version).writeLong(1).writeShort(range).writeByte(1);
                 PlayerRelay.Settings settings=new PlayerRelay.Settings();settings.fromBytes(out);
                 check(settings.valid==(version==PlayerFrame.VERSION && range<=1024),"subscription validates version and radius");
             } finally { out.release(); }
         }
         try {
             net.minecraft.nbt.NBTTagCompound tag=new net.minecraft.nbt.NBTTagCompound();tag.setString("name","Fixture");
+            net.minecraft.nbt.NBTTagList equipment=new net.minecraft.nbt.NBTTagList();
+            for(int slot=0;slot<5;slot++) { net.minecraft.nbt.NBTTagCompound item=new net.minecraft.nbt.NBTTagCompound();item.setByte("slot",(byte)slot);equipment.appendTag(item); }
+            tag.setTag("equipment",equipment);tag.setString("textures","signed-texture");tag.setString("signature","signature");
             byte[] raw=PlayerAppearance.encode(tag);
             PlayerAppearance appearance=new PlayerAppearance(7,VIEWER,0,TARGET,2,1,raw);
             raw[0]=0;
             check("Fixture".equals(appearance.decode().getString("name")),"appearance bytes are immutable");
+            PlayerAppearance.Decoded decodedAppearance=appearance.appearance();
+            check(decodedAppearance.profile.getId().equals(TARGET) && decodedAppearance.profile.getName().equals("Fixture"),"appearance recreates canonical profile");
+            check(decodedAppearance.profile.getProperties().get("textures").iterator().next().getSignature().equals("signature"),"signed skin metadata preserved");
+            for(int slot=0;slot<5;slot++) check(decodedAppearance.equipment(slot)==null,"empty equipment slots remain empty");
             ByteBuf encoded=Unpooled.buffer();
             try {
                 appearance.write(encoded);
@@ -108,7 +115,7 @@ public final class PlayerProtocolChecks {
             check(cache.accept(connection,withAppearance,100) && cache.appearance(visible)!=null,"matching revision authorises model appearance");
             check(!cache.accept(new Object(),appearance),"appearance from old connection rejected");
             check(!cache.accept(connection,new PlayerAppearance(8,VIEWER,0,TARGET,2,1,PlayerAppearance.encode(tag))),"appearance from old subscription rejected");
-            check(cache.accept(connection,new PlayerAppearance(7,VIEWER,0,TARGET,2,2,PlayerAppearance.encode(tag))) && cache.appearance(visible)==null,"new appearance cannot dress old pose");
+            check(cache.accept(connection,new PlayerAppearance(7,VIEWER,0,TARGET,2,2,PlayerAppearance.encode(tag))) && cache.appearance(visible).revision==1,"interpolated old pose retains its own appearance revision");
             check(!cache.accept(connection,appearance),"old appearance cannot overwrite newer revision");
             cache.reset(connection,8,1,VIEWER);check(cache.appearance(visible)==null,"world reset clears appearances");
         } catch(java.io.IOException error) { throw new AssertionError(error); }
@@ -124,6 +131,25 @@ public final class PlayerProtocolChecks {
             if(tick==64) check(known.size()==64,"initial appearances cannot starve behind periodic repairs");
         }
         for(PlayerFrame.Pose candidate:population) check(sent.get(candidate.uuid)>=196,"repairs rotate across all recipients");
+        invalid(()->new PlayerFrame(1,1,VIEWER,0,0,PlayerFrame.OWNED,2,Collections.emptyList()),"ownership without compatible policy accepted");
+        invalid(()->new PlayerFrame(1,1,VIEWER,0,0,4,2,Collections.emptyList()),"unknown ownership capabilities accepted");
+        invalid(()->new PlayerFrame(1,1,VIEWER,0,0,1,0,Collections.emptyList()),"zero update interval accepted");
+        cache.reset(connection,1,0,VIEWER);
+        check(cache.accept(connection,new PlayerFrame(1,1,VIEWER,0,0,PlayerFrame.SAFE,2,Collections.emptyList()),0)
+            && cache.safe() && !cache.ownsLegacy(),"policy probe cannot claim legacy presentation");
+        check(cache.accept(connection,new PlayerFrame(1,2,VIEWER,0,0,PlayerFrame.SAFE|PlayerFrame.OWNED,2,Collections.emptyList()),1)
+            && cache.ownsLegacy() && cache.players().isEmpty(),"server ownership acknowledgement works with player toggle off");
+        try(java.io.InputStream input=PlayerProtocolChecks.class.getResourceAsStream("/net/minecraft/entity/player/EntityPlayer.class")) {
+            org.spongepowered.asm.lib.tree.ClassNode player=new org.spongepowered.asm.lib.tree.ClassNode();
+            new org.spongepowered.asm.lib.ClassReader(input).accept(player,0);
+            boolean fieldFound=false;
+            for(org.spongepowered.asm.lib.tree.FieldNode field:player.fields) if(field.name.equals("itemInUseCount")) {
+                fieldFound=true;
+                if(field.visibleAnnotations!=null) for(org.spongepowered.asm.lib.tree.AnnotationNode annotation:field.visibleAnnotations)
+                    check(!annotation.desc.endsWith("/SideOnly;"),"server accessor field survives side stripping");
+            }
+            check(fieldFound,"server item-use accessor has a real Minecraft field");
+        } catch(java.io.IOException error) { throw new AssertionError(error); }
         // Inspect bytecode without initializing Forge networking or optional mods.
         for(String name:new String[]{"PlayerRelay","PlayerRelay$SettingsHandler","PlayerRelay$FrameHandler","PlayerVisibility","PlayerFrame","PlayerFrameCache","PlayerAppearance"}) {
             String path="/com/seibel/distanthorizons/forge17/actors/"+name+".class";

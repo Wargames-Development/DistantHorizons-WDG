@@ -91,7 +91,7 @@ public class DhApiRenderParam implements IDhApiEventParam
 			param.partialTicks,
 			param.nearClipPlane, param.farClipPlane,
 			param.mcProjectionMatrix, param.mcModelViewMatrix,
-			param.dhProjectionMatrix, param.mcModelViewMatrix, 
+			param.dhProjectionMatrix, param.dhModelViewMatrix, 
 			param.worldYOffset,
 			param.clientLevelWrapper
 		);

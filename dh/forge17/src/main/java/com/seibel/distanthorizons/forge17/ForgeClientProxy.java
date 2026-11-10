@@ -67,6 +67,9 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
         com.seibel.distanthorizons.forge17.effects.TrailClient trails=new com.seibel.distanthorizons.forge17.effects.TrailClient();
         FMLCommonHandler.instance().bus().register(trails);
         FMLCommonHandler.instance().bus().register(new com.seibel.distanthorizons.forge17.actors.PlayerClient());
+        com.seibel.distanthorizons.forge17.effects.PlayerActorRenderer players=new com.seibel.distanthorizons.forge17.effects.PlayerActorRenderer();
+        MinecraftForge.EVENT_BUS.register(players);
+        FMLCommonHandler.instance().bus().register(players);
         net.minecraftforge.client.ClientCommandHandler.instance.registerCommand(
             new com.seibel.distanthorizons.forge17.effects.DistantEffectsCommand());
         FMLCommonHandler.instance()
