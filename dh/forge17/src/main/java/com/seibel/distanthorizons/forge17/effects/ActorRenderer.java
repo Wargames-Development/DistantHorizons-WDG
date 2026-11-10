@@ -128,7 +128,8 @@ public final class ActorRenderer {
         if(!shaders && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getFramebuffer().framebufferObject) return;
         int terrainDepth=target==null?com.seibel.distanthorizons.core.render.DhApiRenderProxy.activeOpenGlDhDepthTextureId:target.terrainDepth;
         if(terrainDepth<=0 || !terrain.begin(source,mc.theWorld,generation)) return;
-        int width=mc.displayWidth,height=mc.displayHeight;
+        int width=target==null?mc.getFramebuffer().framebufferWidth:target.sceneWidth;
+        int height=target==null?mc.getFramebuffer().framebufferHeight:target.sceneHeight;
         status="preparing models";
         try {
             if(preparedWidth!=width || preparedHeight!=height) {

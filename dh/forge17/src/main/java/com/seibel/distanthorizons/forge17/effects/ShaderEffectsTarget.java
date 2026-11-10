@@ -4,6 +4,7 @@ import java.lang.reflect.Method;
 import java.nio.FloatBuffer;
 import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 import net.minecraft.client.Minecraft;
+import org.lwjgl.opengl.GL11;
 
 /** Optional Angelica DH bridge. Resolve methods once; refresh pipeline/texture data each frame.
  * Depth and parity APIs are public; RenderTargets lookup is a checked private compatibility seam. */
@@ -16,16 +17,30 @@ final class ShaderEffectsTarget {
     private static Method projection,writeProjection;
     private static final FloatBuffer projectionValues=org.lwjgl.BufferUtils.createFloatBuffer(16);
     final int sceneDepth,terrainDepth,nativeSceneDepth,sceneColour,cloudDepth,particleMaterial;
+    final int sceneWidth,sceneHeight;
     final DhApiMat4f terrainProjection;
     final boolean colourFlipped,cloudFlipped;
     final boolean complementaryClouds;
-    private ShaderEffectsTarget(int depth,int copy,int nativeDepth,String pack,int colour,int cloud,int material,java.util.Set<?> flips,DhApiMat4f terrainProjection) {
+    private ShaderEffectsTarget(int depth,int copy,int nativeDepth,String pack,int colour,int cloud,int material,java.util.Set<?> flips,DhApiMat4f terrainProjection,long size) {
         this.terrainProjection=terrainProjection;
         sceneDepth=depth;terrainDepth=copy;nativeSceneDepth=nativeDepth;sceneColour=colour;cloudDepth=cloud;
+        // A shader pack may render at a different scale from the Minecraft window.
+        // Actor capture, scissor and final output must share the scene's pixel grid.
+        sceneWidth=(int)(size>>>32);sceneHeight=(int)size;
         colourFlipped=flips.contains(0);cloudFlipped=flips.contains(5);
         String name=pack.toLowerCase(java.util.Locale.ROOT);
         complementaryClouds=name.contains("bountifulstars") || name.contains("complementary");
         particleMaterial=complementaryClouds?material:0;
+    }
+    private static long textureSize(int texture) {
+        if(texture<=0) return 0;
+        int binding=GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
+        try {
+            GL11.glBindTexture(GL11.GL_TEXTURE_2D,texture);
+            int width=GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D,0,GL11.GL_TEXTURE_WIDTH);
+            int height=GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D,0,GL11.GL_TEXTURE_HEIGHT);
+            return width>0 && height>0?((long)width<<32)|(height&0xffffffffL):0;
+        } finally { GL11.glBindTexture(GL11.GL_TEXTURE_2D,binding); }
     }
     private static int texture(Object targets,java.util.Set<?> flips,int index) throws ReflectiveOperationException {
         Object target=getTarget.invoke(targets,index);
@@ -72,10 +87,14 @@ final class ShaderEffectsTarget {
             java.util.Set<?> flips=(java.util.Set<?>)flipped.invoke(p);
             Object targets=renderTargets.invoke(p);
             int colour=texture(targets,flips,0),cloud=texture(targets,flips,5),material=texture(targets,flips,6);
+            long size=textureSize(colour);
+            // A resize can briefly leave the pipeline between texture allocations.
+            // Withhold this frame without permanently disabling compatibility.
+            if(size==0 || size!=textureSize(d)) return null;
             projectionValues.clear();writeProjection.invoke(projection.invoke(null),projectionValues);
             DhApiMat4f terrainProjection=readColumnMajorProjection(projectionValues);
             cached=d>0 && copy>0 && n>0 && colour>0 && d!=copy && d!=n
-                ?new ShaderEffectsTarget(d,copy,n,String.valueOf(packName.invoke(null)),colour,cloud,material,flips,terrainProjection):null;
+                ?new ShaderEffectsTarget(d,copy,n,String.valueOf(packName.invoke(null)),colour,cloud,material,flips,terrainProjection,size):null;
             return cached;
         } catch(ReflectiveOperationException | RuntimeException | LinkageError error) {
             unsupported=true;
