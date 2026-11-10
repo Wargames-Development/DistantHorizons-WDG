@@ -9,7 +9,7 @@ import net.minecraft.entity.player.EntityPlayerMP;
 public final class FmurPlayerBridge {
     private static boolean resolved,present,available;
     private static Class<?> api;
-    private static java.lang.reflect.Method poseCapture;
+    private static java.lang.reflect.Method poseCapture,auxiliaryView;
     private static void resolve() {
         if(resolved) return;resolved=true;present=Loader.isModLoaded("flansmod");
         if(!present) { available=true;return; }
@@ -29,9 +29,17 @@ public final class FmurPlayerBridge {
         try {
             Class<?> client=Class.forName("com.flansmod.client.ExternalPlayerPresentationClient",false,FmurPlayerBridge.class.getClassLoader());
             if(client.getField("API_VERSION").getInt(null)!=3) return false;
+            Class<?> views=Class.forName("com.flansmod.client.ThermalRenderApi",false,FmurPlayerBridge.class.getClassLoader());
+            auxiliaryView=views.getMethod("isAuxiliaryView");
             api.getMethod("setClientOwner",BooleanSupplier.class).invoke(null,owner);return true;
         }
         catch(ReflectiveOperationException | RuntimeException | LinkageError error) { return false; }
+    }
+    public static boolean supportsViews() { resolve();return !present || auxiliaryView!=null; }
+    public static boolean auxiliaryView() {
+        resolve();if(!present) return false;if(auxiliaryView==null) return true;
+        try { return Boolean.TRUE.equals(auxiliaryView.invoke(null)); }
+        catch(ReflectiveOperationException | RuntimeException | LinkageError unavailable) { return true; }
     }
     public static byte[] capturePose(EntityPlayerMP player) {
         resolve();if(!present) return new byte[0];

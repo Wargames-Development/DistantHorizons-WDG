@@ -103,10 +103,15 @@ public final class VehicleRelay {
             }
             List<Entity> ordered=new ArrayList<>(selected);ordered.sort(nearest);
             List<VehicleFrame.Entry> entries=new ArrayList<>();
+            int frameBytes=VehicleFrame.HEADER_BYTES;
             for(Entity entity:ordered) {
                 Optional<VehicleFrame.Entry> snapshot=captured.get(entity);
                 if(snapshot==null) { snapshot=Optional.ofNullable(McheliSource.capture(entity));captured.put(entity,snapshot); }
-                if(snapshot.isPresent()) entries.add(snapshot.get());
+                if(snapshot.isPresent()) {
+                    VehicleFrame.Entry entry=snapshot.get();
+                    if(frameBytes+entry.wireBytes()>VehicleFrame.MAX_BYTES) break;
+                    entries.add(entry);frameBytes+=entry.wireBytes();
+                }
             }
             try { NETWORK.sendTo(new FrameMessage(new VehicleFrame(session.settings.token,sequence,player.getUniqueID(),player.dimension,range,interval,source,entries)),player); }
             catch(RuntimeException closedPeer) { /* disconnect registration removes the session on the next tick */ }

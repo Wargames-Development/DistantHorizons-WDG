@@ -120,6 +120,7 @@ public final class DistantSmokeRenderer
             public void beforeCleanup(DhApiEventParam<DhApiRenderParam> event)
             {
                 if(!EffectSources.enabled() && !Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodSupport.get()
+                    && !Boolean.getBoolean("dh.experimentalMcheliModels")
                     && !(com.seibel.distanthorizons.forge17.actors.PlayerClient.INSTANCE!=null
                         && com.seibel.distanthorizons.forge17.actors.PlayerClient.INSTANCE.ownsLegacy())) return;
                 IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);

@@ -60,7 +60,11 @@ public final class PlayerClient {
     }
     public void setRenderingReady() { renderingReady=true; }
     public boolean fmurReady() { return fmurReady; }
-    public boolean ownsLegacy() { return renderingReady && PlayerRelay.INSTANCE.serverPresent() && cache.ownsLegacy(); }
+    public boolean ownsLegacy() {
+        Minecraft mc=Minecraft.getMinecraft();
+        return renderingReady && PlayerRelay.INSTANCE.serverPresent() && cache.ownsLegacy() && connection==mc.getNetHandler()
+            && world==mc.theWorld && mc.thePlayer!=null && viewer!=null && viewer.equals(mc.thePlayer.getUniqueID()) && dimension==mc.thePlayer.dimension;
+    }
     public PlayerFrameCache frames() { return cache; }
     public String diagnostic() {
         return "DH player delivery: server="+PlayerRelay.INSTANCE.serverPresent()+" requested="+requested

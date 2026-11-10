@@ -24,13 +24,21 @@ public final class VehicleProtocolChecks {
         check(immutable.payload()[0]==5,"vehicle source payload is copied");immutable.payload()[0]=10;check(immutable.payload()[0]==5,"vehicle payload accessor is immutable");
         invalid(()->entry(VEHICLE,7,new byte[VehicleFrame.MAX_PAYLOAD+1]));invalid(()->entry(VEHICLE,7,new byte[0]));
         invalid(()->new VehicleFrame.Entry(VEHICLE,7,Double.NaN,0,0,new byte[]{1}));
-        List<VehicleFrame.Entry> maximum=new ArrayList<>();for(int i=0;i<VehicleFrame.MAX_VEHICLES;i++) maximum.add(entry(new UUID(9,i),i,new byte[VehicleFrame.MAX_PAYLOAD]));
+        List<VehicleFrame.Entry> maximum=new ArrayList<>();for(int i=0;i<VehicleFrame.MAX_VEHICLES;i++) maximum.add(entry(new UUID(9,i),i,new byte[512]));
         ByteBuf out=Unpooled.buffer();
         try {
             new VehicleFrame(1,1,VIEWER,0,750,2,true,maximum).write(out);
             check(out.readableBytes()<=VehicleFrame.MAX_BYTES,"maximum vehicle payload set remains bounded");
             check(VehicleFrame.read(out.duplicate()).entries.size()==VehicleFrame.MAX_VEHICLES,"maximum vehicle frame round trip");
         } finally { out.release(); }
+        List<VehicleFrame.Entry> heavy=new ArrayList<>();
+        for(int i=0;i<6;i++) heavy.add(entry(new UUID(10,i),i,new byte[VehicleFrame.MAX_PAYLOAD]));
+        invalid(()->new VehicleFrame(1,1,VIEWER,0,750,2,true,heavy));
+        heavy.remove(heavy.size()-1);ByteBuf heavyPacket=Unpooled.buffer();
+        try {
+            new VehicleFrame(1,1,VIEWER,0,750,2,true,heavy).write(heavyPacket);
+            check(heavyPacket.readableBytes()<=VehicleFrame.MAX_BYTES && VehicleFrame.read(heavyPacket).entries.size()==5,"large animated models fit a bounded whole-entry frame");
+        } finally { heavyPacket.release(); }
         maximum.add(entry(new UUID(8,1),99,new byte[]{1}));invalid(()->new VehicleFrame(1,1,VIEWER,0,750,2,true,maximum));
         invalid(()->new VehicleFrame(1,1,VIEWER,0,0,2,true,Collections.singletonList(immutable)));
         invalid(()->new VehicleFrame(1,1,VIEWER,0,750,2,false,Collections.singletonList(immutable)));
@@ -40,7 +48,7 @@ public final class VehicleProtocolChecks {
             frame(7,1,0,750).write(packet);int length=packet.readableBytes();
             for(int n=0;n<length;n++) { final ByteBuf truncated=packet.slice(0,n);invalid(()->VehicleFrame.read(truncated)); }
             packet.writeByte(0);invalid(()->VehicleFrame.read(packet.duplicate()));packet.writerIndex(length);
-            packet.setShort(86,513);invalid(()->VehicleFrame.read(packet.duplicate()));packet.setShort(86,3);
+            packet.setShort(86,VehicleFrame.MAX_PAYLOAD+1);invalid(()->VehicleFrame.read(packet.duplicate()));packet.setShort(86,3);
             packet.setByte(0,255);invalid(()->VehicleFrame.read(packet.duplicate()));
         } finally { packet.release(); }
         for(int range:new int[]{0,750,4096,4097,65535}) for(int version:new int[]{0,VehicleFrame.VERSION,255}) {

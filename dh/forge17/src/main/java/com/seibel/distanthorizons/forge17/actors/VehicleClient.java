@@ -17,7 +17,7 @@ public final class VehicleClient {
     private UUID viewer;
     private int dimension,requested=-1,ticks;
     private long token;
-    private boolean ready;
+    private boolean ready,sourceAcknowledged;
     public VehicleClient() {
         INSTANCE=this;
         VehicleRelay.INSTANCE.setReceiver((source,frame)-> {
@@ -26,6 +26,11 @@ public final class VehicleClient {
         });
     }
     public void activateDelivery() { ready=true; }
+    public boolean ownsLegacy() {
+        Minecraft mc=Minecraft.getMinecraft();
+        return ready && sourceAcknowledged && VehicleRelay.INSTANCE.serverPresent() && connection==mc.getNetHandler() && world==mc.theWorld && mc.thePlayer!=null && viewer!=null
+            && viewer.equals(mc.thePlayer.getUniqueID()) && dimension==mc.thePlayer.dimension;
+    }
     public VehicleFrameCache frames() { return cache; }
     @SubscribeEvent public void tick(TickEvent.ClientTickEvent event) {
         if(event.phase!=TickEvent.Phase.END) return;
@@ -36,12 +41,12 @@ public final class VehicleClient {
         if(connection!=mc.getNetHandler() || world!=mc.theWorld || !java.util.Objects.equals(viewer,id) || dimension!=dim || requested!=range) {
             connection=mc.getNetHandler();world=mc.theWorld;viewer=id;dimension=dim;requested=range;
             do { token=ThreadLocalRandom.current().nextLong(); }while(token==0);
-            pending.clear();cache.reset(connection,token,viewer,dimension);
+            pending.clear();sourceAcknowledged=false;cache.reset(connection,token,viewer,dimension);
             if(connection!=null) VehicleRelay.INSTANCE.subscribe(token,range);
         }
         if(connection==null || world==null || viewer==null) { pending.clear();return; }
         if(ticks%20==0) VehicleRelay.INSTANCE.subscribe(token,range);
-        Delivery delivery;while((delivery=pending.poll())!=null) if(delivery.frame.range<=range) cache.accept(delivery.connection,delivery.frame,delivery.receipt);
+        Delivery delivery;while((delivery=pending.poll())!=null) if(delivery.frame.range<=range && cache.accept(delivery.connection,delivery.frame,delivery.receipt)) sourceAcknowledged=delivery.frame.sourceReady;
         cache.expire(System.nanoTime());
     }
     public String diagnostic() {

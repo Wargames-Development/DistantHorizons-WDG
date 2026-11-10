@@ -34,8 +34,10 @@ public final class ActorRenderer {
     private final ModelScene scene=new ModelScene();
     private final ActorTerrainVisibility terrain=new ActorTerrainVisibility();
     private final Map<UUID,Contact> contacts=new LinkedHashMap<>();
-    private final Set<UUID> nativeDrawn=new HashSet<>();
+    private final Set<UUID> nativeDrawn=new HashSet<>(),nativeVehicles=new HashSet<>();
+    private final McheliActors vehicles;
     private final List<ActorModel> models=new ArrayList<>(PlayerFrame.MAX_PLAYERS+VehicleFrame.MAX_VEHICLES);
+    private final List<ActorModel> visibleModels=new ArrayList<>(PlayerFrame.MAX_PLAYERS+VehicleFrame.MAX_VEHICLES);
     private final DhApiMat4f nativeMvp=new DhApiMat4f(),dhMvp=new DhApiMat4f(),mixed=new DhApiMat4f(),inverseScene=new DhApiMat4f();
     private final DhApiMat4f localProjection=new DhApiMat4f(),localMvp=new DhApiMat4f(),inverseLocal=new DhApiMat4f();
     private final int[] bounds=new int[4];
@@ -43,13 +45,14 @@ public final class ActorRenderer {
     private Object world,connection;
     private long generation,sequence=-1,receipt;
     private double nx,ny,nz,dx,dy,dz;
-    private int nativeFramebuffer,shaderFramebuffer;
+    private int nativeFramebuffer,shaderFramebuffer,preparedWidth,preparedHeight;
     private boolean valid,drawing,failed,sceneComplete;
     private int drawn,unknown;
     private String status="waiting for terrain view";
     public String diagnostic() { return "DH actor models: "+status+" drawn="+drawn+" native="+nativeDrawn.size()+" unknown="+unknown+" cached="+contacts.size(); }
     public ActorRenderer() {
         INSTANCE=this;
+        vehicles=new McheliActors(()->vehiclesOwnLegacy(),this::replaceVehicle,this::observedVehicle);
         ApiEventInjector.INSTANCE.bind(DhApiBeforeRenderSetupEvent.class,new DhApiBeforeRenderSetupEvent() {
             public void beforeSetup(DhApiEventParam<DhApiRenderParam> event) {
                 if(!shadow()) nativeFramebuffer=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
@@ -61,9 +64,10 @@ public final class ActorRenderer {
     }
     private static boolean shadow() {
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
-        return iris!=null && iris.isRenderingShadowPass();
+        return (iris!=null && iris.isRenderingShadowPass()) || FmurPlayerBridge.auxiliaryView();
     }
     private void snapshot(DhApiRenderParam input) {
+        if(!Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodSupport.get() && !owned() && !vehicles.available()) return;
         if(shadow() || !(input.clientLevelWrapper instanceof IClientLevelWrapper)) return;
         IClientLevelWrapper wrapper=(IClientLevelWrapper)input.clientLevelWrapper;
         if(wrapper.getWrappedMcObject()!=Minecraft.getMinecraft().theWorld || wrapper.getDhLevel()==null) return;
@@ -76,7 +80,7 @@ public final class ActorRenderer {
     }
     @SubscribeEvent public void start(TickEvent.RenderTickEvent event) {
         if(event.phase!=TickEvent.Phase.START) return;
-        valid=false;sceneComplete=false;nativeDrawn.clear();drawn=unknown=0;status="waiting for terrain view";
+        valid=false;sceneComplete=false;nativeDrawn.clear();nativeVehicles.clear();drawn=unknown=0;status="waiting for terrain view";
         Minecraft mc=Minecraft.getMinecraft();
         if(world!=mc.theWorld || connection!=mc.getNetHandler()) {
             clear();world=mc.theWorld;connection=mc.getNetHandler();sequence=-1;receipt=0;failed=false;
@@ -97,14 +101,28 @@ public final class ActorRenderer {
     }
     static int actorDepth() { return INSTANCE!=null && INSTANCE.sceneComplete?INSTANCE.scene.depthTexture():0; }
     static int actorColour() { return INSTANCE!=null && INSTANCE.sceneComplete?INSTANCE.scene.colourTexture():0; }
+    private boolean vehiclesOwnLegacy() { return vehicles!=null && vehicles.ownsLegacy(); }
+    private boolean primaryNativeView() {
+        return !drawing && valid && !shadow() && world==Minecraft.getMinecraft().theWorld
+            && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)==nativeFramebuffer;
+    }
+    private boolean replaceVehicle(net.minecraft.entity.Entity entity) {
+        return primaryNativeView() && vehicles.contains(entity) && !DistantSmokeRenderer.nativeModelVisible(entity,vehicles.radius(entity));
+    }
+    private boolean observedVehicle(net.minecraft.entity.Entity entity) {
+        if(!primaryNativeView() || !DistantSmokeRenderer.nativeModelVisible(entity,vehicles.radius(entity))) return false;
+        nativeVehicles.add(entity.getUniqueID());return true;
+    }
     private boolean owned() { return PlayerClient.INSTANCE!=null && PlayerClient.INSTANCE.ownsLegacy(); }
     public static void render(boolean shaders) {
         if(INSTANCE!=null) INSTANCE.draw(shaders);
     }
     private void draw(boolean shaders) {
         Minecraft mc=Minecraft.getMinecraft();PlayerClient client=PlayerClient.INSTANCE;
-        if(failed || !valid || world!=mc.theWorld || client==null || !client.fmurReady() || shadow()) return;
-        if(!Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodSupport.get() && !owned()) return;
+        if(failed || !valid || world!=mc.theWorld || client==null || shadow()) return;
+        boolean playersWanted=client.fmurReady() && (Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodSupport.get() || owned());
+        boolean vehiclesWanted=vehicles.available();
+        if(!playersWanted && !vehiclesWanted) return;
         ShaderEffectsTarget target=shaders?ShaderEffectsTarget.current():null;
         if(shaders && target==null) { status="unsupported shader target";return; }
         if(!shaders && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getFramebuffer().framebufferObject) return;
@@ -113,29 +131,39 @@ public final class ActorRenderer {
         int width=mc.displayWidth,height=mc.displayHeight;
         status="preparing models";
         try {
-            capture.prepare(width,height);scene.prepare(width,height);
+            if(preparedWidth!=width || preparedHeight!=height) {
+                capture.prepare(width,height);scene.prepare(width,height);preparedWidth=width;preparedHeight=height;
+            }
             dhMvp.set(target==null?frame.dhProjectionMatrix:target.terrainProjection);dhMvp.multiply(frame.dhModelViewMatrix);
             DhApiMat4f translation=new DhApiMat4f();translation.m00=translation.m11=translation.m22=translation.m33=1;translation.m03=(float)(nx-dx);translation.m13=(float)(ny-dy);translation.m23=(float)(nz-dz);
             dhMvp.multiply(translation);
             if(!ModelProjection.scene(nativeMvp,dhMvp,mixed) || !ModelProjection.inverse(mixed,inverseScene)) return;
-            client.setRenderingReady();if(!owned()) { status="awaiting server ownership";return; }
+            if(playersWanted) client.setRenderingReady();if(vehiclesWanted) vehicles.ready();
+            if(!owned() && !vehiclesOwnLegacy()) { status="awaiting server ownership";return; }
             status="active experimental primary view";
-            update(client.frames());if(contacts.isEmpty()) return;
+            if(owned()) update(client.frames());
             boolean reverse=SingletonInjector.INSTANCE.get(AbstractDhRenderApiDefinition.class).getDepthDirection()==EDhApiDepthDirection.REVERSE_Z;
+            models.clear();visibleModels.clear();long now=System.nanoTime();
+            if(owned()) for(Map.Entry<UUID,Contact> entry:contacts.entrySet())
+                if(!nativeDrawn.contains(entry.getKey()) && entry.getValue().track.sample(now,entry.getValue().sample)) models.add(entry.getValue());
+            vehicles.collect(models,nativeVehicles);
+            // Spend the bounded provenance work on nearer models first, before expensive preparation.
+            models.sort((a,b)->Double.compare(distance(a),distance(b)));
+            for(ActorModel model:models) {
+                double radius=model.radius();
+                if(!Double.isFinite(radius) || radius<=0 || radius>128) continue;
+                if(!ModelBounds.project(nativeMvp,model.x()-nx,model.centerY()-ny,model.z()-nz,radius,width,height,bounds)) continue;
+                if(!terrain.isKnown(nx,ny,nz,model.x(),model.centerY(),model.z(),radius)) { unknown++;continue; }
+                if(model.prepare()) visibleModels.add(model);
+            }
+            if(visibleModels.isEmpty()) return;
+            // Opaque pixels retain shared depth; alpha-bearing parts follow back-to-front actor ordering.
+            visibleModels.sort((a,b)->Double.compare(distance(b),distance(a)));
             boolean completed=false;scene.begin(width,height,reverse);
             try {
-                long now=System.nanoTime();
-                models.clear();
-                for(Map.Entry<UUID,Contact> entry:contacts.entrySet())
-                    if(!nativeDrawn.contains(entry.getKey()) && entry.getValue().track.sample(now,entry.getValue().sample)) models.add(entry.getValue());
-                // Alpha-bearing equipment is captured after farther actors; opaque pixels retain shared depth.
-                models.sort((a,b)->Double.compare(distance(b),distance(a)));
-                for(ActorModel model:models) {
+                for(ActorModel model:visibleModels) {
                     double radius=model.radius();
-                    if(!Double.isFinite(radius) || radius<=0 || radius>256) continue;
                     if(!ModelBounds.project(nativeMvp,model.x()-nx,model.centerY()-ny,model.z()-nz,radius,width,height,bounds)) continue;
-                    if(!terrain.isKnown(nx,ny,nz,model.x(),model.centerY(),model.z(),radius)) { unknown++;continue; }
-                    if(!model.prepare()) continue;
                     double x=model.x()-nx,y=model.y()-ny,z=model.z()-nz;
                     double eyeDepth=-(frame.mcModelViewMatrix.m20*x+frame.mcModelViewMatrix.m21*(model.centerY()-ny)+frame.mcModelViewMatrix.m22*z+frame.mcModelViewMatrix.m23);
                     if(!ModelProjection.prepare(frame.mcProjectionMatrix,eyeDepth,radius,localProjection)) continue;
@@ -149,6 +177,7 @@ public final class ActorRenderer {
                 }
                 completed=true;
             } finally { scene.end(completed); }
+            if(drawn==0) return;
             int oldRead=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),oldDraw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
             try {
                 if(target!=null) bindTarget(target);
@@ -162,7 +191,7 @@ public final class ActorRenderer {
     private double distance(ActorModel p) { double x=p.x()-nx,y=p.centerY()-ny,z=p.z()-nz;return x*x+y*y+z*z; }
     private void update(PlayerFrameCache cache) {
         if(sequence==cache.sequence() && receipt==cache.received()) {
-            if(cache.players().isEmpty()) clear();return;
+            if(cache.players().isEmpty()) clearPlayers();return;
         }
         sequence=cache.sequence();receipt=cache.received();Set<UUID> retained=new HashSet<>();
         for(PlayerFrame.Pose pose:cache.players()) {
@@ -222,7 +251,8 @@ public final class ActorRenderer {
         if(target.particleMaterial>0) outputs.put(GL30.GL_COLOR_ATTACHMENT1);outputs.flip();GL20.glDrawBuffers(outputs);
         if(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE) throw new IllegalStateException("Incomplete actor output target");
     }
-    private void clear() { for(Contact contact:contacts.values()) contact.close();contacts.clear();terrain.clear(); }
+    private void clearPlayers() { for(Contact contact:contacts.values()) contact.close();contacts.clear(); }
+    private void clear() { clearPlayers();vehicles.clear();terrain.clear(); }
     private final class Contact implements ActorModel {
         final UUID uuid;
         float partial;

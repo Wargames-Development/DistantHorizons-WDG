@@ -5,7 +5,7 @@ import java.util.*;
 
 /** Recipient-scoped vehicle visual payloads, independent of radar/gameplay packets. */
 public final class VehicleFrame {
-    public static final int VERSION=1,MAX_VEHICLES=32,MAX_RANGE=4096,MAX_PAYLOAD=512,MAX_BYTES=18432;
+    public static final int VERSION=2,MAX_VEHICLES=32,MAX_RANGE=4096,MAX_PAYLOAD=4096,MAX_BYTES=24576,HEADER_BYTES=42;
     public final long subscription,sequence;
     public final UUID viewer;
     public final int dimension,range,interval;
@@ -15,7 +15,12 @@ public final class VehicleFrame {
         if(subscription==0 || sequence<0 || viewer==null || range<0 || range>MAX_RANGE || interval<1 || interval>20
                 || entries.size()>MAX_VEHICLES || ((!sourceReady || range==0) && !entries.isEmpty())) throw new IllegalArgumentException("Invalid vehicle frame");
         Set<UUID> uuids=new HashSet<>();Set<Integer> ids=new HashSet<>();
-        for(Entry entry:entries) if(entry==null || !uuids.add(entry.uuid) || !ids.add(entry.entityId)) throw new IllegalArgumentException("Duplicate vehicle identity");
+        int bytes=HEADER_BYTES;
+        for(Entry entry:entries) {
+            if(entry==null || !uuids.add(entry.uuid) || !ids.add(entry.entityId)) throw new IllegalArgumentException("Duplicate vehicle identity");
+            bytes+=entry.wireBytes();
+        }
+        if(bytes>MAX_BYTES) throw new IllegalArgumentException("Vehicle frame byte budget exceeded");
         this.subscription=subscription;this.sequence=sequence;this.viewer=viewer;this.dimension=dimension;this.range=range;this.interval=interval;this.sourceReady=sourceReady;
         this.entries=Collections.unmodifiableList(new ArrayList<>(entries));
     }
@@ -55,5 +60,6 @@ public final class VehicleFrame {
             this.uuid=uuid;this.entityId=entityId;this.x=x;this.y=y;this.z=z;this.payload=payload.clone();
         }
         public byte[] payload() { return payload.clone(); }
+        public int wireBytes() { return 46+payload.length; }
     }
 }
