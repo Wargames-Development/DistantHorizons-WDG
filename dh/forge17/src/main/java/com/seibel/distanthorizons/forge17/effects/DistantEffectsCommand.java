@@ -17,7 +17,12 @@ public final class DistantEffectsCommand extends CommandBase
     public int compareTo(Object other) { return getCommandName().compareTo(((net.minecraft.command.ICommand)other).getCommandName()); }
     public void processCommand(ICommandSender sender,String[] args)
     {
-        if(args.length==0 || args[0].equals("status")) { status(sender);return; }
+        if(args.length==0 || args[0].equals("status")) {
+            status(sender);
+            com.seibel.distanthorizons.forge17.actors.PlayerClient players=com.seibel.distanthorizons.forge17.actors.PlayerClient.INSTANCE;
+            if(players!=null) say(sender,players.diagnostic());
+            return;
+        }
         if(args[0].equals("on") || args[0].equals("off"))
         {
             Config.Client.Advanced.Graphics.GenericRendering.enableDistantMcheliSmoke.set(args[0].equals("on"));status(sender);return;

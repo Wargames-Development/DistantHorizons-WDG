@@ -200,6 +200,8 @@
     "Enable Generic Rendering",
   "distanthorizons.config.client.advanced.graphics.genericRendering.enableGenericRendering.@tooltip":
     "If true non terrain objects will be rendered by DH. \ni.e. beacon beams and clouds.",
+  "distanthorizons.config.server.allowPlayerLodSupport": "Allow Player LOD Support",
+  "distanthorizons.config.server.playerLodDistance": "Maximum Player LOD Delivery Radius",
   "distanthorizons.config.server.allowNtmLodSupport": "Allow NTM LOD Support",
   "distanthorizons.config.server.allowMcheliLodSupport": "Allow MCHELI LOD Support",
   "distanthorizons.config.server.allowFmurLodSupport": "Allow FMUR LOD Support",

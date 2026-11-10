@@ -382,6 +382,13 @@ public class Config
                         .comment("Enable supported distant NTM missile bodies, exhaust, trails and explosion effects.").build();
                     public static ConfigEntry<Boolean> extendFlansTrails = new ConfigEntry.Builder<Boolean>().set(true)
                         .comment("Enable supported distant FMUR weapon effects. Excludes FMUR vehicles. Player equipment requires the player LOD provider.").build();
+                    // File-only until the depth-aware model provider is ready.
+                    public static ConfigEntry<Boolean> enablePlayerLodSupport = new ConfigEntry.Builder<Boolean>()
+                        .set(false).setAppearance(EConfigEntryAppearance.ONLY_IN_FILE)
+                        .comment("Experimental DH-owned player pose delivery. Model rendering is not enabled yet. Independent of FMUR weapon effects.").build();
+                    public static ConfigEntry<Integer> playerLodDistance = new ConfigEntry.Builder<Integer>()
+                        .setMinDefaultMax(0,512,1024).setAppearance(EConfigEntryAppearance.ONLY_IN_FILE)
+                        .comment("Requested distant player visual range. The server may reduce it; zero disables delivery.").build();
                     public static ConfigEntry<Boolean> showDistantEffectDiagnostics = new ConfigEntry.Builder<Boolean>().set(false).build();
 
 					public static ConfigEntry<Boolean> enableDistantMcheliSmoke = new ConfigEntry.Builder<Boolean>()
@@ -1960,6 +1967,10 @@ public class Config
 	
 	public static class Server
 	{
+        public static ConfigEntry<Boolean> allowPlayerLodSupport = new ConfigEntry.Builder<Boolean>()
+            .set(true).comment("Allow opt-in DH-owned cosmetic player pose delivery. No simulation or native tracking changes.").build();
+        public static ConfigEntry<Integer> playerLodDistance = new ConfigEntry.Builder<Integer>()
+            .setMinDefaultMax(0,512,1024).comment("Server-enforced maximum player visual delivery radius in blocks. Zero disables delivery.").build();
         public static ConfigEntry<Boolean> allowNtmLodSupport = new ConfigEntry.Builder<Boolean>()
             .set(true).comment("Allow subscribed clients to receive supported NTM distant visual samples. Does not alter gameplay or native tracking.").build();
         public static ConfigEntry<Boolean> allowMcheliLodSupport = new ConfigEntry.Builder<Boolean>()
