@@ -25,6 +25,12 @@ final class PlayerVisibility {
         try { Object state=data.invoke(null,player);return state!=null && team.get(state)!=spectators.get(null); }
         catch(ReflectiveOperationException | RuntimeException | LinkageError error) { fail(error);return false; }
     }
+    static boolean visibleTo(net.minecraft.entity.player.EntityPlayerMP target,net.minecraft.entity.player.EntityPlayerMP viewer) {
+        if(!target.isInvisible()) return true;
+        net.minecraft.scoreboard.Team team=target.getTeam();
+        return team instanceof net.minecraft.scoreboard.ScorePlayerTeam && team==viewer.getTeam()
+            && ((net.minecraft.scoreboard.ScorePlayerTeam)team).func_98297_h();
+    }
     private static void fail(Throwable error) {
         failed=true;
         org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").warn("DH player visual delivery disabled: FMUR visibility policy unavailable",error);

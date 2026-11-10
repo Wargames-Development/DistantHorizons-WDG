@@ -9,7 +9,7 @@ import java.util.UUID;
 
 /** Immutable, bounded authoritative poses. Actors are presentation data, never hitboxes. */
 public final class PlayerFrame {
-    public static final int VERSION=1, MAX_PLAYERS=64, MAX_RANGE=1024, MAX_BYTES=8192;
+    public static final int VERSION=2, MAX_PLAYERS=64, MAX_RANGE=1024, MAX_BYTES=8192;
     public final long subscription, sequence;
     public final UUID viewer;
     public final int dimension, range;
@@ -52,27 +52,32 @@ public final class PlayerFrame {
 
     public static final class Pose {
         public final UUID uuid;
+        public final long appearanceRevision;
         public final int entityId,flags,age,brightness;
         public final double x,y,z;
         public final float yaw,pitch,headYaw,bodyYaw,swing;
         public Pose(UUID uuid,int entityId,double x,double y,double z,float yaw,float pitch,float headYaw,float bodyYaw,
                     float swing,int flags,int age,int brightness) {
+            this(uuid,entityId,x,y,z,yaw,pitch,headYaw,bodyYaw,swing,flags,age,brightness,0);
+        }
+        public Pose(UUID uuid,int entityId,double x,double y,double z,float yaw,float pitch,float headYaw,float bodyYaw,
+                    float swing,int flags,int age,int brightness,long appearanceRevision) {
             if(uuid==null || entityId<0 || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
                     || Math.abs(x)>30000000 || Math.abs(z)>30000000 || Math.abs(y)>65536
                     || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(headYaw) || !Float.isFinite(bodyYaw)
-                    || !Float.isFinite(swing) || swing<0 || swing>1 || (flags & ~127)!=0 || age<0 || (brightness & ~0x00F000F0)!=0)
+                    || appearanceRevision<0 || !Float.isFinite(swing) || swing<0 || swing>1 || (flags & ~127)!=0 || age<0 || (brightness & ~0x00F000F0)!=0)
                 throw new IllegalArgumentException("Invalid player pose");
-            this.uuid=uuid;this.entityId=entityId;this.x=x;this.y=y;this.z=z;this.yaw=yaw;this.pitch=pitch;
+            this.appearanceRevision=appearanceRevision;this.uuid=uuid;this.entityId=entityId;this.x=x;this.y=y;this.z=z;this.yaw=yaw;this.pitch=pitch;
             this.headYaw=headYaw;this.bodyYaw=bodyYaw;this.swing=swing;this.flags=flags;this.age=age;this.brightness=brightness;
         }
         private void write(ByteBuf out) {
             uuid(out,uuid);out.writeInt(entityId).writeDouble(x).writeDouble(y).writeDouble(z);
             out.writeFloat(yaw).writeFloat(pitch).writeFloat(headYaw).writeFloat(bodyYaw).writeFloat(swing);
-            out.writeByte(flags).writeInt(age).writeInt(brightness);
+            out.writeByte(flags).writeInt(age).writeInt(brightness).writeLong(appearanceRevision);
         }
         private static Pose read(ByteBuf in) {
             return new Pose(uuid(in),in.readInt(),in.readDouble(),in.readDouble(),in.readDouble(),
-                in.readFloat(),in.readFloat(),in.readFloat(),in.readFloat(),in.readFloat(),in.readUnsignedByte(),in.readInt(),in.readInt());
+                in.readFloat(),in.readFloat(),in.readFloat(),in.readFloat(),in.readFloat(),in.readUnsignedByte(),in.readInt(),in.readInt(),in.readLong());
         }
     }
 }

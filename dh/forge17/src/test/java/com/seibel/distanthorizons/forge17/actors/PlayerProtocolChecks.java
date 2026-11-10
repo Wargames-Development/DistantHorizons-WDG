@@ -37,7 +37,7 @@ public final class PlayerProtocolChecks {
                 final int n=length;invalid(()->PlayerFrame.read(packet.slice(0,n)),"truncated player frame accepted");
             }
             out.writeByte(0);invalid(()->PlayerFrame.read(packet.duplicate()),"trailing data accepted");out.writerIndex(out.writerIndex()-1);
-            out.setByte(0,99);invalid(()->PlayerFrame.read(packet.duplicate()),"unknown protocol accepted");out.setByte(0,1);
+            out.setByte(0,99);invalid(()->PlayerFrame.read(packet.duplicate()),"unknown protocol accepted");out.setByte(0,PlayerFrame.VERSION);
         } finally { out.release(); }
         invalid(()->pose(TARGET,2,Double.NaN),"NaN pose accepted");
         invalid(()->pose(TARGET,2,Double.POSITIVE_INFINITY),"infinite pose accepted");
@@ -72,16 +72,60 @@ public final class PlayerProtocolChecks {
         check(cache.accept(connection,frame(7,2,0,0),1000000200L) && cache.players().isEmpty(),"server disable clears actors");
         cache.reset(connection,8,1,VIEWER);check(cache.players().isEmpty(),"world reset clears actors");
         check(!cache.accept(connection,frame(7,3,0,512),1000000300L),"previous world packet rejected");
-        for(int version:new int[]{0,1,2}) for(int range:new int[]{0,512,1024,1025,65535}) {
+        for(int version:new int[]{0,PlayerFrame.VERSION,PlayerFrame.VERSION+1}) for(int range:new int[]{0,512,1024,1025,65535}) {
             out=Unpooled.buffer();
             try {
                 out.writeByte(version).writeLong(1).writeShort(range);
                 PlayerRelay.Settings settings=new PlayerRelay.Settings();settings.fromBytes(out);
-                check(settings.valid==(version==1 && range<=1024),"subscription validates version and radius");
+                check(settings.valid==(version==PlayerFrame.VERSION && range<=1024),"subscription validates version and radius");
             } finally { out.release(); }
         }
+        try {
+            net.minecraft.nbt.NBTTagCompound tag=new net.minecraft.nbt.NBTTagCompound();tag.setString("name","Fixture");
+            byte[] raw=PlayerAppearance.encode(tag);
+            PlayerAppearance appearance=new PlayerAppearance(7,VIEWER,0,TARGET,2,1,raw);
+            raw[0]=0;
+            check("Fixture".equals(appearance.decode().getString("name")),"appearance bytes are immutable");
+            ByteBuf encoded=Unpooled.buffer();
+            try {
+                appearance.write(encoded);
+                check(encoded.readableBytes()==appearance.bytes(),"appearance envelope byte accounting");
+                PlayerAppearance decoded=PlayerAppearance.read(encoded.duplicate());
+                check(decoded.player.equals(TARGET) && decoded.revision==1 && "Fixture".equals(decoded.decode().getString("name")),"appearance wire round trip");
+                final ByteBuf packet=encoded;
+                for(int length=0;length<encoded.readableBytes();length++) {
+                    final int n=length;invalid(()->PlayerAppearance.read(packet.slice(0,n)),"truncated appearance accepted");
+                }
+                encoded.writeByte(0);invalid(()->PlayerAppearance.read(packet.duplicate()),"trailing appearance bytes accepted");
+            } finally { encoded.release(); }
+            net.minecraft.nbt.NBTTagCompound huge=new net.minecraft.nbt.NBTTagCompound();huge.setByteArray("huge",new byte[PlayerAppearance.MAX_BYTES]);
+            try { PlayerAppearance.encode(huge);throw new AssertionError("oversized appearance encoded"); }
+            catch(java.io.IOException expected) { checks++; }
+            PlayerFrame.Pose visible=new PlayerFrame.Pose(TARGET,2,10,100,-200,0,0,0,0,0,0,10,0,1);
+            PlayerFrame withAppearance=new PlayerFrame(7,3,VIEWER,0,512,Collections.singletonList(visible));
+            cache.reset(connection,7,0,VIEWER);
+            check(cache.accept(connection,appearance),"appearance may arrive before frame");
+            check(cache.accept(connection,withAppearance,100) && cache.appearance(visible)!=null,"matching revision authorises model appearance");
+            check(!cache.accept(new Object(),appearance),"appearance from old connection rejected");
+            check(!cache.accept(connection,new PlayerAppearance(8,VIEWER,0,TARGET,2,1,PlayerAppearance.encode(tag))),"appearance from old subscription rejected");
+            check(cache.accept(connection,new PlayerAppearance(7,VIEWER,0,TARGET,2,2,PlayerAppearance.encode(tag))) && cache.appearance(visible)==null,"new appearance cannot dress old pose");
+            check(!cache.accept(connection,appearance),"old appearance cannot overwrite newer revision");
+            cache.reset(connection,8,1,VIEWER);check(cache.appearance(visible)==null,"world reset clears appearances");
+        } catch(java.io.IOException error) { throw new AssertionError(error); }
+        List<PlayerFrame.Pose> population=new ArrayList<>();Map<UUID,Long> known=new HashMap<>(),sent=new HashMap<>();
+        for(int i=0;i<64;i++) population.add(new PlayerFrame.Pose(new UUID(100,i),i,0,0,0,0,0,0,0,0,0,0,0,1));
+        for(long tick=4;tick<=256;tick+=4) {
+            int delivered=0;
+            for(PlayerFrame.Pose candidate:AppearanceDeliveryOrder.ordered(population,known,sent)) {
+                if(known.getOrDefault(candidate.uuid,0L)==candidate.appearanceRevision && tick-sent.get(candidate.uuid)<20) continue;
+                known.put(candidate.uuid,candidate.appearanceRevision);sent.put(candidate.uuid,tick);
+                if(++delivered==4) break;
+            }
+            if(tick==64) check(known.size()==64,"initial appearances cannot starve behind periodic repairs");
+        }
+        for(PlayerFrame.Pose candidate:population) check(sent.get(candidate.uuid)>=196,"repairs rotate across all recipients");
         // Inspect bytecode without initializing Forge networking or optional mods.
-        for(String name:new String[]{"PlayerRelay","PlayerRelay$SettingsHandler","PlayerRelay$FrameHandler","PlayerVisibility","PlayerFrame","PlayerFrameCache"}) {
+        for(String name:new String[]{"PlayerRelay","PlayerRelay$SettingsHandler","PlayerRelay$FrameHandler","PlayerVisibility","PlayerFrame","PlayerFrameCache","PlayerAppearance"}) {
             String path="/com/seibel/distanthorizons/forge17/actors/"+name+".class";
             try(java.io.InputStream input=PlayerProtocolChecks.class.getResourceAsStream(path)) {
                 if(input==null) throw new AssertionError("Missing server class "+name);

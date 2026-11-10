@@ -26,6 +26,10 @@ public final class PlayerRelay {
     private final ArrayBlockingQueue<Request> pending=new ArrayBlockingQueue<Request>(64);
     private final Map<UUID,Session> sessions=new HashMap<UUID,Session>();
     private volatile BiConsumer<Object,PlayerFrame> receiver;
+    private volatile BiConsumer<Object,PlayerAppearance> appearanceReceiver;
+    private final Map<UUID,AppearanceState> appearances=new HashMap<>();
+    private final Set<UUID> failedAppearances=new HashSet<>();
+    private long appearanceRevision;
     private volatile boolean serverPresent;
     private boolean initialized;
     private long sequence;
@@ -34,9 +38,11 @@ public final class PlayerRelay {
         if(initialized) return;initialized=true;
         NETWORK.registerMessage(SettingsHandler.class,Settings.class,0,Side.SERVER);
         NETWORK.registerMessage(FrameHandler.class,FrameMessage.class,1,Side.CLIENT);
+        NETWORK.registerMessage(AppearanceHandler.class,AppearanceMessage.class,2,Side.CLIENT);
         FMLCommonHandler.instance().bus().register(this);
     }
     public void setReceiver(BiConsumer<Object,PlayerFrame> receiver) { this.receiver=receiver; }
+    public void setAppearanceReceiver(BiConsumer<Object,PlayerAppearance> receiver) { appearanceReceiver=receiver; }
     public boolean serverPresent() { return serverPresent; }
     public void subscribe(long token,int range) { if(serverPresent) NETWORK.sendToServer(new Settings(token,range)); }
     @SubscribeEvent public void registered(FMLNetworkEvent.CustomPacketRegistrationEvent<?> event) {
@@ -56,7 +62,12 @@ public final class PlayerRelay {
             EntityPlayerMP p=request.player;
             if(p.playerNetServerHandler==null || !peers.containsKey(p.playerNetServerHandler.netManager)) continue;
             if(request.settings.range==0) sessions.remove(p.getUniqueID());
-            else sessions.put(p.getUniqueID(),new Session(p,request.settings,now));
+            else {
+                Session current=sessions.get(p.getUniqueID());
+                if(current!=null && current.player==p && current.settings.token==request.settings.token && current.settings.range==request.settings.range)
+                    current.renewed=now;
+                else sessions.put(p.getUniqueID(),new Session(p,request.settings,now));
+            }
         }
         for(Iterator<Session> it=sessions.values().iterator();it.hasNext();) {
             Session s=it.next();
@@ -66,9 +77,23 @@ public final class PlayerRelay {
         if(sessions.isEmpty() || sequence%4!=0) return;
         // Snapshot the existing player list once, not a loaded-entity scan per viewer.
         Map<net.minecraft.world.World,Map<Long,List<EntityPlayerMP>>> grid=new IdentityHashMap<>();
+        Set<UUID> live=new HashSet<>();
         if(Config.Server.allowPlayerLodSupport.get() && Config.Server.playerLodDistance.get()>0) for(Object value:server.getConfigurationManager().playerEntityList) {
             EntityPlayerMP target=(EntityPlayerMP)value;
-            if(!validPosition(target) || !target.isEntityAlive() || target.isInvisible() || !PlayerVisibility.allowed(target)) continue;
+            if(!validPosition(target) || !target.isEntityAlive() || !PlayerVisibility.allowed(target)) continue;
+            live.add(target.getUniqueID());
+            try {
+                byte[] data=PlayerAppearance.capture(target);
+                AppearanceState previous=appearances.get(target.getUniqueID());
+                if(previous==null || previous.player!=target || !Arrays.equals(previous.data,data))
+                    appearances.put(target.getUniqueID(),new AppearanceState(target,data,++appearanceRevision));
+                failedAppearances.remove(target.getUniqueID());
+            } catch(java.io.IOException | RuntimeException invalid) {
+                appearances.remove(target.getUniqueID());
+                if(failedAppearances.add(target.getUniqueID())) org.apache.logging.log4j.LogManager.getLogger("DistantHorizons")
+                    .warn("DH player appearance withheld: invalid or oversized equipment/profile for "+target.getUniqueID(),invalid);
+                continue;
+            }
             Map<Long,List<EntityPlayerMP>> cells=grid.get(target.worldObj);
             if(cells==null) { cells=new HashMap<>();grid.put(target.worldObj,cells); }
             long key=cellKey(cell(target.posX),cell(target.posZ));
@@ -76,6 +101,7 @@ public final class PlayerRelay {
             if(members==null) { members=new ArrayList<>();cells.put(key,members); }
             members.add(target);
         }
+        appearances.keySet().retainAll(live);failedAppearances.retainAll(live);
         for(Session session:sessions.values()) {
             EntityPlayerMP viewer=session.player;
             int range=PlayerFrame.effectiveRange(session.settings.range,Config.Server.playerLodDistance.get(),Config.Server.allowPlayerLodSupport.get());
@@ -89,7 +115,7 @@ public final class PlayerRelay {
                     List<EntityPlayerMP> members=cells.get(cellKey(x,z));
                     if(members==null) continue;
                     for(EntityPlayerMP target:members) {
-                        if(target==viewer || target.getDistanceSqToEntity(viewer)>(double)range*range) continue;
+                        if(target==viewer || !PlayerVisibility.visibleTo(target,viewer) || target.getDistanceSqToEntity(viewer)>(double)range*range) continue;
                         if(selected.size()<PlayerFrame.MAX_PLAYERS) selected.add(target);
                         else if(nearest.compare(target,selected.peek())<0) { selected.poll();selected.add(target); }
                     }
@@ -98,22 +124,46 @@ public final class PlayerRelay {
             List<EntityPlayerMP> candidates=new ArrayList<>(selected);candidates.sort(nearest);
             List<PlayerFrame.Pose> poses=new ArrayList<PlayerFrame.Pose>();
             for(EntityPlayerMP p:candidates) {
-                int flags=(p.isSneaking()?1:0)|(p.isSprinting()?2:0)|(p.isBurning()?8:0)|(p.isRiding()?16:0)
+                AppearanceState appearance=appearances.get(p.getUniqueID());
+                if(appearance==null) continue;
+                int flags=(p.isSneaking()?1:0)|(p.isSprinting()?2:0)|(p.isInvisible()?4:0)|(p.isBurning()?8:0)|(p.isRiding()?16:0)
                     |(p.isPlayerSleeping()?32:0)|(p.isUsingItem()?64:0);
                 try {
-                    // Light access is intentionally absent: it may load a chunk for an out-of-world entity.
                     poses.add(new PlayerFrame.Pose(p.getUniqueID(),p.getEntityId(),p.posX,p.posY,p.posZ,p.rotationYaw,
-                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,0));
+                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision));
                 } catch(IllegalArgumentException invalid) { continue; }
                 if(poses.size()==PlayerFrame.MAX_PLAYERS) break;
             }
             try {
                 NETWORK.sendTo(new FrameMessage(new PlayerFrame(session.settings.token,sequence,viewer.getUniqueID(),viewer.dimension,range,poses)),viewer);
+                Set<UUID> retained=new HashSet<>();int bytes=32768,count=0;
+                for(PlayerFrame.Pose pose:poses) retained.add(pose.uuid);
+                List<PlayerFrame.Pose> order=AppearanceDeliveryOrder.ordered(poses,session.known,session.sent);
+                for(PlayerFrame.Pose pose:order) {
+                    AppearanceState appearance=appearances.get(pose.uuid);
+                    Long known=session.known.get(pose.uuid),sent=session.sent.get(pose.uuid);
+                    if(known!=null && known==appearance.revision && sent!=null && sequence-sent<20) continue;
+                    PlayerAppearance message=new PlayerAppearance(session.settings.token,viewer.getUniqueID(),viewer.dimension,
+                        pose.uuid,pose.entityId,appearance.revision,appearance.data);
+                    if(count>=4 || message.bytes()>bytes) continue;
+                    NETWORK.sendTo(new AppearanceMessage(message),viewer);bytes-=message.bytes();count++;
+                    session.known.put(pose.uuid,appearance.revision);session.sent.put(pose.uuid,sequence);
+                }
+                session.known.keySet().retainAll(retained);session.sent.keySet().retainAll(retained);
             } catch(RuntimeException closed) {
                 peers.remove(viewer.playerNetServerHandler.netManager);
                 org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").warn("DH player pose delivery stopped for closed peer",closed);
             }
         }
+    }
+    private static int light(EntityPlayerMP player) {
+        int x=(int)Math.floor(player.posX),z=(int)Math.floor(player.posZ),y=Math.max(0,Math.min(255,(int)Math.floor(player.posY+1)));
+        // On the owning world thread, chunkExists precedes access; never request an absent chunk.
+        if(!player.worldObj.getChunkProvider().chunkExists(x>>4,z>>4)) return 0;
+        net.minecraft.world.chunk.Chunk chunk=player.worldObj.getChunkFromChunkCoords(x>>4,z>>4);
+        int sky=chunk.getSavedLightValue(net.minecraft.world.EnumSkyBlock.Sky,x & 15,y,z & 15);
+        int block=chunk.getSavedLightValue(net.minecraft.world.EnumSkyBlock.Block,x & 15,y,z & 15);
+        return (sky<<20)|(block<<4);
     }
     private static boolean validPosition(EntityPlayerMP player) {
         return Double.isFinite(player.posX) && Double.isFinite(player.posY) && Double.isFinite(player.posZ)
@@ -121,10 +171,15 @@ public final class PlayerRelay {
     }
     private static int cell(double coordinate) { return (int)Math.floor(coordinate/256.0); }
     private static long cellKey(int x,int z) { return ((long)x<<32) ^ (z & 0xffffffffL); }
-    public void clearServer() { sessions.clear();pending.clear();peers.clear();sequence=0; }
+    public void clearServer() { sessions.clear();pending.clear();peers.clear();appearances.clear();failedAppearances.clear();sequence=appearanceRevision=0; }
     private static final class Session {
-        final EntityPlayerMP player;final Settings settings;final long renewed;
+        final EntityPlayerMP player;final Settings settings;long renewed;
+        final Map<UUID,Long> known=new HashMap<>(),sent=new HashMap<>();
         Session(EntityPlayerMP player,Settings settings,long renewed) { this.player=player;this.settings=settings;this.renewed=renewed; }
+    }
+    private static final class AppearanceState {
+        final EntityPlayerMP player;final byte[] data;final long revision;
+        AppearanceState(EntityPlayerMP player,byte[] data,long revision) { this.player=player;this.data=data;this.revision=revision; }
     }
     private static final class Request {
         final EntityPlayerMP player;final Settings settings;
@@ -158,6 +213,20 @@ public final class PlayerRelay {
         FrameMessage(PlayerFrame frame) { this.frame=frame; }
         public void toBytes(ByteBuf out) { frame.write(out); }
         public void fromBytes(ByteBuf in) { try { frame=PlayerFrame.read(in); } catch(RuntimeException invalid) { frame=null; } }
+    }
+    public static final class AppearanceMessage implements IMessage {
+        PlayerAppearance appearance;
+        public AppearanceMessage() { }
+        AppearanceMessage(PlayerAppearance appearance) { this.appearance=appearance; }
+        public void toBytes(ByteBuf out) { appearance.write(out); }
+        public void fromBytes(ByteBuf in) { try { appearance=PlayerAppearance.read(in); } catch(RuntimeException invalid) { appearance=null; } }
+    }
+    public static final class AppearanceHandler implements IMessageHandler<AppearanceMessage,IMessage> {
+        public IMessage onMessage(AppearanceMessage message,MessageContext context) {
+            BiConsumer<Object,PlayerAppearance> receiver=INSTANCE.appearanceReceiver;
+            if(message.appearance!=null && receiver!=null) receiver.accept(context.netHandler,message.appearance);
+            return null;
+        }
     }
     public static final class FrameHandler implements IMessageHandler<FrameMessage,IMessage> {
         public IMessage onMessage(FrameMessage message,MessageContext context) {
