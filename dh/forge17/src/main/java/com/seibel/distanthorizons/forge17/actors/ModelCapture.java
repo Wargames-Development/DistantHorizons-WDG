@@ -1,0 +1,160 @@
+package com.seibel.distanthorizons.forge17.actors;
+
+import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
+import com.seibel.distanthorizons.common.render.openGl.glObject.GLState;
+import com.seibel.distanthorizons.common.render.openGl.glObject.shader.GlShaderProgram;
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
+import java.nio.FloatBuffer;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.*;
+
+/** Render-thread-owned full-resolution model/self-depth capture, shared between actors.
+ * Callers must establish terrain coverage and a valid view before submitting a model.
+ */
+@SideOnly(Side.CLIENT)
+public final class ModelCapture implements AutoCloseable {
+    private static final long MAX_PIXELS=8388608L;
+    private int framebuffer,colour,depth,width,height,vao,vbo;
+    private int savedRead,savedDraw,savedMatrixMode;
+    private int left,bottom,right,top;
+    private GLState captureState;
+    private boolean ready;
+    private GlShaderProgram shader;
+    private int inverseUniform,dhUniform,nativeUniform,reverseUniform,useNativeUniform,writeDepthUniform,reverseModelUniform,offsetUniform;
+    private final int[] samplerUniforms=new int[4];
+    private final FloatBuffer matrix=BufferUtils.createFloatBuffer(16);
+    private final float[] rows=new float[16];
+
+    /** The same unscaled XY projection is retained; only model near/far depth changes. */
+    public boolean begin(int width,int height,int left,int bottom,int right,int top,DhApiMat4f projection) {
+        if(captureState!=null) throw new IllegalStateException("Nested model capture");
+        ready=false;
+        if(width<=0 || height<=0 || (long)width*height>MAX_PIXELS || left<0 || bottom<0 || right>width || top>height
+                || right<=left || top<=bottom || !GLContext.getCapabilities().OpenGL30) return false;
+        this.left=left;this.bottom=bottom;this.right=right;this.top=top;
+        savedRead=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        savedDraw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        savedMatrixMode=GL11.glGetInteger(GL11.GL_MATRIX_MODE);
+        captureState=new GLState();
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glPushMatrix();
+        try {
+            ensure(width,height);
+            GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);
+            GL11.glViewport(0,0,width,height);GL11.glEnable(GL11.GL_SCISSOR_TEST);
+            GL11.glScissor(left,bottom,right-left,top-bottom);
+            GL11.glColorMask(true,true,true,true);GL11.glDepthMask(true);
+            GL11.glClearColor(0,0,0,0);GL11.glClearDepth(1);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT|GL11.GL_DEPTH_BUFFER_BIT);
+            GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glDepthFunc(GL11.GL_LEQUAL);GL11.glDepthRange(0,1);
+            columnMajor(projection);GL11.glLoadMatrix(matrix);GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            return true;
+        } catch(RuntimeException | LinkageError error) { end(false);throw error; }
+    }
+    /** Always call in finally, including when a companion renderer throws. */
+    public void end(boolean completed) {
+        if(captureState==null) return;
+        try {
+            GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glPopMatrix();
+            GL11.glPopAttrib();captureState.close();
+        } finally {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,savedRead);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,savedDraw);
+            GL11.glMatrixMode(savedMatrixMode);captureState=null;ready=completed;
+        }
+    }
+    /** Composite into a caller-owned DH-depth actor target or the final native scene.
+     * Terrain/native depth arguments must be immutable copies, never draw attachments.
+     */
+    public void composite(DhApiMat4f inverseCapture,DhApiMat4f dhMvp,DhApiMat4f nativeMvp,
+                          float offsetX,float offsetY,float offsetZ,int terrainDepth,int nativeDepth,
+                          boolean reverseDepth,boolean writeDhDepth) {
+        if(!ready || captureState!=null) throw new IllegalStateException("No completed model capture");
+        int draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        if(draw==framebuffer || terrainDepth<=0) throw new IllegalArgumentException("Invalid model composite target");
+        if(draw!=0 && GL30.glGetFramebufferAttachmentParameteri(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,
+                GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE)==GL11.GL_TEXTURE) {
+            int attachment=GL30.glGetFramebufferAttachmentParameteri(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,
+                GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+            if(attachment==terrainDepth || attachment==nativeDepth) throw new IllegalArgumentException("Depth feedback loop");
+        }
+        int read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        try(GLState state=new GLState()) {
+            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            try {
+                ensureShader();shader.bind();
+                shader.setUniform(inverseUniform,inverseCapture);shader.setUniform(dhUniform,dhMvp);shader.setUniform(nativeUniform,nativeMvp);
+                shader.setUniform(reverseUniform,reverseDepth);
+                shader.setUniform(useNativeUniform,nativeDepth>0);
+                shader.setUniform(writeDepthUniform,writeDhDepth);
+                shader.setUniform(reverseModelUniform,false);
+                GL20.glUniform3f(offsetUniform,offsetX,offsetY,offsetZ);
+                bindTexture(0,colour);bindTexture(1,depth);bindTexture(2,terrainDepth);bindTexture(3,nativeDepth);
+                GL11.glViewport(0,0,width,height);GL11.glEnable(GL11.GL_SCISSOR_TEST);GL11.glScissor(left,bottom,right-left,top-bottom);
+                GL11.glDisable(GL11.GL_LIGHTING);GL11.glDisable(GL11.GL_FOG);GL11.glDisable(GL11.GL_ALPHA_TEST);GL11.glDisable(GL11.GL_CULL_FACE);
+                GL11.glEnable(GL11.GL_BLEND);GL11.glBlendFunc(GL11.GL_ONE,GL11.GL_ONE_MINUS_SRC_ALPHA);
+                GL11.glColorMask(true,true,true,true);GL11.glDepthMask(true);GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glDepthRange(0,1);
+                GL11.glDepthFunc(writeDhDepth && reverseDepth?GL11.GL_GEQUAL:GL11.GL_LEQUAL);
+                GL30.glBindVertexArray(vao);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,6);
+            } finally { GL11.glPopAttrib(); }
+        } finally {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,draw);
+        }
+    }
+    private void bindTexture(int unit,int texture) {
+        GL13.glActiveTexture(GL13.GL_TEXTURE0+unit);GL11.glBindTexture(GL11.GL_TEXTURE_2D,texture);
+        shader.setUniform(samplerUniforms[unit],unit);
+    }
+    private void columnMajor(DhApiMat4f value) {
+        value.putValuesInArray(rows);matrix.clear();
+        for(int column=0;column<4;column++) for(int row=0;row<4;row++) matrix.put(rows[row*4+column]);
+        matrix.flip();
+    }
+    private void ensure(int width,int height) {
+        if(this.width==width && this.height==height && framebuffer!=0) return;
+        if(width>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE) || height>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE))
+            throw new IllegalArgumentException("Model capture exceeds texture limit");
+        releaseTarget();
+        framebuffer=GL30.glGenFramebuffers();colour=texture(width,height,GL11.GL_RGBA8,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE);
+        depth=texture(width,height,GL14.GL_DEPTH_COMPONENT24,GL11.GL_DEPTH_COMPONENT,GL11.GL_UNSIGNED_INT);
+        GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,colour,0);
+        GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,depth,0);
+        GL11.glDrawBuffer(GL30.GL_COLOR_ATTACHMENT0);
+        if(GL30.glCheckFramebufferStatus(GL30.GL_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE) {
+            releaseTarget();throw new IllegalStateException("Incomplete actor capture framebuffer");
+        }
+        this.width=width;this.height=height;
+    }
+    private static int texture(int width,int height,int internal,int format,int type) {
+        int id=GL11.glGenTextures();GL13.glActiveTexture(GL13.GL_TEXTURE0);GL11.glBindTexture(GL11.GL_TEXTURE_2D,id);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_WRAP_S,GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_WRAP_T,GL12.GL_CLAMP_TO_EDGE);
+        GL11.glTexImage2D(GL11.GL_TEXTURE_2D,0,internal,width,height,0,format,type,(java.nio.ByteBuffer)null);return id;
+    }
+    private void ensureShader() {
+        if(shader!=null) return;
+        shader=new GlShaderProgram("assets/distanthorizons/shaders/actor_model.vert","assets/distanthorizons/shaders/actor_model.frag",
+            new String[]{"aPosition"},new String[]{"fragColor"});
+        inverseUniform=shader.getUniformLocation("uInverseModelMvp");dhUniform=shader.getUniformLocation("uDhMvp");
+        nativeUniform=shader.getUniformLocation("uNativeMvp");reverseUniform=shader.getUniformLocation("uDhReverseDepth");
+        useNativeUniform=shader.getUniformLocation("uUseNativeDepth");writeDepthUniform=shader.getUniformLocation("uWriteDhDepth");
+        reverseModelUniform=shader.getUniformLocation("uModelReverseDepth");offsetUniform=shader.getUniformLocation("uDhOriginOffset");
+        String[] names={"uModelColour","uModelDepth","uDhDepth","uNativeDepth"};
+        for(int unit=0;unit<4;unit++) samplerUniforms[unit]=shader.getUniformLocation(names[unit]);
+        vao=GL30.glGenVertexArrays();vbo=GL15.glGenBuffers();GL30.glBindVertexArray(vao);GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER,vbo);
+        FloatBuffer vertices=BufferUtils.createFloatBuffer(12);vertices.put(new float[]{-1,-1,1,-1,1,1,-1,-1,1,1,-1,1}).flip();
+        GL15.glBufferData(GL15.GL_ARRAY_BUFFER,vertices,GL15.GL_STATIC_DRAW);
+        GL20.glVertexAttribPointer(0,2,GL11.GL_FLOAT,false,0,0);GL20.glEnableVertexAttribArray(0);
+    }
+    private void releaseTarget() {
+        if(framebuffer!=0) GL30.glDeleteFramebuffers(framebuffer);if(colour!=0) GL11.glDeleteTextures(colour);if(depth!=0) GL11.glDeleteTextures(depth);
+        framebuffer=colour=depth=width=height=0;ready=false;
+    }
+    public void close() {
+        if(captureState!=null) end(false);releaseTarget();
+        if(shader!=null) { shader.free();shader=null; }if(vao!=0) GL30.glDeleteVertexArrays(vao);if(vbo!=0) GL15.glDeleteBuffers(vbo);vao=vbo=0;
+    }
+}

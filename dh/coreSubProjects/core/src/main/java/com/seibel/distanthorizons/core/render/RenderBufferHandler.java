@@ -293,12 +293,7 @@ public class RenderBufferHandler implements AutoCloseable
 	//================//
 	//region
 	
-    /** Checks source completeness in the active terrain view. Render thread only.
-     * Missing, dirty, replaced or disposed buffers fail closed; known terrain is
-     * still subject to per-fragment depth testing by the caller.
-     */
-    public boolean isTerrainKnown(RenderParams view, int blockX, int blockZ) {
-        if (view == null || coverageView != view) return false;
+    private void ensureCoverageIndex() {
         if (!coverageIndexReady) {
             // No hash-index construction cost in frames without actor queries.
             for (int i=0;i<loadedNearToFarBuffers.size();i++) {
@@ -310,6 +305,36 @@ public class RenderBufferHandler implements AutoCloseable
                     coverageSections.put(section.pos,section);
             coverageIndexReady=true;
         }
+    }
+
+    /** API event identity must match the exact view whose terrain buffers were selected. */
+    public boolean isTerrainChunkKnown(com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiRenderParam view,
+                                       int chunkX,int chunkZ) {
+        if(coverageView==null || coverageView.apiCopy!=view || chunkX<-1875000 || chunkX>=1875000
+                || chunkZ<-1875000 || chunkZ>=1875000) return false;
+        ensureCoverageIndex();
+        int blockX=chunkX<<4,blockZ=chunkZ<<4;
+        for(byte detail=DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL;detail<=30;detail++) {
+            long pos=DhSectionPos.encode(detail,blockX>>detail,blockZ>>detail);
+            LodRenderSection section=coverageSections.get(pos);
+            if(section==null) continue;
+            LodBufferContainer buffer=section.renderBufferContainer;
+            if(buffer==null || !buffer.buffersUploaded || section.renderDataDirty || !section.getRenderingEnabled()
+                    || coverageBuffers.get(pos)!=buffer) return false;
+            int dataDetail=detail-DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL;
+            int x=blockX-DhSectionPos.getMinCornerBlockX(pos),z=blockZ-DhSectionPos.getMinCornerBlockZ(pos);
+            return buffer.terrainCoverage.isKnown(x>>dataDetail,z>>dataDetail,(x+15)>>dataDetail,(z+15)>>dataDetail);
+        }
+        return false;
+    }
+
+    /** Checks source completeness in the active terrain view. Render thread only.
+     * Missing, dirty, replaced or disposed buffers fail closed; known terrain is
+     * still subject to per-fragment depth testing by the caller.
+     */
+    public boolean isTerrainKnown(RenderParams view, int blockX, int blockZ) {
+        if (view == null || coverageView != view) return false;
+        ensureCoverageIndex();
         for (byte detail=DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL; detail<=30; detail++) {
             long pos=DhSectionPos.encode(detail,blockX >> detail,blockZ >> detail);
             LodRenderSection section=coverageSections.get(pos);
