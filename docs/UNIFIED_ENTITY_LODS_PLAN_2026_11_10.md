@@ -122,3 +122,11 @@ Only this plan is added. No Java, shader, packet, config or companion source cha
 - Dedicated-server review: policy helper uses primitives and existing common TrailSample constants; server config and relay introduce no client imports or optional-mod class links. No protocol IDs or packet layouts changed.
 - Runtime still required: toggle each family on a dedicated server with active subscribers; verify delivery stops independently and re-enables on fresh emissions, native effects remain normal, pending blasts are denied, and reconnect works.
 - Remaining milestones: authoritative actor negotiation/delivery, explicit coverage provenance, players/equipment/vehicles, view adapters and runtime performance/defect acceptance.
+
+### Subscription admission checkpoint
+
+The relay now aggregates requested family bits from live sessions once per server tick. Source capture requires both a subscriber for that family and server permission. With no permitted recipients, per-world relay work is skipped and visual reservoirs are cleared, while subscriptions remain available for policy re-enabling. Streams for no-longer-requested/allowed families are evicted instead of consuming the bounded reservoir until timeout. This changes neither native emission nor gameplay/radar delivery. Compilation and the 17,291-check regression suite passed again (12 seconds); dedicated-server runtime toggle/expiry scenarios remain unexecuted.
+
+### Coverage investigation
+
+`FullDataToRenderDataTransformer.updateOrReplaceRenderDataViewColumnWithFullDataColumn` returns immediately for null/empty full-data columns. The resulting render source/buffer may therefore contain a mix of known and missing columns. `LodRenderSection.canRender()` only tests a non-null buffer; `gpuUploadComplete()` also tests dirty state. Neither proves complete column coverage. `RenderBufferHandler.buildRenderList` builds the enabled, view-culled section list; actor coverage must use the same view generation without mistaking that list for full column provenance. Next implementation work must propagate immutable known-column coverage with the uploaded buffer generation and explicitly validate coarse-column completeness before authorising an actor corridor. No unsafe section-presence fallback was added.

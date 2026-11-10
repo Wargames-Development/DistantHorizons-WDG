@@ -39,7 +39,8 @@ public final class TrailRelay
     private final Map<UUID, Session> sessions=new HashMap<UUID, Session>();
     private final Map<World, LinkedHashMap<String, Stream>> worlds=new HashMap<World, LinkedHashMap<String, Stream>>();
     private final Map<World,List<TrailSample>> blasts=new HashMap<World,List<TrailSample>>();
-    private volatile boolean subscribed, serverPresent;
+    private volatile boolean serverPresent;
+    private volatile int subscribedFlags;
     private volatile Consumer<Batch> clientReceiver;
     private boolean initialized;
     private final boolean[] reportedFamily=new boolean[4];
@@ -58,7 +59,7 @@ public final class TrailRelay
         return EffectSupportPolicy.allowedFlags(Config.Server.allowNtmLodSupport.get(),
             Config.Server.allowMcheliLodSupport.get(), Config.Server.allowFmurLodSupport.get());
     }
-    public boolean hasSubscribers() { return subscribed && Config.Server.enableDistantTrailRelay.get(); }
+    public boolean hasSubscribers() { return (subscribedFlags & allowedFlags())!=0 && Config.Server.enableDistantTrailRelay.get(); }
     public boolean serverPresent() { return serverPresent; }
     public void setClientReceiver(Consumer<Batch> receiver) { clientReceiver=receiver; }
     public void subscribe(int flags, int distance)
@@ -85,7 +86,7 @@ public final class TrailRelay
     public void offer(Entity entity, TrailSample sample)
     {
         if (!hasSubscribers() || entity == null || entity.worldObj == null || entity.worldObj.isRemote || entity.isDead) return;
-        if (!EffectSupportPolicy.permits(allowedFlags(),sample.family)) return;
+        if (!EffectSupportPolicy.permits(subscribedFlags & allowedFlags(),sample.family)) return;
         sample.uuid=entity.getUniqueID(); sample.entityId=entity.getEntityId(); sample.tick=entity.worldObj.getTotalWorldTime();
         sample.x=entity.posX+sample.ox; sample.y=entity.posY+sample.oy; sample.z=entity.posZ+sample.oz;
         sample.x0=entity.prevPosX+sample.ox; sample.y0=entity.prevPosY+sample.oy; sample.z0=entity.prevPosZ+sample.oz;
@@ -127,7 +128,7 @@ public final class TrailRelay
     }
 
     public void explosion(World world,double x,double y,double z,int clouds,float scale,float speed,float wave,float nativeRange) {
-        if(world.isRemote || !hasSubscribers() || !EffectSupportPolicy.permits(allowedFlags(),TrailSample.HBM)) return;
+        if(world.isRemote || !hasSubscribers() || !EffectSupportPolicy.permits(subscribedFlags & allowedFlags(),TrailSample.HBM)) return;
         TrailSample sample=new TrailSample();sample.family=TrailSample.HBM;sample.style="dhNativeBlast";
         sample.uuid=UUID.randomUUID();sample.entityId=-1;sample.tick=world.getTotalWorldTime();sample.count=Math.max(1,Math.min(32,clouds));
         sample.x0=sample.x=x;sample.y0=sample.y=y;sample.z0=sample.z=z;sample.scale=scale;
@@ -163,7 +164,11 @@ public final class TrailRelay
             if (s.player.playerNetServerHandler == null || !peers.containsKey(s.player.playerNetServerHandler.netManager)
                 || s.player.isDead || System.nanoTime()-s.changedAt > 30000000000L) i.remove();
         }
-        subscribed=!sessions.isEmpty();
+        // Retain subscriptions while server policy is disabled, but avoid capture
+        // and per-world relay work when no permitted family has a recipient.
+        int requested=0;
+        for (Session session:sessions.values()) requested|=session.settings.flags;
+        subscribedFlags=requested;
         if (!hasSubscribers()) { worlds.clear(); blasts.clear(); }
     }
 
@@ -187,7 +192,8 @@ public final class TrailRelay
         for (Iterator<Stream> i=streams.values().iterator();i.hasNext();)
         {
             Stream s=i.next();
-            if (s.entity.isDead || s.entity.worldObj != event.world || tick-s.latest.tick > 5)
+            if (!EffectSupportPolicy.permits(subscribedFlags & allowed,s.latest.family)
+                || s.entity.isDead || s.entity.worldObj != event.world || tick-s.latest.tick > 5)
             {
                 traceHbm(s,s.entity.isDead?"entity_dead":s.entity.worldObj!=event.world?"world_changed":"source_updates_stopped",tick);
                 i.remove();
@@ -249,7 +255,7 @@ public final class TrailRelay
     public void unload(WorldEvent.Unload event) { if (!event.world.isRemote) { worlds.remove(event.world);blasts.remove(event.world); } }
     public void clearServer()
     {
-        sessions.clear(); worlds.clear(); blasts.clear(); peers.clear(); requests.clear(); subscribed=false;
+        sessions.clear(); worlds.clear(); blasts.clear(); peers.clear(); requests.clear(); subscribedFlags=0;
         java.util.Arrays.fill(reportedFamily,false);
     }
 
