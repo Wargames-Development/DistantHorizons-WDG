@@ -14,7 +14,7 @@ public enum Mixins implements IMixins
 
     CORE(
 		new MixinBuilder().setPhase(Phase.EARLY)
-        .addCommonMixins("MixinBiomeGenBase")),
+        .addCommonMixins("MixinBiomeGenBase", "MixinPlayerUseState")),
 	
     THREADED_FILE_IO_NO_SLEEP(
 		new MixinBuilder().setPhase(Phase.EARLY)

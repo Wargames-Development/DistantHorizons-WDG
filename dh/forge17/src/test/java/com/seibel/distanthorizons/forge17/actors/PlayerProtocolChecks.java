@@ -133,6 +133,20 @@ public final class PlayerProtocolChecks {
             check(!cache.accept(connection,appearance),"old appearance cannot overwrite newer revision");
             cache.reset(connection,8,1,VIEWER);check(cache.appearance(visible)==null,"world reset clears appearances");
         } catch(java.io.IOException error) { throw new AssertionError(error); }
+        // The real selector needs only a loader URL inventory and Forge side. Preserve
+        // those globals so this fixture does not bootstrap a Minecraft game or transform it.
+        net.minecraft.launchwrapper.LaunchClassLoader previousLoader=net.minecraft.launchwrapper.Launch.classLoader;
+        try(net.minecraft.launchwrapper.LaunchClassLoader fixtureLoader=new net.minecraft.launchwrapper.LaunchClassLoader(new java.net.URL[0])) {
+            java.lang.reflect.Field side=cpw.mods.fml.relauncher.FMLLaunchHandler.class.getDeclaredField("side");side.setAccessible(true);
+            Object previousSide=side.get(null);net.minecraft.launchwrapper.Launch.classLoader=fixtureLoader;
+            try {
+                for(cpw.mods.fml.relauncher.Side value:cpw.mods.fml.relauncher.Side.values()) {
+                    side.set(null,value);
+                    java.util.List<String> early=new com.seibel.distanthorizons.DistantHorizonsTweaker().getMixins(Collections.emptySet());
+                    check(Collections.frequency(early,"MixinPlayerUseState")==1,"actual early loader selects the common player accessor exactly once on "+value);
+                }
+            } finally { side.set(null,previousSide);net.minecraft.launchwrapper.Launch.classLoader=previousLoader; }
+        } catch(java.io.IOException | ReflectiveOperationException failure) { throw new AssertionError("Early mixin selector fixture failed",failure); }
         List<PlayerFrame.Pose> population=new ArrayList<>();Map<UUID,Long> known=new HashMap<>(),sent=new HashMap<>();
         for(int i=0;i<64;i++) population.add(new PlayerFrame.Pose(new UUID(100,i),i,0,0,0,0,0,0,0,0,0,0,0,1));
         for(long tick=4;tick<=256;tick+=4) {
