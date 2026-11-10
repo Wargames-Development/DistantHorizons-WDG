@@ -101,6 +101,40 @@ public class NtmStructureLodTest {
             Config.Client.Advanced.Graphics.Culling.caveCullingHeight.setWithoutFiringEvents(oldHeight);
         }
     }
+    @Test public void terrainCoverageRequiresCompleteGenerationAndPublishedColumns() throws Exception {
+        IDimensionTypeWrapper dimension = proxy(IDimensionTypeWrapper.class, (p,m,a) -> defaultValue(m.getReturnType()));
+        IClientLevelWrapper level = proxy(IClientLevelWrapper.class, (p,m,a) -> {
+            if (m.getName().equals("getDimensionType")) return dimension;
+            if (m.getName().equals("getBlockColor")) return 0xFF808080;
+            return defaultValue(m.getReturnType());
+        });
+        IBiomeWrapper biome = proxy(IBiomeWrapper.class, (p,m,a) -> {
+            if (m.getName().equals("hashCode")) return 0;
+            if (m.getName().equals("equals")) return p == a[0];
+            return defaultValue(m.getReturnType());
+        });
+        boolean textured=Config.Client.Advanced.Graphics.Texture.enableTexturedLods.get();
+        Config.Client.Advanced.Graphics.Texture.enableTexturedLods.setWithoutFiringEvents(false);
+        try (FullDataSourceV2 source=FullDataSourceV2.createEmpty(DhSectionPos.encode((byte)6,-1,-1))) {
+            source.isEmpty=false;
+            int id=source.mapping.addIfNotPresentAndGetId(biome,STONE);
+            for (int stage=-1;stage<=9;stage++) {
+                int x=stage+1;
+                source.dataPoints[FullDataSourceV2.relativePosToIndex(x,63)]=new LongArrayList(new long[]{FullDataPointUtil.encode(id,1,0,(byte)0,(byte)15)});
+                source.columnGenerationSteps.set(FullDataSourceV2.relativePosToIndex(x,63),(byte)stage);
+            }
+            // Even LIGHT without an actual published column is unknown.
+            source.columnGenerationSteps.set(FullDataSourceV2.relativePosToIndex(63,63),(byte)9);
+            try (com.seibel.distanthorizons.core.dataObjects.render.ColumnRenderSource render=
+                    FullDataToRenderDataTransformer.transformFullDataToRenderSource(source,level)) {
+                for(int stage=-1;stage<=9;stage++) assertEquals(stage==9,render.terrainCoverage.isKnown(stage+1,63));
+                assertFalse(render.terrainCoverage.isKnown(63,63));
+                assertFalse(render.terrainCoverage.isKnown(0,0,63,63));
+            }
+        } finally {
+            Config.Client.Advanced.Graphics.Texture.enableTexturedLods.setWithoutFiringEvents(textured);
+        }
+    }
     @Test public void oilRigDeckAndFluidTankKeepTheirUndersideAndOcean() throws Exception {
         for (String roof : new String[]{"hbm:tile.deco_steel", "hbm:tile.machine_fluidtank:13"}) {
             long[] result = convert(roof,true);

@@ -448,6 +448,7 @@ public final class EffectCoreChecks
         }
         for (int invalid:new int[]{Integer.MIN_VALUE,-1,0,4,32,Integer.MAX_VALUE})
             check(!EffectSupportPolicy.permits(-1,invalid),"unknown visual families fail closed");
+        checks+=TerrainCoverageChecks.run();
         checkNativeEmitter();
         checkPrivateCameraScope();
         checks+=MissileCameraOriginChecks.run();

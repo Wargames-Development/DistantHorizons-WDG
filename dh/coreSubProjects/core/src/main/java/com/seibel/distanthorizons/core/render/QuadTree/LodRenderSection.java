@@ -19,6 +19,7 @@
 
 package com.seibel.distanthorizons.core.render.QuadTree;
 
+import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
 import com.seibel.distanthorizons.api.enums.rendering.EDhApiTransparency;
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
@@ -192,7 +193,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 						ArrayList<ByteBuffer> transparentBuffers = lodQuadBuilder.makeTransparentVertexBuffers(transparentCheckout);
 						
 						// uploading will primarily happen on the render thread
-						this.uploadToGpuAsync(future, opaqueBuffers, transparentBuffers)
+						this.uploadToGpuAsync(future, opaqueBuffers, transparentBuffers, lodQuadBuilder.terrainCoverage)
 							// Join is used to prevent queuing up potentially thousands of
 							// upload tasks (each requiring their own staging buffer)
 							// causing an explosion of pooled memory use.
@@ -250,6 +251,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 			
 			boolean enableTransparency = Config.Client.Advanced.Graphics.Quality.transparency.get() == EDhApiTransparency.COMPLETE;
 			LodQuadBuilder lodQuadBuilder = LodQuadBuilder.getBuilder(enableTransparency, this.clientLevelWrapper);
+            lodQuadBuilder.terrainCoverage = thisRenderSource.terrainCoverage;
 			
 			
 			// get the adjacent positions
@@ -335,12 +337,13 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	private synchronized CompletableFuture<LodBufferContainer> uploadToGpuAsync(
 		CompletableFuture<Void> parentFuture,
 		ArrayList<ByteBuffer> opaqueBuffers,
-		ArrayList<ByteBuffer> transparentBuffers)
+		ArrayList<ByteBuffer> transparentBuffers,
+        TerrainCoverage coverage)
 	{
 		CompletableFuture<LodBufferContainer> uploadFuture = LodBufferContainer.tryMakeAndUploadBuffersAsync(
 			this.pos, this.clientLevelWrapper, 
 			opaqueBuffers, 
-			transparentBuffers);
+			transparentBuffers, coverage);
 		uploadFuture.whenComplete((bufferContainer, e) ->
 		{
 			try

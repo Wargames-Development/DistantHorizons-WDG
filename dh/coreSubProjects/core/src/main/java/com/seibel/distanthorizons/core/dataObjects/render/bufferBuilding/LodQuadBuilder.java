@@ -19,6 +19,7 @@
 
 package com.seibel.distanthorizons.core.dataObjects.render.bufferBuilding;
 
+import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
 import java.nio.ByteBuffer;
 import java.util.*;
 
@@ -55,6 +56,7 @@ public class LodQuadBuilder implements AutoCloseable
 	
 	/** the number of bytes for a single vertex */
 	public static final int BYTES_PER_VERTEX = 16;
+    public TerrainCoverage terrainCoverage = TerrainCoverage.UNKNOWN;
 	public static final int BYTES_PER_QUAD = BYTES_PER_VERTEX * 4;
 	
 	public static final int[][][] DIRECTION_VERTEX_IBO_QUAD = new int[][][]
@@ -166,6 +168,7 @@ public class LodQuadBuilder implements AutoCloseable
 		
 		this.clientLevelWrapper = clientLevelWrapper;
         this.borderClip=null;
+        this.terrainCoverage=TerrainCoverage.UNKNOWN;
 		
 		this.debugRenderingMode = Config.Client.Advanced.Debugging.debugRenderingColors.get();
 		this.grassSideRenderingMode = Config.Client.Advanced.Graphics.Quality.grassSideRendering.get();

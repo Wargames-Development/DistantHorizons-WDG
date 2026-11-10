@@ -19,6 +19,7 @@
 
 package com.seibel.distanthorizons.core.dataObjects.render.bufferBuilding;
 
+import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
 import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
 import com.seibel.distanthorizons.core.level.IDhClientLevel;
 import com.seibel.distanthorizons.core.logging.DhLogger;
@@ -60,6 +61,7 @@ public class LodBufferContainer implements AutoCloseable
 	public final long pos;
 	
 	public boolean buffersUploaded = false;
+    public final TerrainCoverage terrainCoverage;
 	
 	public IVertexBufferWrapper[] vboOpaqueWrappers;
 	public IVertexBufferWrapper[] vboTransparentWrappers;
@@ -73,9 +75,10 @@ public class LodBufferContainer implements AutoCloseable
 	//==============//
 	//region
 	
-	private LodBufferContainer(long pos, DhBlockPos minCornerBlockPos)
+	private LodBufferContainer(long pos, DhBlockPos minCornerBlockPos, TerrainCoverage coverage)
 	{
 		this.pos = pos;
+        this.terrainCoverage = java.util.Objects.requireNonNull(coverage, "coverage");
 		this.minCornerBlockPos = minCornerBlockPos;
 		this.vboOpaqueWrappers = new IVertexBufferWrapper[0];
 		this.vboTransparentWrappers = new IVertexBufferWrapper[0];
@@ -97,6 +100,15 @@ public class LodBufferContainer implements AutoCloseable
 		ArrayList<ByteBuffer> transparentBuffers
 	)
 	{
+        return tryMakeAndUploadBuffersAsync(pos, clientLevelWrapper, opaqueBuffers, transparentBuffers,
+            TerrainCoverage.UNKNOWN);
+    }
+
+    public static CompletableFuture<LodBufferContainer> tryMakeAndUploadBuffersAsync(
+        long pos, IClientLevelWrapper clientLevelWrapper, ArrayList<ByteBuffer> opaqueBuffers,
+        ArrayList<ByteBuffer> transparentBuffers,
+        TerrainCoverage coverage)
+    {
 		// new upload needed
 		CompletableFuture<LodBufferContainer> future = new CompletableFuture<>();
 		
@@ -111,7 +123,7 @@ public class LodBufferContainer implements AutoCloseable
 			DhSectionPos.getMinCornerBlockX(pos),
 			clientLevelWrapper.getMinHeight(),
 			DhSectionPos.getMinCornerBlockZ(pos));
-		LodBufferContainer bufferContainer = new LodBufferContainer(pos, minCornerBlockPos);
+		LodBufferContainer bufferContainer = new LodBufferContainer(pos, minCornerBlockPos, coverage);
 		
 		// update arrays to contain buffers
 		bufferContainer.vboOpaqueWrappers = resizeWrapperArray(bufferContainer.vboOpaqueWrappers, opaqueBuffers.size());

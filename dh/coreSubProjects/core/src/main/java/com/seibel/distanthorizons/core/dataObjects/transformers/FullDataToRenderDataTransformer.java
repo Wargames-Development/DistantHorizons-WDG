@@ -19,6 +19,8 @@
 
 package com.seibel.distanthorizons.core.dataObjects.transformers;
 
+import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
+import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.api.enums.config.EDhApiBlocksToAvoid;
 import com.seibel.distanthorizons.api.enums.rendering.EDhApiBlockMaterial;
 import com.seibel.distanthorizons.core.config.Config;
@@ -126,6 +128,10 @@ public class FullDataToRenderDataTransformer
 			return columnSource;
 		}
 		
+        // Generation state is the minimum of all contributing child columns.
+        // DOWN_SAMPLED/partial terrain must never authorise actor visibility.
+        long[] knownRows = new long[64];
+
 		columnSource.markNotEmpty();
 		int baseX = DhSectionPos.getMinCornerBlockX(pos);
 		int baseZ = DhSectionPos.getMinCornerBlockZ(pos);
@@ -142,6 +148,9 @@ public class FullDataToRenderDataTransformer
 				{
 					columnSource.populateColumnView(columnArrayView, x, z);
 					LongArrayList dataColumn = fullDataSource.getColumnAtRelPos(x, z);
+                    int index = FullDataSourceV2.relativePosToIndex(x, z);
+                    if (fullDataSource.columnGenerationSteps.getByte(index) == EDhApiWorldGenerationStep.LIGHT.value
+                            && dataColumn != null && !dataColumn.isEmpty()) knownRows[x] |= 1L << z;
 					
 					updateOrReplaceRenderDataViewColumnWithFullDataColumn(
 						levelWrapper, fullDataSource,
@@ -155,6 +164,7 @@ public class FullDataToRenderDataTransformer
 			}
 		}
 		
+		columnSource.terrainCoverage = TerrainCoverage.copyOf(knownRows);
 		return columnSource;
 	}
 	

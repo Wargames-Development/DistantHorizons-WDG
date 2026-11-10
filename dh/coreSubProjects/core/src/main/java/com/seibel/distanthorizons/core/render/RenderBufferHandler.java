@@ -53,6 +53,12 @@ import java.util.ArrayList;
  */
 public class RenderBufferHandler implements AutoCloseable
 {
+    // Render-thread-owned index for this exact terrain view, separate from visibility depth.
+    private final it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<LodRenderSection> coverageSections = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
+    private final it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<LodBufferContainer> coverageBuffers = new it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap<>();
+    private RenderParams coverageView;
+    private boolean coverageIndexReady;
+
 	private static final DhLogger LOGGER = new DhLoggerBuilder().build();
 	
 	private static final IMinecraftRenderWrapper MC_RENDER = SingletonInjector.INSTANCE.get(IMinecraftRenderWrapper.class);
@@ -141,6 +147,10 @@ public class RenderBufferHandler implements AutoCloseable
 		
 		// clear the old list so we can start fresh
 		this.loadedNearToFarBuffers.clear();
+        this.coverageSections.clear();
+        this.coverageBuffers.clear();
+        this.coverageView = renderParams;
+        this.coverageIndexReady = false;
 		
 		
 		
@@ -283,6 +293,38 @@ public class RenderBufferHandler implements AutoCloseable
 	//================//
 	//region
 	
+    /** Checks source completeness in the active terrain view. Render thread only.
+     * Missing, dirty, replaced or disposed buffers fail closed; known terrain is
+     * still subject to per-fragment depth testing by the caller.
+     */
+    public boolean isTerrainKnown(RenderParams view, int blockX, int blockZ) {
+        if (view == null || coverageView != view) return false;
+        if (!coverageIndexReady) {
+            // No hash-index construction cost in frames without actor queries.
+            for (int i=0;i<loadedNearToFarBuffers.size();i++) {
+                LodBufferContainer buffer=loadedNearToFarBuffers.get(i);
+                coverageBuffers.put(buffer.pos,buffer);
+            }
+            for (LodRenderSection section:tempProcessNodeList)
+                if (section!=null && coverageBuffers.get(section.pos)==section.renderBufferContainer)
+                    coverageSections.put(section.pos,section);
+            coverageIndexReady=true;
+        }
+        for (byte detail=DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL; detail<=30; detail++) {
+            long pos=DhSectionPos.encode(detail,blockX >> detail,blockZ >> detail);
+            LodRenderSection section=coverageSections.get(pos);
+            if (section==null) continue;
+            LodBufferContainer buffer=section.renderBufferContainer;
+            if (buffer==null || !buffer.buffersUploaded || section.renderDataDirty || !section.getRenderingEnabled()
+                || coverageBuffers.get(pos)!=buffer) return false;
+            int dataDetail=detail-DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL;
+            int x=(blockX-DhSectionPos.getMinCornerBlockX(pos)) >> dataDetail;
+            int z=(blockZ-DhSectionPos.getMinCornerBlockZ(pos)) >> dataDetail;
+            return buffer.terrainCoverage.isKnown(x,z);
+        }
+        return false;
+    }
+
 	public SortedArraySet<LodBufferContainer> getColumnRenderBuffers() { return this.loadedNearToFarBuffers; }
 	
 	//endregion
@@ -329,7 +371,8 @@ public class RenderBufferHandler implements AutoCloseable
 	//region
 	
 	@Override
-	public void close() { this.lodQuadTree.close(); }
+	public void close() { this.coverageView=null; this.coverageSections.clear();
+        this.coverageBuffers.clear(); this.loadedNearToFarBuffers.clear(); this.lodQuadTree.close(); }
 	
 	//endregion
 	

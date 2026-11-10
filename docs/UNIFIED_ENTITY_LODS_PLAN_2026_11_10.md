@@ -1,6 +1,6 @@
 # DH-owned player, vehicle and weapon LODs
 
-Status: implementation plan, 10 November 2026. No runtime migration implemented yet.
+Status: implementation in progress, 10 November 2026. Actor rendering migration is not yet enabled.
 
 ## Scope and branch safety
 
@@ -130,3 +130,9 @@ The relay now aggregates requested family bits from live sessions once per serve
 ### Coverage investigation
 
 `FullDataToRenderDataTransformer.updateOrReplaceRenderDataViewColumnWithFullDataColumn` returns immediately for null/empty full-data columns. The resulting render source/buffer may therefore contain a mix of known and missing columns. `LodRenderSection.canRender()` only tests a non-null buffer; `gpuUploadComplete()` also tests dirty state. Neither proves complete column coverage. `RenderBufferHandler.buildRenderList` builds the enabled, view-culled section list; actor coverage must use the same view generation without mistaking that list for full column provenance. Next implementation work must propagate immutable known-column coverage with the uploaded buffer generation and explicitly validate coarse-column completeness before authorising an actor corridor. No unsafe section-presence fallback was added.
+
+### Terrain buffer provenance checkpoint
+
+Complete (LIGHT) nonempty source columns now publish a 64-by-64 immutable coverage bitmask through the column transformer, quad builder and exact GPU buffer container. Coarse source generation state is already the minimum of child states, so partial/down-sampled columns remain unknown. Empty/unavailable sources and old upload callers default to unknown. No saved terrain format changed. Coverage bits are collected in the existing transform traversal, with 512 bytes per published mask. The view lookup builds its reusable indexes lazily on the first query, and rejects wrong views, dirty/replaced/disabled/disposed buffers. No actor or effect rendering was enabled by this metadata change.
+
+Validation: compilation plus 37,844 effects/coverage checks passed; targeted NtmStructureLodTest passed all 4 tests, including actual transformer generation-state provenance and existing NTM regressions. The headless integration fixture explicitly disables texturing and restores it afterward. Initial missing import/API compilation issues and fixture failure were corrected before this checkpoint. Core jars rebuilt as task dependencies; no persistent build-number change was recorded. GPU/runtime visibility acceptance remains pending.

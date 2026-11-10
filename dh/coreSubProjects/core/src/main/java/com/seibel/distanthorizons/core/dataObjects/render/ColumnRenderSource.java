@@ -91,6 +91,8 @@ public class ColumnRenderSource extends AbstractPhantomArrayList
 	public final ShortArrayList texturePalette = new ShortArrayList();
 	
 	private boolean isEmpty = true;
+	/** Immutable source provenance, never inferred from the presence of geometry. */
+	public TerrainCoverage terrainCoverage = TerrainCoverage.UNKNOWN;
 	
 	
 	
