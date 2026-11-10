@@ -426,7 +426,7 @@ public final class DistantSmokeRenderer
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
         // Angelica has already composited and finalized here. Never borrow this FBO.
         if(iris!=null && iris.isShaderPackInUse()) return;
-        try { PlayerActorRenderer.render(false);r.render(partialTicks); }
+        try { ActorRenderer.render(false);r.render(partialTicks); }
         finally { r.quads.clear();if(r.hbmNear!=null) r.hbmNear.clear(); }
     }
     /** Called immediately before Angelica's actual finalizeLevelRendering invocation. */
@@ -437,7 +437,7 @@ public final class DistantSmokeRenderer
         if(iris==null || !iris.isShaderPackInUse() || iris.isRenderingShadowPass()) return;
         r.shaderDrawFrame=r.renderFrame;
         ShaderEffectsTarget.invalidate();
-        PlayerActorRenderer.render(true);
+        ActorRenderer.render(true);
         // WDG MCHeli normally flushes this queue at Forge world-last, after shader
         // finalization. Its native method clears the queue; that event then no-ops.
         if(EffectSources.enabled(TrailSample.MCH) && cpw.mods.fml.common.Loader.isModLoaded("mcheli")) {
@@ -526,7 +526,7 @@ public final class DistantSmokeRenderer
                 for(int i=0;i<4;i++) LWJGL.glEnableVertexAttribArray(i);
             }
             shader.bind();shader.setUniform(diagnosticStage,0);shader.setUniform(nativeView,frame.mcModelViewMatrix);
-            int actorDepth=PlayerActorRenderer.actorDepth(),actorColour=PlayerActorRenderer.actorColour();
+            int actorDepth=ActorRenderer.actorDepth(),actorColour=ActorRenderer.actorColour();
             shader.setUniform(actorDepthSampler,5);shader.setUniform(actorColourSampler,6);shader.setUniform(actorDepthEnabled,actorDepth>0 && actorColour>0);
             LWJGL.glActiveTexture(GL13.GL_TEXTURE5);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,actorDepth);
             LWJGL.glActiveTexture(GL13.GL_TEXTURE6);LWJGL.glBindTexture(GL11.GL_TEXTURE_2D,actorColour);

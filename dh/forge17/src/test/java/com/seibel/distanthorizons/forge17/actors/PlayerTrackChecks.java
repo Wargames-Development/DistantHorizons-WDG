@@ -30,6 +30,13 @@ public final class PlayerTrackChecks {
         use.observe(new PlayerFrame.Pose(new UUID(1,2),1,0,65,0,0,0,0,0,0,64,0,0,1,100,270),0,0,2);
         use.observe(new PlayerFrame.Pose(new UUID(1,2),1,0,65,0,0,0,0,0,0,64,2,0,1,98,270),2,100000000L,2);
         require(use.sample(150000000L,sample) && sample.useTicks==99 && sample.bedYaw==270,"item use and sleeping orientation share pose time");checks++;
+        for(int interval=1;interval<=20;interval++) {
+            PlayerTrack every=new PlayerTrack();
+            every.observe(pose(1,0,0,0,1),0,0,interval);
+            every.observe(pose(1,10,20,2,2),interval,1000000000L,interval);
+            require(every.sample(1000000000L+Math.max(2,interval)*50000000L,sample)
+                && sample.x==10 && sample.revision==2 && sample.flags==2,"every server interval reaches its final authoritative sample");checks++;
+        }
         return checks;
     }
     private static void require(boolean value,String reason) { if(!value) throw new AssertionError(reason); }

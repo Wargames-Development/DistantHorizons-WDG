@@ -12,7 +12,7 @@ public final class PlayerTrack {
         if(count>0) {
             PlayerFrame.Pose previous=poses[count-1];
             double dx=pose.x-previous.x,dy=pose.y-previous.y,dz=pose.z-previous.z;
-            if(previous.entityId!=pose.entityId || !previous.uuid.equals(pose.uuid) || dx*dx+dy*dy+dz*dz>4096 || sequence-ticks[count-1]>20) count=0;
+            if(pose.age<previous.age || previous.entityId!=pose.entityId || !previous.uuid.equals(pose.uuid) || dx*dx+dy*dy+dz*dz>4096 || sequence-ticks[count-1]>20) count=0;
         }
         double phase=0,amount=0;
         if(count>0) {
@@ -31,7 +31,8 @@ public final class PlayerTrack {
     }
     public boolean sample(long now,Sample out) {
         if(count==0 || now-received>1000000000L) return false;
-        double tick=ticks[count-1]+Math.max(0,Math.min(interval,(now-received)/50000000.0))-Math.max(2,interval);
+        int delay=Math.max(2,interval);
+        double tick=ticks[count-1]+Math.max(0,Math.min(delay,(now-received)/50000000.0))-delay;
         int a=0,b=0;
         if(tick>=ticks[count-1]) a=b=count-1;
         else for(int i=1;i<count;i++) if(tick>=ticks[i-1] && tick<ticks[i]) { a=i-1;b=i;break; }

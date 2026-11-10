@@ -22,7 +22,7 @@ public final class DistantEffectsCommand extends CommandBase
             com.seibel.distanthorizons.forge17.actors.PlayerClient players=com.seibel.distanthorizons.forge17.actors.PlayerClient.INSTANCE;
             if(players!=null) say(sender,players.diagnostic());
             if(com.seibel.distanthorizons.forge17.actors.VehicleClient.INSTANCE!=null) say(sender,com.seibel.distanthorizons.forge17.actors.VehicleClient.INSTANCE.diagnostic());
-            if(PlayerActorRenderer.INSTANCE!=null) say(sender,PlayerActorRenderer.INSTANCE.diagnostic());
+            if(ActorRenderer.INSTANCE!=null) say(sender,ActorRenderer.INSTANCE.diagnostic());
             return;
         }
         if(args[0].equals("on") || args[0].equals("off"))

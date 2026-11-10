@@ -25,9 +25,9 @@ import org.lwjgl.opengl.*;
 import java.nio.FloatBuffer;
 import java.util.*;
 
-/** One render owner for authoritative player visuals. No world insertion or entity ticking. */
-public final class PlayerActorRenderer {
-    public static PlayerActorRenderer INSTANCE;
+/** Shared render owner for authoritative actor visuals. No world insertion or entity ticking. */
+public final class ActorRenderer {
+    public static ActorRenderer INSTANCE;
     private final DhApiRenderParam frame=new DhApiRenderParam();
     private DhApiRenderParam source;
     private final ModelCapture capture=new ModelCapture();
@@ -35,6 +35,7 @@ public final class PlayerActorRenderer {
     private final ActorTerrainVisibility terrain=new ActorTerrainVisibility();
     private final Map<UUID,Contact> contacts=new LinkedHashMap<>();
     private final Set<UUID> nativeDrawn=new HashSet<>();
+    private final List<ActorModel> models=new ArrayList<>(PlayerFrame.MAX_PLAYERS+VehicleFrame.MAX_VEHICLES);
     private final DhApiMat4f nativeMvp=new DhApiMat4f(),dhMvp=new DhApiMat4f(),mixed=new DhApiMat4f(),inverseScene=new DhApiMat4f();
     private final DhApiMat4f localProjection=new DhApiMat4f(),localMvp=new DhApiMat4f(),inverseLocal=new DhApiMat4f();
     private final int[] bounds=new int[4];
@@ -46,8 +47,8 @@ public final class PlayerActorRenderer {
     private boolean valid,drawing,failed,sceneComplete;
     private int drawn,unknown;
     private String status="waiting for terrain view";
-    public String diagnostic() { return "DH player models: "+status+" drawn="+drawn+" native="+nativeDrawn.size()+" unknown="+unknown+" cached="+contacts.size(); }
-    public PlayerActorRenderer() {
+    public String diagnostic() { return "DH actor models: "+status+" drawn="+drawn+" native="+nativeDrawn.size()+" unknown="+unknown+" cached="+contacts.size(); }
+    public ActorRenderer() {
         INSTANCE=this;
         ApiEventInjector.INSTANCE.bind(DhApiBeforeRenderSetupEvent.class,new DhApiBeforeRenderSetupEvent() {
             public void beforeSetup(DhApiEventParam<DhApiRenderParam> event) {
@@ -124,34 +125,25 @@ public final class PlayerActorRenderer {
             boolean completed=false;scene.begin(width,height,reverse);
             try {
                 long now=System.nanoTime();
-                List<Map.Entry<UUID,Contact>> visible=new ArrayList<>();
+                models.clear();
                 for(Map.Entry<UUID,Contact> entry:contacts.entrySet())
-                    if(!nativeDrawn.contains(entry.getKey()) && entry.getValue().track.sample(now,entry.getValue().sample)) visible.add(entry);
+                    if(!nativeDrawn.contains(entry.getKey()) && entry.getValue().track.sample(now,entry.getValue().sample)) models.add(entry.getValue());
                 // Alpha-bearing equipment is captured after farther actors; opaque pixels retain shared depth.
-                visible.sort((a,b)->Double.compare(distance(b.getValue().sample),distance(a.getValue().sample)));
-                for(Map.Entry<UUID,Contact> entry:visible) {
-                    Contact contact=entry.getValue();
-                    PlayerTrack.Sample p=contact.sample;
-                    if(!ModelBounds.project(nativeMvp,p.x-nx,p.y+1-ny,p.z-nz,8,width,height,bounds)) continue;
-                    if(!terrain.isKnown(nx,ny,nz,p.x,p.y+1,p.z,8)) { unknown++;continue; }
-                    PlayerAppearance appearance=client.frames().appearance(entry.getKey(),p.entityId,p.revision);
-                    if(appearance==null) continue;
-                    if(contact.actor==null || contact.actor.getEntityId()!=p.entityId || contact.revision!=p.revision) {
-                        PlayerAppearance.Decoded decoded=appearance.appearance();
-                        if(contact.actor!=null) contact.actor.close();
-                        contact.actor=new VisualPlayerActor(mc.theWorld,decoded.profile,p.entityId);
-                        contact.actor.appearance(decoded,Config.Client.Advanced.Graphics.GenericRendering.extendFlansTrails.get());contact.revision=p.revision;
-                    }
-                    contact.actor.support(Config.Client.Advanced.Graphics.GenericRendering.extendFlansTrails.get());
-                    float partial=contact.actor.pose(p);
-                    double x=p.x-nx,y=p.y-ny,z=p.z-nz;
-                    double eyeDepth=-(frame.mcModelViewMatrix.m20*x+frame.mcModelViewMatrix.m21*y+frame.mcModelViewMatrix.m22*z+frame.mcModelViewMatrix.m23);
-                    if(!ModelProjection.prepare(frame.mcProjectionMatrix,eyeDepth,8,localProjection)) continue;
+                models.sort((a,b)->Double.compare(distance(b),distance(a)));
+                for(ActorModel model:models) {
+                    double radius=model.radius();
+                    if(!Double.isFinite(radius) || radius<=0 || radius>256) continue;
+                    if(!ModelBounds.project(nativeMvp,model.x()-nx,model.centerY()-ny,model.z()-nz,radius,width,height,bounds)) continue;
+                    if(!terrain.isKnown(nx,ny,nz,model.x(),model.centerY(),model.z(),radius)) { unknown++;continue; }
+                    if(!model.prepare()) continue;
+                    double x=model.x()-nx,y=model.y()-ny,z=model.z()-nz;
+                    double eyeDepth=-(frame.mcModelViewMatrix.m20*x+frame.mcModelViewMatrix.m21*(model.centerY()-ny)+frame.mcModelViewMatrix.m22*z+frame.mcModelViewMatrix.m23);
+                    if(!ModelProjection.prepare(frame.mcProjectionMatrix,eyeDepth,radius,localProjection)) continue;
                     localMvp.set(localProjection);localMvp.multiply(frame.mcModelViewMatrix);
                     if(!ModelProjection.inverse(localMvp,inverseLocal)) continue;
                     boolean modelComplete=false;
                     if(!capture.begin(width,height,bounds[0],bounds[1],bounds[2],bounds[3],localProjection)) continue;
-                    try { drawModel(contact.actor,x,y,z,partial);modelComplete=true; }
+                    try { drawModel(model,x,y,z);modelComplete=true; }
                     finally { capture.end(modelComplete); }
                     drawn++;capture.composite(inverseLocal,dhMvp,nativeMvp,0,0,0,terrainDepth,target==null?0:target.nativeSceneDepth,reverse,true);
                 }
@@ -167,7 +159,7 @@ public final class PlayerActorRenderer {
             failed=true;status="render failure (withheld)";org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").error("DH player presentation stopped after render failure",error);
         } finally { terrain.clear(); }
     }
-    private double distance(PlayerTrack.Sample p) { double x=p.x-nx,y=p.y-ny,z=p.z-nz;return x*x+y*y+z*z; }
+    private double distance(ActorModel p) { double x=p.x()-nx,y=p.centerY()-ny,z=p.z()-nz;return x*x+y*y+z*z; }
     private void update(PlayerFrameCache cache) {
         if(sequence==cache.sequence() && receipt==cache.received()) {
             if(cache.players().isEmpty()) clear();return;
@@ -175,16 +167,17 @@ public final class PlayerActorRenderer {
         sequence=cache.sequence();receipt=cache.received();Set<UUID> retained=new HashSet<>();
         for(PlayerFrame.Pose pose:cache.players()) {
             retained.add(pose.uuid);Contact contact=contacts.get(pose.uuid);
-            if(contact==null) { contact=new Contact();contacts.put(pose.uuid,contact); }
+            if(contact==null) { contact=new Contact(pose.uuid);contacts.put(pose.uuid,contact); }
             contact.track.observe(pose,sequence,receipt,cache.interval());
         }
         Iterator<Map.Entry<UUID,Contact>> iterator=contacts.entrySet().iterator();
         while(iterator.hasNext()) { Map.Entry<UUID,Contact> entry=iterator.next();if(!retained.contains(entry.getKey())) { entry.getValue().close();iterator.remove(); } }
     }
-    private void drawModel(VisualPlayerActor actor,double x,double y,double z,float partial) throws Exception {
+    private void drawModel(ActorModel model,double x,double y,double z) throws Exception {
+        float partial=model.partial();
         int mode=GL11.glGetInteger(GL11.GL_MATRIX_MODE);float lightX=OpenGlHelper.lastBrightnessX,lightY=OpenGlHelper.lastBrightnessY;
         GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glPushMatrix();drawing=true;
-        try(AutoCloseable scope=actor.beginExtensions()) {
+        try {
             load(frame.mcModelViewMatrix);GL20.glUseProgram(0);
             Minecraft.getMinecraft().entityRenderer.enableLightmap(partial);
             RenderHelper.enableStandardItemLighting();GL11.glEnable(GL11.GL_NORMALIZE);GL11.glDisable(GL11.GL_FOG);
@@ -205,11 +198,10 @@ public final class PlayerActorRenderer {
                 }
             }
             OpenGlHelper.setActiveTexture(OpenGlHelper.defaultTexUnit);
-            int light=actor.getBrightnessForRender(partial);OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit,light&65535,light>>>16);
+            int light=model.light();OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit,light&65535,light>>>16);
             GL11.glEnable(GL11.GL_BLEND);GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA,GL11.GL_ONE_MINUS_SRC_ALPHA,GL11.GL_ONE,GL11.GL_ONE_MINUS_SRC_ALPHA);
             GL11.glColor4f(1,1,1,1);
-            Render renderer=RenderManager.instance.getEntityRenderObject(actor);
-            if(renderer!=null) renderer.doRender(actor,x,y,z,actor.rotationYaw,partial);
+            model.draw(x,y,z);
         } finally {
             Minecraft.getMinecraft().entityRenderer.disableLightmap(partial);
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit,lightX,lightY);
@@ -231,9 +223,36 @@ public final class PlayerActorRenderer {
         if(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE) throw new IllegalStateException("Incomplete actor output target");
     }
     private void clear() { for(Contact contact:contacts.values()) contact.close();contacts.clear();terrain.clear(); }
-    private static final class Contact {
+    private final class Contact implements ActorModel {
+        final UUID uuid;
+        float partial;
+        Contact(UUID uuid) { this.uuid=uuid; }
         final PlayerTrack track=new PlayerTrack();final PlayerTrack.Sample sample=new PlayerTrack.Sample();
         VisualPlayerActor actor;long revision;
+        public double x() { return sample.x; }
+        public double y() { return sample.y; }
+        public double centerY() { return sample.y+1; }
+        public double z() { return sample.z; }
+        public double radius() { return 8; }
+        public float partial() { return partial; }
+        public int light() { return actor.getBrightnessForRender(partial); }
+        public boolean prepare() throws Exception {
+            PlayerAppearance appearance=PlayerClient.INSTANCE.frames().appearance(uuid,sample.entityId,sample.revision);
+            if(appearance==null) return false;
+            boolean fmur=Config.Client.Advanced.Graphics.GenericRendering.extendFlansTrails.get();
+            if(actor==null || actor.getEntityId()!=sample.entityId || revision!=sample.revision) {
+                PlayerAppearance.Decoded decoded=appearance.appearance();if(actor!=null) actor.close();
+                actor=new VisualPlayerActor(Minecraft.getMinecraft().theWorld,decoded.profile,sample.entityId);
+                actor.appearance(decoded,fmur);revision=sample.revision;
+            }
+            actor.support(fmur);partial=actor.pose(sample);return true;
+        }
+        public void draw(double x,double y,double z) throws Exception {
+            try(AutoCloseable scope=actor.beginExtensions()) {
+                Render renderer=RenderManager.instance.getEntityRenderObject(actor);
+                if(renderer!=null) renderer.doRender(actor,x,y,z,actor.rotationYaw,partial);
+            }
+        }
         void close() { if(actor!=null) actor.close(); }
     }
 }
