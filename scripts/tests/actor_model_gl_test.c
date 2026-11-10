@@ -71,15 +71,30 @@ static void scene_check(int reverse) {
         glCopyTexImage2D(GL_TEXTURE_2D,0,i==0?GL_RGBA8:GL_DEPTH_COMPONENT24,0,0,4,4,0);
     }
     // The second pass reconstructs from DH's scene coordinates, then writes native depth.
-    float mixedInverse[16]={1,0,0,0,0,1,0,0,0,0,reverse?-1:1,0,0,0,0,1};
-    glUniformMatrix4fv(glGetUniformLocation(program,"uInverseModelMvp"),1,GL_FALSE,mixedInverse);
+    matrix("uInverseModelMvp",0);uniform("uSceneDepth",1);
+    glUniformMatrix4fv(glGetUniformLocation(program,"uDhFromNativeClip"),1,GL_FALSE,dh);
     tex(3,1,0,0,1);uniform("uUseNativeDepth",1);
     uniform("uModelReverseDepth",reverse);uniform("uWriteDhDepth",0);glDepthFunc(GL_ALWAYS);
     check("combined actor scene retains physical native depth",1,.4f);
     glReadPixels(3,2,1,1,GL_RGBA,GL_FLOAT,pixel);
     if(fabsf(pixel[0]-.5f)>.003f) { fprintf(stderr,"FAIL native/DH FOV mismatch reconstruction\n");exit(1); }
     checks++;
-    glDeleteTextures(2,source);uniform("uModelReverseDepth",0);
+    glDeleteTextures(2,source);uniform("uModelReverseDepth",0);uniform("uSceneDepth",0);
+}
+static void different_camera_check(int reverse) {
+    matrix("uInverseModelMvp",0);matrix("uNativeMvp",0);uniform("uSceneDepth",1);
+    // Independent oracle point at the centre sample: native=(.25,.25,.2,1).
+    // DH has a different perspective denominator, as camera-origin offsets produce.
+    float h[16]={1,0,0,.25f,0,1,0,0,0,0,reverse?-.8f:.8f,.5f,0,0,reverse?-.1f:.1f,1};
+    glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,h);
+    glUniformMatrix4fv(glGetUniformLocation(program,"uDhFromNativeClip"),1,GL_FALSE,h);
+    float depth=(.26f/1.1625f+1)*.5f;if(reverse) depth=1-depth;
+    tex(0,.5,.25,.125,1);tex(1,depth,0,0,1);tex(2,reverse?0:1,0,0,1);tex(3,1,0,0,1);
+    uniform("uDhReverseDepth",reverse);uniform("uModelReverseDepth",reverse);uniform("uWriteDhDepth",0);uniform("uUseNativeDepth",1);
+    check("different native/DH camera bases reconstruct physical model depth",1,.6f);
+    tex(3,.55f,0,0,1);check("native occlusion remains valid with different camera bases",0,0);
+    tex(3,1,0,0,1);tex(2,reverse?.9f:.1f,0,0,1);check("DH occlusion remains valid with different camera bases",0,0);
+    uniform("uSceneDepth",0);uniform("uModelReverseDepth",0);
 }
 static void partial_cover_check(void) {
     matrix("uInverseModelMvp",0);matrix("uNativeMvp",0);matrix("uDhMvp",0);
@@ -158,6 +173,6 @@ int main(int argc,char **argv) {
         float distances[]={64,128,256,512,750,1024,4096};perspective_check(distances[i],reverse);
     }
     scene_check(0);scene_check(1);partial_cover_check();
-    cloud_check();
+    cloud_check();different_camera_check(0);different_camera_check(1);
     printf("PASS %d actor model GPU checks\n",checks);return 0;
 }

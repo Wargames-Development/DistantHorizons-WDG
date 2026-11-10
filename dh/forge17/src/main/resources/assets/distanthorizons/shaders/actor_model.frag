@@ -7,6 +7,8 @@ uniform sampler2D uCloudDepth;
 uniform bool uUseCloudDepth;
 uniform float uCloudRenderDistance;
 uniform mat4 uNativeView;
+uniform bool uSceneDepth;
+uniform mat4 uDhFromNativeClip;
 uniform mat4 uInverseModelMvp;
 uniform mat4 uDhMvp;
 uniform mat4 uNativeMvp;
@@ -23,7 +25,18 @@ void main() {
     if(uModelReverseDepth ? depth<=0.0 : depth>=1.0) discard;
     vec4 colour=texture(uModelColour,screenUv);
     if(colour.a<=0.001) discard;
-    vec4 model=uInverseModelMvp*vec4(screenUv*2.0-1.0,depth*2.0-1.0,1.0);
+    vec2 xy=screenUv*2.0-1.0;
+    float z=depth*2.0-1.0;
+    if(uSceneDepth) {
+        // The shared scene stores native XY but DH Z. Their camera origins can
+        // differ, so solve for native clip Z along this pixel's ray first.
+        vec4 base=uDhFromNativeClip*vec4(xy,0.0,1.0);
+        vec4 axis=uDhFromNativeClip[2];
+        float denominator=axis.z-z*axis.w;
+        if(abs(denominator)<0.0000000001) discard;
+        z=(z*base.w-base.z)/denominator;
+    }
+    vec4 model=uInverseModelMvp*vec4(xy,z,1.0);
     if(abs(model.w)<0.000001) discard;
     model=vec4(model.xyz/model.w,1.0);
     vec4 nativeClip=uNativeMvp*model;

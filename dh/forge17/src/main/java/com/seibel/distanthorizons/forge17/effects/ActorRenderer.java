@@ -39,7 +39,7 @@ public final class ActorRenderer {
     private final McheliActors vehicles;
     private final List<ActorModel> models=new ArrayList<>(PlayerFrame.MAX_PLAYERS+VehicleFrame.MAX_VEHICLES);
     private final List<ActorModel> visibleModels=new ArrayList<>(PlayerFrame.MAX_PLAYERS+VehicleFrame.MAX_VEHICLES);
-    private final DhApiMat4f nativeMvp=new DhApiMat4f(),dhMvp=new DhApiMat4f(),mixed=new DhApiMat4f(),inverseScene=new DhApiMat4f();
+    private final DhApiMat4f nativeMvp=new DhApiMat4f(),dhMvp=new DhApiMat4f(),inverseScene=new DhApiMat4f();
     private final DhApiMat4f localProjection=new DhApiMat4f(),localMvp=new DhApiMat4f(),inverseLocal=new DhApiMat4f();
     private final int[] bounds=new int[4];
     private final FloatBuffer matrix=BufferUtils.createFloatBuffer(16);
@@ -140,7 +140,7 @@ public final class ActorRenderer {
             dhMvp.set(target==null?frame.dhProjectionMatrix:target.terrainProjection);dhMvp.multiply(frame.dhModelViewMatrix);
             DhApiMat4f translation=new DhApiMat4f();translation.m00=translation.m11=translation.m22=translation.m33=1;translation.m03=(float)(nx-dx);translation.m13=(float)(ny-dy);translation.m23=(float)(nz-dz);
             dhMvp.multiply(translation);
-            if(!ModelProjection.scene(nativeMvp,dhMvp,mixed) || !ModelProjection.inverse(mixed,inverseScene)) return;
+            if(!ModelProjection.inverse(nativeMvp,inverseScene)) { status="invalid native projection";return; }
             if(playersWanted) client.setRenderingReady();if(vehiclesWanted) vehicles.ready();
             if(!owned() && !vehiclesOwnLegacy()) { status="awaiting server ownership";return; }
             status="active experimental primary view";
