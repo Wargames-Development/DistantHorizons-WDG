@@ -88,7 +88,7 @@ public final class ActorRenderer {
         }
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public void nativePre(RenderPlayerEvent.Pre event) {
-        if(drawing || !valid || !owned() || shadow() || event.entityPlayer==Minecraft.getMinecraft().thePlayer) return;
+        if(failed || drawing || !valid || !owned() || shadow() || event.entityPlayer==Minecraft.getMinecraft().thePlayer) return;
         if(GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=nativeFramebuffer) return;
         // Only actors with an authoritative recipient record are eligible for handoff.
         for(PlayerFrame.Pose pose:PlayerClient.INSTANCE.frames().players()) if(pose.uuid.equals(event.entityPlayer.getUniqueID())) {
@@ -104,7 +104,7 @@ public final class ActorRenderer {
     static int actorColour() { return INSTANCE!=null && INSTANCE.sceneComplete?INSTANCE.scene.colourTexture():0; }
     private boolean vehiclesOwnLegacy() { return vehicles!=null && vehicles.ownsLegacy(); }
     private boolean primaryNativeView() {
-        return !drawing && valid && !shadow() && world==Minecraft.getMinecraft().theWorld
+        return !failed && !drawing && valid && !shadow() && world==Minecraft.getMinecraft().theWorld
             && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)==nativeFramebuffer;
     }
     private boolean replaceVehicle(net.minecraft.entity.Entity entity) {

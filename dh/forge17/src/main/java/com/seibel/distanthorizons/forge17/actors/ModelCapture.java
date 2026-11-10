@@ -8,6 +8,7 @@ import cpw.mods.fml.relauncher.SideOnly;
 import java.nio.FloatBuffer;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.*;
+import static com.seibel.distanthorizons.lwjgl.LWJGLServiceProvider.LWJGL;
 
 /** Render-thread-owned full-resolution model/self-depth capture, shared between actors.
  * Callers must establish terrain coverage and a valid view before submitting a model.
@@ -43,7 +44,7 @@ public final class ModelCapture implements AutoCloseable {
         if(captureState!=null) throw new IllegalStateException("Nested model capture");
         ready=false;
         if(width<=0 || height<=0 || (long)width*height>MAX_PIXELS || left<0 || bottom<0 || right>width || top>height
-                || right<=left || top<=bottom || !GLContext.getCapabilities().OpenGL30) return false;
+                || right<=left || top<=bottom || !LWJGL.isOpenGLVersionSupported(3,0)) return false;
         this.left=left;this.bottom=bottom;this.right=right;this.top=top;
         savedRead=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
         savedDraw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
