@@ -389,6 +389,9 @@ public class Config
                     public static ConfigEntry<Integer> playerLodDistance = new ConfigEntry.Builder<Integer>()
                         .setMinDefaultMax(0,512,1024).setAppearance(EConfigEntryAppearance.ONLY_IN_FILE)
                         .comment("Requested distant player visual range. The server may reduce it; zero disables delivery.").build();
+                    public static ConfigEntry<Integer> mcheliVehicleLodDistance = new ConfigEntry.Builder<Integer>()
+                        .setMinDefaultMax(0,750,4096).setAppearance(EConfigEntryAppearance.ONLY_IN_FILE)
+                        .comment("Requested MCHELI vehicle visual range. Server ceiling applies; provider remains gated until ready.").build();
                     public static ConfigEntry<Boolean> showDistantEffectDiagnostics = new ConfigEntry.Builder<Boolean>().set(false).build();
 
 					public static ConfigEntry<Boolean> enableDistantMcheliSmoke = new ConfigEntry.Builder<Boolean>()
@@ -1967,6 +1970,10 @@ public class Config
 	
 	public static class Server
 	{
+        public static ConfigEntry<Integer> mcheliVehicleLodDistance = new ConfigEntry.Builder<Integer>()
+            .setMinDefaultMax(0,750,4096).comment("Server-enforced MCHELI vehicle visual delivery radius. Zero disables vehicle delivery; radar/gameplay are unchanged.").build();
+        public static ConfigEntry<Integer> vehicleLodUpdateIntervalTicks = new ConfigEntry.Builder<Integer>()
+            .setMinDefaultMax(1,2,20).comment("Vehicle visual snapshot interval in server ticks; actor and byte limits apply independently.").build();
         public static ConfigEntry<Integer> playerLodUpdateIntervalTicks = new ConfigEntry.Builder<Integer>()
             .setMinDefaultMax(1,2,20).comment("Server player pose update interval in ticks. Two ticks is 10 updates per second; appearance work is separately budgeted.").build();
         public static ConfigEntry<Boolean> allowPlayerLodSupport = new ConfigEntry.Builder<Boolean>()

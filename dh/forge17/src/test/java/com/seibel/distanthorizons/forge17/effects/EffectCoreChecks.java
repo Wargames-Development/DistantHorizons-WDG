@@ -450,6 +450,7 @@ public final class EffectCoreChecks
             check(!EffectSupportPolicy.permits(-1,invalid),"unknown visual families fail closed");
         checks+=TerrainCoverageChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.PlayerProtocolChecks.run();
+        checks+=com.seibel.distanthorizons.forge17.actors.VehicleProtocolChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.ModelProjectionChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.TerrainCorridorChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.PlayerTrackChecks.run();

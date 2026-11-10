@@ -67,6 +67,7 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
         com.seibel.distanthorizons.forge17.effects.TrailClient trails=new com.seibel.distanthorizons.forge17.effects.TrailClient();
         FMLCommonHandler.instance().bus().register(trails);
         FMLCommonHandler.instance().bus().register(new com.seibel.distanthorizons.forge17.actors.PlayerClient());
+        if(cpw.mods.fml.common.Loader.isModLoaded("mcheli")) FMLCommonHandler.instance().bus().register(new com.seibel.distanthorizons.forge17.actors.VehicleClient());
         com.seibel.distanthorizons.forge17.effects.PlayerActorRenderer players=new com.seibel.distanthorizons.forge17.effects.PlayerActorRenderer();
         MinecraftForge.EVENT_BUS.register(players);
         FMLCommonHandler.instance().bus().register(players);

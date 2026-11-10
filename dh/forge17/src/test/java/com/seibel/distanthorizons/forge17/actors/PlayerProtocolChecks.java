@@ -165,7 +165,7 @@ public final class PlayerProtocolChecks {
             check(fieldFound,"server item-use accessor has a real Minecraft field");
         } catch(java.io.IOException error) { throw new AssertionError(error); }
         // Inspect bytecode without initializing Forge networking or optional mods.
-        for(String name:new String[]{"PlayerRelay","PlayerRelay$SettingsHandler","PlayerRelay$FrameHandler","PlayerVisibility","PlayerFrame","PlayerFrameCache","PlayerAppearance"}) {
+        for(String name:new String[]{"PlayerRelay","PlayerRelay$SettingsHandler","PlayerRelay$FrameHandler","PlayerVisibility","PlayerFrame","PlayerFrameCache","PlayerAppearance","VehicleFrame","VehicleFrameCache","VehicleRelay","VehicleRelay$SettingsHandler","VehicleRelay$FrameHandler","McheliSource"}) {
             String path="/com/seibel/distanthorizons/forge17/actors/"+name+".class";
             try(java.io.InputStream input=PlayerProtocolChecks.class.getResourceAsStream(path)) {
                 if(input==null) throw new AssertionError("Missing server class "+name);
