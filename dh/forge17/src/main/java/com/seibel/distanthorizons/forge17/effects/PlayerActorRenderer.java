@@ -44,6 +44,9 @@ public final class PlayerActorRenderer {
     private double nx,ny,nz,dx,dy,dz;
     private int nativeFramebuffer,shaderFramebuffer;
     private boolean valid,drawing,failed;
+    private int drawn,unknown;
+    private String status="waiting for terrain view";
+    public String diagnostic() { return "DH player models: "+status+" drawn="+drawn+" native="+nativeDrawn.size()+" unknown="+unknown+" cached="+contacts.size(); }
     public PlayerActorRenderer() {
         INSTANCE=this;
         ApiEventInjector.INSTANCE.bind(DhApiBeforeRenderSetupEvent.class,new DhApiBeforeRenderSetupEvent() {
@@ -72,7 +75,7 @@ public final class PlayerActorRenderer {
     }
     @SubscribeEvent public void start(TickEvent.RenderTickEvent event) {
         if(event.phase!=TickEvent.Phase.START) return;
-        valid=false;nativeDrawn.clear();
+        valid=false;nativeDrawn.clear();drawn=unknown=0;status="waiting for terrain view";
         Minecraft mc=Minecraft.getMinecraft();
         if(world!=mc.theWorld || connection!=mc.getNetHandler()) {
             clear();world=mc.theWorld;connection=mc.getNetHandler();sequence=-1;receipt=0;failed=false;
@@ -100,18 +103,20 @@ public final class PlayerActorRenderer {
         if(failed || !valid || world!=mc.theWorld || client==null || !client.fmurReady() || shadow()) return;
         if(!Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodSupport.get() && !owned()) return;
         ShaderEffectsTarget target=shaders?ShaderEffectsTarget.current():null;
-        if(shaders && target==null) return;
+        if(shaders && target==null) { status="unsupported shader target";return; }
         if(!shaders && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getFramebuffer().framebufferObject) return;
         int terrainDepth=target==null?com.seibel.distanthorizons.core.render.DhApiRenderProxy.activeOpenGlDhDepthTextureId:target.terrainDepth;
         if(terrainDepth<=0 || !terrain.begin(source,mc.theWorld,generation)) return;
         int width=mc.displayWidth,height=mc.displayHeight;
+        status="preparing models";
         try {
             capture.prepare(width,height);scene.prepare(width,height);
             dhMvp.set(target==null?frame.dhProjectionMatrix:target.terrainProjection);dhMvp.multiply(frame.dhModelViewMatrix);
             DhApiMat4f translation=new DhApiMat4f();translation.m00=translation.m11=translation.m22=translation.m33=1;translation.m03=(float)(nx-dx);translation.m13=(float)(ny-dy);translation.m23=(float)(nz-dz);
             dhMvp.multiply(translation);
             if(!ModelProjection.scene(nativeMvp,dhMvp,mixed) || !ModelProjection.inverse(mixed,inverseScene)) return;
-            client.setRenderingReady();if(!owned()) return;
+            client.setRenderingReady();if(!owned()) { status="awaiting server ownership";return; }
+            status="active experimental primary view";
             update(client.frames());if(contacts.isEmpty()) return;
             boolean reverse=SingletonInjector.INSTANCE.get(AbstractDhRenderApiDefinition.class).getDepthDirection()==EDhApiDepthDirection.REVERSE_Z;
             boolean completed=false;scene.begin(width,height,reverse);
@@ -125,8 +130,8 @@ public final class PlayerActorRenderer {
                 for(Map.Entry<UUID,Contact> entry:visible) {
                     Contact contact=entry.getValue();
                     PlayerTrack.Sample p=contact.sample;
-                    if(!ModelBounds.project(nativeMvp,p.x-nx,p.y+1-ny,p.z-nz,8,width,height,bounds)
-                            || !terrain.isKnown(nx,ny,nz,p.x,p.y+1,p.z,8)) continue;
+                    if(!ModelBounds.project(nativeMvp,p.x-nx,p.y+1-ny,p.z-nz,8,width,height,bounds)) continue;
+                    if(!terrain.isKnown(nx,ny,nz,p.x,p.y+1,p.z,8)) { unknown++;continue; }
                     PlayerAppearance appearance=client.frames().appearance(entry.getKey(),p.entityId,p.revision);
                     if(appearance==null) continue;
                     if(contact.actor==null || contact.actor.getEntityId()!=p.entityId || contact.revision!=p.revision) {
@@ -146,7 +151,7 @@ public final class PlayerActorRenderer {
                     if(!capture.begin(width,height,bounds[0],bounds[1],bounds[2],bounds[3],localProjection)) continue;
                     try { drawModel(contact.actor,x,y,z,partial);modelComplete=true; }
                     finally { capture.end(modelComplete); }
-                    capture.composite(inverseLocal,dhMvp,nativeMvp,0,0,0,terrainDepth,target==null?0:target.nativeSceneDepth,reverse,true);
+                    drawn++;capture.composite(inverseLocal,dhMvp,nativeMvp,0,0,0,terrainDepth,target==null?0:target.nativeSceneDepth,reverse,true);
                 }
                 completed=true;
             } finally { scene.end(completed); }
@@ -156,7 +161,7 @@ public final class PlayerActorRenderer {
                 scene.composite(inverseScene,dhMvp,nativeMvp,terrainDepth,target==null?0:target.nativeSceneDepth,shaders);
             } finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldDraw); }
         } catch(Exception | LinkageError error) {
-            failed=true;org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").error("DH player presentation stopped after render failure",error);
+            failed=true;status="render failure (withheld)";org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").error("DH player presentation stopped after render failure",error);
         } finally { terrain.clear(); }
     }
     private double distance(PlayerTrack.Sample p) { double x=p.x-nx,y=p.y-ny,z=p.z-nz;return x*x+y*y+z*z; }

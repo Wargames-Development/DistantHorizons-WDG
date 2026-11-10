@@ -51,7 +51,7 @@ public final class PlayerProtocolChecks {
         check(copied.players.size()==1,"frame copies mutable source list");
         try { copied.players.clear();throw new AssertionError("mutable frame"); } catch(UnsupportedOperationException expected) { checks++; }
         List<PlayerFrame.Pose> maximum=new ArrayList<PlayerFrame.Pose>();
-        for(int i=0;i<PlayerFrame.MAX_PLAYERS;i++) maximum.add(pose(new UUID(100,i),i,0));
+        for(int i=0;i<PlayerFrame.MAX_PLAYERS;i++) maximum.add(new PlayerFrame.Pose(new UUID(100,i),i,0,100,0,0,0,0,0,0,0,1,0,1,0,0,new byte[PlayerFrame.MAX_EXTENSION_BYTES]));
         out=Unpooled.buffer();
         try {
             new PlayerFrame(1,1,VIEWER,0,1024,maximum).write(out);
@@ -60,6 +60,20 @@ public final class PlayerProtocolChecks {
         } finally { out.release(); }
         maximum.add(pose(new UUID(200,1),200,0));
         invalid(()->new PlayerFrame(1,1,VIEWER,0,512,maximum),"oversized actor set accepted");
+        byte[] extension=new byte[PlayerFrame.MAX_EXTENSION_BYTES];extension[0]=7;
+        PlayerFrame.Pose extended=new PlayerFrame.Pose(TARGET,2,0,0,0,0,0,0,0,0,0,1,0,1,0,0,extension);
+        extension[0]=9;check(extended.extension()[0]==7,"source animation buffer is copied");
+        byte[] exported=extended.extension();exported[0]=10;check(extended.extension()[0]==7,"animation accessor cannot mutate a frame");
+        invalid(()->new PlayerFrame.Pose(TARGET,2,0,0,0,0,0,0,0,0,0,1,0,1,0,0,new byte[PlayerFrame.MAX_EXTENSION_BYTES+1]),"oversized extension accepted");
+        ByteBuf extensionPacket=Unpooled.buffer();
+        try {
+            new PlayerFrame(1,1,VIEWER,0,512,Collections.singletonList(extended)).write(extensionPacket);
+            check(PlayerFrame.read(extensionPacket.duplicate()).players.get(0).extension()[0]==7,"animation bytes follow pose through wire");
+            int size=extensionPacket.writerIndex();extensionPacket.writerIndex(size-1);
+            invalid(()->PlayerFrame.read(extensionPacket.duplicate()),"truncated animation accepted");extensionPacket.writerIndex(size);
+            extensionPacket.setByte(42+89,255);
+            invalid(()->PlayerFrame.read(extensionPacket.duplicate()),"oversized wire animation accepted");
+        } finally { extensionPacket.release(); }
         Object connection=new Object();PlayerFrameCache cache=new PlayerFrameCache();
         cache.reset(connection,7,0,VIEWER);
         check(cache.accept(connection,frame(7,1,0,512),100),"matching frame accepted");

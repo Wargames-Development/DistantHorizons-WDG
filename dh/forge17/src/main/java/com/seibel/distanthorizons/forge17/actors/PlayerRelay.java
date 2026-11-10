@@ -105,6 +105,7 @@ public final class PlayerRelay {
             members.add(target);
         }
         appearances.keySet().retainAll(live);failedAppearances.retainAll(live);
+        Map<UUID,byte[]> visualPoses=new HashMap<>();
         for(Session session:sessions.values()) {
             EntityPlayerMP viewer=session.player;
             int range=PlayerFrame.effectiveRange(session.settings.range,Config.Server.playerLodDistance.get(),legacySafe && Config.Server.allowPlayerLodSupport.get());
@@ -132,8 +133,10 @@ public final class PlayerRelay {
                 int flags=(p.isSneaking()?1:0)|(p.isSprinting()?2:0)|(p.isInvisible()?4:0)|(p.isBurning()?8:0)|(p.isRiding()?16:0)
                     |(p.isPlayerSleeping()?32:0)|(p.isUsingItem()?64:0);
                 try {
+                    byte[] visual=visualPoses.get(p.getUniqueID());
+                    if(visual==null) { visual=FmurPlayerBridge.capturePose(p);visualPoses.put(p.getUniqueID(),visual); }
                     poses.add(new PlayerFrame.Pose(p.getUniqueID(),p.getEntityId(),p.posX,p.posY,p.posZ,p.rotationYaw,
-                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision,Math.max(0,Math.min(1000000,((com.seibel.distanthorizons.forge17.mixin.MixinPlayerUseState)p).dh$getItemInUseCount())),bedYaw(p)));
+                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision,Math.max(0,Math.min(1000000,((com.seibel.distanthorizons.forge17.mixin.MixinPlayerUseState)p).dh$getItemInUseCount())),bedYaw(p),visual));
                 } catch(IllegalArgumentException invalid) { continue; }
                 if(poses.size()==PlayerFrame.MAX_PLAYERS) break;
             }

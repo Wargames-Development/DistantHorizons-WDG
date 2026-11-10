@@ -9,7 +9,7 @@ import java.util.UUID;
 
 /** Immutable, bounded authoritative poses. Actors are presentation data, never hitboxes. */
 public final class PlayerFrame {
-    public static final int VERSION=3, MAX_PLAYERS=64, MAX_RANGE=1024, MAX_BYTES=8192;
+    public static final int VERSION=4, MAX_PLAYERS=64, MAX_RANGE=1024, MAX_BYTES=12288, MAX_EXTENSION_BYTES=48;
     public final long subscription, sequence;
     public final UUID viewer;
     public final int dimension, range,capabilities,interval;
@@ -61,6 +61,8 @@ public final class PlayerFrame {
         public final long appearanceRevision;
         public final int entityId,flags,age,brightness,useTicks;
         public final float bedYaw;
+        private final byte[] extension;
+        public byte[] extension() { return extension.clone(); }
         public final double x,y,z;
         public final float yaw,pitch,headYaw,bodyYaw,swing;
         public Pose(UUID uuid,int entityId,double x,double y,double z,float yaw,float pitch,float headYaw,float bodyYaw,
@@ -73,6 +75,12 @@ public final class PlayerFrame {
         }
         public Pose(UUID uuid,int entityId,double x,double y,double z,float yaw,float pitch,float headYaw,float bodyYaw,
                     float swing,int flags,int age,int brightness,long appearanceRevision,int useTicks,float bedYaw) {
+            this(uuid,entityId,x,y,z,yaw,pitch,headYaw,bodyYaw,swing,flags,age,brightness,appearanceRevision,useTicks,bedYaw,new byte[0]);
+        }
+        public Pose(UUID uuid,int entityId,double x,double y,double z,float yaw,float pitch,float headYaw,float bodyYaw,
+                    float swing,int flags,int age,int brightness,long appearanceRevision,int useTicks,float bedYaw,byte[] extension) {
+            if(extension==null || extension.length>MAX_EXTENSION_BYTES) throw new IllegalArgumentException("Invalid presentation extension");
+            this.extension=extension.clone();
             if(uuid==null || entityId<0 || !Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)
                     || Math.abs(x)>30000000 || Math.abs(z)>30000000 || Math.abs(y)>65536
                     || !Float.isFinite(yaw) || !Float.isFinite(pitch) || !Float.isFinite(headYaw) || !Float.isFinite(bodyYaw)
@@ -84,11 +92,16 @@ public final class PlayerFrame {
         private void write(ByteBuf out) {
             uuid(out,uuid);out.writeInt(entityId).writeDouble(x).writeDouble(y).writeDouble(z);
             out.writeFloat(yaw).writeFloat(pitch).writeFloat(headYaw).writeFloat(bodyYaw).writeFloat(swing);
-            out.writeByte(flags).writeInt(age).writeInt(brightness).writeLong(appearanceRevision).writeInt(useTicks).writeFloat(bedYaw);
+            out.writeByte(flags).writeInt(age).writeInt(brightness).writeLong(appearanceRevision).writeInt(useTicks).writeFloat(bedYaw).writeByte(extension.length).writeBytes(extension);
+        }
+        private static byte[] readExtension(ByteBuf in) {
+            int length=in.readUnsignedByte();
+            if(length>MAX_EXTENSION_BYTES || length>in.readableBytes()) throw new IllegalArgumentException("Invalid presentation extension envelope");
+            byte[] data=new byte[length];in.readBytes(data);return data;
         }
         private static Pose read(ByteBuf in) {
             return new Pose(uuid(in),in.readInt(),in.readDouble(),in.readDouble(),in.readDouble(),
-                in.readFloat(),in.readFloat(),in.readFloat(),in.readFloat(),in.readFloat(),in.readUnsignedByte(),in.readInt(),in.readInt(),in.readLong(),in.readInt(),in.readFloat());
+                in.readFloat(),in.readFloat(),in.readFloat(),in.readFloat(),in.readFloat(),in.readUnsignedByte(),in.readInt(),in.readInt(),in.readLong(),in.readInt(),in.readFloat(),readExtension(in));
         }
     }
 }

@@ -300,7 +300,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 					// when this node comes back into render distance
 					// we'll need to re-load it since the full data
 					// may have been modified while it was out of bounds
-					renderSection.renderDataDirty = true;
+					renderSection.markRenderDataDirty();
 				}
 			}
 		);

@@ -76,7 +76,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	private final LodQuadTree quadTree;
 	
 	
-	private boolean renderingEnabled = false;
+	private volatile boolean renderingEnabled = false;
 	/** 
 	 * Used when a node goes out of render distance
 	 * but isn't removed from the underlying quad tree structure. <br><br>
@@ -85,11 +85,15 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	 * for cached render data caching purposes, but not
 	 * for re-creating missing nodes.
 	 */
-	public boolean renderDataDirty = false;
+	/** @deprecated Call markRenderDataDirty() so an in-flight upload cannot erase invalidation. */
+    @Deprecated public volatile boolean renderDataDirty = false;
+    private final com.seibel.distanthorizons.core.render.TerrainBuildState buildState=new com.seibel.distanthorizons.core.render.TerrainBuildState();
+    public void markRenderDataDirty() { buildState.invalidate();renderDataDirty=true; }
+    public boolean isRenderDataDirty() { return renderDataDirty || buildState.isDirty(); }
 	public boolean queuedMissingSectionsForRetrieval = false;
 	
 	/** this reference is necessary so we can determine what VBO to render */
-	public LodBufferContainer renderBufferContainer; 
+	public volatile LodBufferContainer renderBufferContainer;
 	
 	
 	/** 
@@ -175,7 +179,8 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 			{
 				try
 				{
-					// build LOD data on a DH thread
+					final long buildRevision=buildState.begin();
+                    // build LOD data on a DH thread
 					try (LodQuadBuilder lodQuadBuilder = this.getAndBuildRenderData())
 					{
 						if (lodQuadBuilder == null)
@@ -193,7 +198,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 						ArrayList<ByteBuffer> transparentBuffers = lodQuadBuilder.makeTransparentVertexBuffers(transparentCheckout);
 						
 						// uploading will primarily happen on the render thread
-						this.uploadToGpuAsync(future, opaqueBuffers, transparentBuffers, lodQuadBuilder.terrainCoverage)
+						this.uploadToGpuAsync(future, opaqueBuffers, transparentBuffers, lodQuadBuilder.terrainCoverage, buildRevision)
 							// Join is used to prevent queuing up potentially thousands of
 							// upload tasks (each requiring their own staging buffer)
 							// causing an explosion of pooled memory use.
@@ -338,7 +343,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 		CompletableFuture<Void> parentFuture,
 		ArrayList<ByteBuffer> opaqueBuffers,
 		ArrayList<ByteBuffer> transparentBuffers,
-        TerrainCoverage coverage)
+        TerrainCoverage coverage, long buildRevision)
 	{
 		CompletableFuture<LodBufferContainer> uploadFuture = LodBufferContainer.tryMakeAndUploadBuffersAsync(
 			this.pos, this.clientLevelWrapper, 
@@ -373,7 +378,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 				}
 				
 				// upload complete
-				this.renderDataDirty = false;
+				if(buildState.complete(buildRevision)) this.renderDataDirty = false;
 				
 				
 				if (parentFuture.isCancelled())
@@ -409,7 +414,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 		return this.renderBufferContainer != null
 			// render dirty is here so we can trigger new GPU uploads
 			// even if the render data is present
-			&& !this.renderDataDirty; 
+			&& !this.isRenderDataDirty();
 	}
 	
 	public boolean getRenderingEnabled() { return this.renderingEnabled; }

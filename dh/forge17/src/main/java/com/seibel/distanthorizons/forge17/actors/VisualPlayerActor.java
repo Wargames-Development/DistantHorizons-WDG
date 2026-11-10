@@ -32,7 +32,8 @@ public final class VisualPlayerActor extends EntityOtherPlayerMP implements Auto
         extension.appearance(appearance.extension(),fmur);
     }
     public void support(boolean fmur) throws ReflectiveOperationException { if(this.fmur!=fmur && appearance!=null) appearance(appearance,fmur); }
-    public float pose(PlayerTrack.Sample sample) {
+    public float pose(PlayerTrack.Sample sample) throws ReflectiveOperationException {
+        if(fmur) extension.pose(sample);
         setPosition(sample.x,sample.y,sample.z);
         lastTickPosX=prevPosX=posX;lastTickPosY=prevPosY=posY;lastTickPosZ=prevPosZ=posZ;
         prevRotationYaw=rotationYaw=sample.yaw;prevRotationPitch=rotationPitch=sample.pitch;

@@ -46,6 +46,7 @@ public final class PlayerTrack {
         out.bedYaw=state.bedYaw;out.useTicks=state.useTicks;
         if((first.flags & 64)!=0 && (last.flags & 64)!=0) out.useTicks=(int)mix(first.useTicks,last.useTicks,t);
         else if((first.flags & 64)!=0 && (last.flags & 64)==0) out.useTicks=Math.max(0,first.useTicks-(int)(tick-ticks[a]));
+        out.first=first;out.last=last;out.fraction=(float)t;
         out.flags=state.flags;out.brightness=state.brightness;out.revision=state.appearanceRevision;
         out.entityId=state.entityId;return true;
     }
@@ -55,6 +56,8 @@ public final class PlayerTrack {
         return (float)(a+difference*t);
     }
     public static final class Sample {
+        public PlayerFrame.Pose first,last;
+        public float fraction;
         public double x,y,z;
         public float yaw,pitch,headYaw,bodyYaw,phase,amount,swing,age,bedYaw;
         public int flags,brightness,entityId,useTicks;

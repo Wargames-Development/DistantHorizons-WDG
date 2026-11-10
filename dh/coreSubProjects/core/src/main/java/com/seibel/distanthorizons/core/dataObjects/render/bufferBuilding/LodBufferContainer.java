@@ -60,7 +60,7 @@ public class LodBufferContainer implements AutoCloseable
 	public final DhBlockPos minCornerBlockPos;
 	public final long pos;
 	
-	public boolean buffersUploaded = false;
+	public volatile boolean buffersUploaded = false;
     public final TerrainCoverage terrainCoverage;
 	
 	public IVertexBufferWrapper[] vboOpaqueWrappers;

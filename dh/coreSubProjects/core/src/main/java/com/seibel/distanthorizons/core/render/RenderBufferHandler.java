@@ -323,7 +323,7 @@ public class RenderBufferHandler implements AutoCloseable
             LodRenderSection section=coverageSections.get(pos);
             if(section==null) continue;
             LodBufferContainer buffer=section.renderBufferContainer;
-            if(buffer==null || !buffer.buffersUploaded || section.renderDataDirty || !section.getRenderingEnabled()
+            if(buffer==null || !buffer.buffersUploaded || section.isRenderDataDirty() || !section.getRenderingEnabled()
                     || coverageBuffers.get(pos)!=buffer) return false;
             int dataDetail=detail-DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL;
             int x=blockX-DhSectionPos.getMinCornerBlockX(pos),z=blockZ-DhSectionPos.getMinCornerBlockZ(pos);
@@ -344,7 +344,7 @@ public class RenderBufferHandler implements AutoCloseable
             LodRenderSection section=coverageSections.get(pos);
             if (section==null) continue;
             LodBufferContainer buffer=section.renderBufferContainer;
-            if (buffer==null || !buffer.buffersUploaded || section.renderDataDirty || !section.getRenderingEnabled()
+            if (buffer==null || !buffer.buffersUploaded || section.isRenderDataDirty() || !section.getRenderingEnabled()
                 || coverageBuffers.get(pos)!=buffer) return false;
             int dataDetail=detail-DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL;
             int x=(blockX-DhSectionPos.getMinCornerBlockX(pos)) >> dataDetail;
