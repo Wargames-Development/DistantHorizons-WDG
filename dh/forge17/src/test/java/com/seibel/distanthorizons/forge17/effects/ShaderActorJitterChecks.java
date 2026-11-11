@@ -8,7 +8,10 @@ public final class ShaderActorJitterChecks {
         require(ShaderActorJitter.parseStrength("#define TAA_JITTER 2\n"+body)==.33f,"unexpanded configured jitter");
         require(ShaderActorJitter.parseStrength("#define TAA_JITTER 0\n"+body)==0,"disabled jitter");
         require(ShaderActorJitter.parseStrength("return coord;")==0,"shader without jitter");
-        int checks=5;
+        String table="vec2 jitterOffsets[8] = vec2[8](vec2(.125,-.375),vec2(-.125,.375),vec2(.625,.125),vec2(.375,-.625),vec2(-.625,.625),vec2(-.875,-.125),vec2(.375,-.875),vec2(.875,.875));";
+        require(ShaderActorJitter.matchingOffsets(table),"option-preprocessed terrain offsets are recognised");
+        require(!ShaderActorJitter.matchingOffsets(table.replace(".875,.875",".5,.5")),"different jitter sequence cannot be mistaken for this pack");
+        int checks=7;
         for(float fov:new float[]{10,30,70,110}) for(int frame=0;frame<8;frame++) for(int step=0;step<32;step++) {
             DhApiMat4f p=new DhApiMat4f();float sy=(float)(1/Math.tan(Math.toRadians(fov)*.5));
             p.m00=sy/1.7f;p.m11=sy;p.m22=-1.01f;p.m23=-.101f;p.m32=-1;

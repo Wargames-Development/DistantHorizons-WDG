@@ -5,6 +5,29 @@
 #include <stdlib.h>
 #include <math.h>
 static GLuint program,textures[5];static int checks;
+static void native_scene_identity_check(void) {
+    GLuint fb[3],depth[2],colour;glGenFramebuffers(3,fb);glGenTextures(2,depth);glGenTextures(1,&colour);
+    glBindTexture(GL_TEXTURE_2D,colour);glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,4,4,0,GL_RGBA,GL_UNSIGNED_BYTE,0);
+    for(int i=0;i<2;i++) {
+        glBindTexture(GL_TEXTURE_2D,depth[i]);glTexImage2D(GL_TEXTURE_2D,0,GL_DEPTH_COMPONENT24,4,4,0,GL_DEPTH_COMPONENT,GL_UNSIGNED_INT,0);
+    }
+    GLint types[3],objects[3];
+    for(int i=0;i<3;i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER,fb[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,colour,0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_TEXTURE_2D,depth[i==2?1:0],0);
+        glDrawBuffer(GL_COLOR_ATTACHMENT0);
+        if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) { fprintf(stderr,"FAIL actor ownership framebuffer\n");exit(1); }
+        glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,&types[i]);
+        glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME,&objects[i]);
+    }
+    // Terrain and entity shader phases have different FBO identities but one native depth image.
+    if(fb[0]==fb[1] || types[0]!=GL_TEXTURE || types[0]!=types[1] || objects[0]!=objects[1] || objects[0]==objects[2] || glGetError()) {
+        fprintf(stderr,"FAIL shader-phase native ownership / private-camera separation\n");exit(1);
+    }
+    checks++;printf("PASS different shader FBOs share native depth; private camera remains distinct\n");
+    glBindFramebuffer(GL_FRAMEBUFFER,0);glDeleteFramebuffers(3,fb);glDeleteTextures(2,depth);glDeleteTextures(1,&colour);
+}
 static GLuint compile(GLenum type,const char *path) {
     FILE *f=fopen(path,"rb");if(!f) { perror(path);exit(1); }
     fseek(f,0,SEEK_END);long n=ftell(f);rewind(f);char *source=calloc(n+1,1);
@@ -212,6 +235,36 @@ static void jitter_alignment_check(void) {
     glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,jittered);
     check("matched DH jitter keeps moving actor visible beside terrain",1,.5);
 }
+static void stationary_actor_jitter_check(void) {
+    uniform("uAuxiliary",0);uniform("uMarkerOverlay",0);uniform("uOpaqueDepthOnly",0);
+    uniform("uOccludeWorld",1);uniform("uDhReverseDepth",0);uniform("uModelReverseDepth",0);
+    uniform("uWriteDhDepth",1);uniform("uUseNativeDepth",1);uniform("uUseCloudDepth",0);
+    matrix("uInverseModelMvp",0);glUniform3f(glGetUniformLocation(program,"uDhOriginOffset"),0,0,0);
+    tex(1,.5,0,0,1);tex(2,1,0,0,1);tex(3,1,0,0,1);
+    float colour[64]={0},reference[64],observed[64];
+    for(int i=0;i<16;i++) if(i%4==1 || i%4==2) { colour[i*4]=.5;colour[i*4+3]=1; }
+    glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,textures[0]);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA32F,4,4,0,GL_RGBA,GL_FLOAT,colour);
+    const float x[]={.125,-.125,.625,.375,-.625,-.875,.375,.875};
+    const float y[]={-.375,.375,.125,-.625,.625,-.125,-.875,.875};
+    for(int scene=0;scene<2;scene++) for(int frame=0;frame<8;frame++) {
+        float jitter[]={1,0,0,0,0,1,0,0,0,0,1,0,x[frame]*.125f/4,y[frame]*.125f/4,0,1};
+        glUniformMatrix4fv(glGetUniformLocation(program,"uNativeMvp"),1,GL_FALSE,jitter);
+        glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,jitter);
+        glUniformMatrix4fv(glGetUniformLocation(program,"uDhFromNativeClip"),1,GL_FALSE,jitter);
+        uniform("uSceneDepth",scene);
+        glClearColor(0,0,0,0);glClearDepth(1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+        glDepthFunc(GL_ALWAYS);glDrawArrays(GL_TRIANGLES,0,6);glReadPixels(0,0,4,4,GL_RGBA,GL_FLOAT,observed);
+        if(frame==0 && scene==0) for(int i=0;i<64;i++) reference[i]=observed[i];
+        for(int i=0;i<64;i++) if(fabsf(observed[i]-reference[i])>.00001) {
+            fprintf(stderr,"FAIL stationary actor raster shifts in jitter frame %d scene %d\n",frame,scene);exit(1);
+        }
+        if(glGetError() || fabsf(observed[4]-.5f)>.003f || observed[0]>.003f) exit(1);
+        checks++;
+    }
+    printf("PASS stable actor colour across eight shader jitter phases and both scene stages\n");
+    uniform("uSceneDepth",0);
+}
 static void beam_segment_check(void) {
     uniform("uAuxiliary",0);uniform("uMarkerOverlay",0);uniform("uOccludeWorld",1);uniform("uSceneDepth",0);
     uniform("uDhReverseDepth",0);uniform("uModelReverseDepth",0);uniform("uUseNativeDepth",0);uniform("uWriteDhDepth",0);
@@ -250,6 +303,7 @@ int main(int argc,char **argv) {
     CGLPixelFormatAttribute attrs[]={kCGLPFAOpenGLProfile,(CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,kCGLPFAAllowOfflineRenderers,0};
     CGLPixelFormatObj format;GLint count;CGLContextObj context;
     if(CGLChoosePixelFormat(attrs,&format,&count) || !count || CGLCreateContext(format,0,&context) || CGLSetCurrentContext(context)) return 1;
+    native_scene_identity_check();
     program=glCreateProgram();glAttachShader(program,compile(GL_VERTEX_SHADER,argv[1]));glAttachShader(program,compile(GL_FRAGMENT_SHADER,argv[2]));
     glBindAttribLocation(program,0,"aPosition");glBindFragDataLocation(program,0,"fragColor");glBindFragDataLocation(program,1,"fragActorMaterial");glBindFragDataLocation(program,2,"fragActorNormal");glLinkProgram(program);
     GLint ok;glGetProgramiv(program,GL_LINK_STATUS,&ok);if(!ok) return 1;glUseProgram(program);
@@ -304,6 +358,6 @@ int main(int argc,char **argv) {
     matrix("uInverseModelMvp",0);matrix("uDhMvp",0);matrix("uNativeMvp",0);glUniform3f(glGetUniformLocation(program,"uDhOriginOffset"),0,0,0);
     glDepthFunc(GL_ALWAYS);check("translucent actor pixels do not enter opaque depth",0,0);
     tex(0,.5,.25,.125,1);check("solid actor pixels enter opaque depth",1,.5);uniform("uOpaqueDepthOnly",0);
-    jitter_alignment_check();beam_segment_check();actor_surface_check();
+    jitter_alignment_check();stationary_actor_jitter_check();beam_segment_check();actor_surface_check();
     printf("PASS %d actor model GPU checks\n",checks);return 0;
 }

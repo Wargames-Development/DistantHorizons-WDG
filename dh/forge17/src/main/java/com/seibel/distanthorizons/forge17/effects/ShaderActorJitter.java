@@ -12,7 +12,7 @@ final class ShaderActorJitter {
     private static Object previousPipeline;
     private static int previousProgram=-1,frameLocation,widthLocation,heightLocation;
     private static float strength;
-    private static Method solid;
+    private static Method solid,terrainSource,vertexSource;
     private static Field programId;
     private static final FloatBuffer value=BufferUtils.createFloatBuffer(16);
     private static final float[] X={.125f,-.125f,.625f,.375f,-.625f,-.875f,.375f,.875f};
@@ -24,6 +24,8 @@ final class ShaderActorJitter {
             // This version exposes uniform locations but no program handle/getter.
             // A read-only handle is needed for glGetUniform, never bind/fillUniformData.
             programId=solid.getReturnType().getDeclaredField("id");programId.setAccessible(true);
+            terrainSource=pipeline.getClass().getMethod("getDHTerrainShader");
+            vertexSource=Class.forName("net.coderbot.iris.shaderpack.ProgramSource").getMethod("getVertexSource");
         }
         Object shader=solid.invoke(dh);if(shader==null) return;
         int program=programId.getInt(shader);if(program<=0) return;
@@ -31,18 +33,18 @@ final class ShaderActorJitter {
             previousPipeline=pipeline;previousProgram=program;strength=0;
             frameLocation=GL20.glGetUniformLocation(program,"framemod8");
             widthLocation=GL20.glGetUniformLocation(program,"viewWidth");heightLocation=GL20.glGetUniformLocation(program,"viewHeight");
-            if(frameLocation<0 || widthLocation<0 || heightLocation<0) return;
-            IntBuffer count=BufferUtils.createIntBuffer(1),attached=BufferUtils.createIntBuffer(8);
-            GL20.glGetAttachedShaders(program,count,attached);
-            for(int i=0;i<count.get(0) && i<8;i++) {
-                int id=attached.get(i);
-                if(GL20.glGetShaderi(id,GL20.GL_SHADER_TYPE)!=GL20.GL_VERTEX_SHADER) continue;
-                int length=GL20.glGetShaderi(id,GL20.GL_SHADER_SOURCE_LENGTH);
-                if(length<=0 || length>1048576) continue;
-                String source=GL20.glGetShaderSource(id,length);
-                strength=matchingOffsets(source)?parseStrength(source):0;
+            // ProgramSource is the option-preprocessed input used to create this exact
+            // pipeline's terrain program. Do not depend on retained GL shader objects.
+            java.util.Optional<?> terrain=(java.util.Optional<?>)terrainSource.invoke(pipeline);
+            String source="";
+            if(terrain.isPresent()) source=(String)((java.util.Optional<?>)vertexSource.invoke(terrain.get())).orElse(null);
+            String reason=source==null || source.isEmpty()?"missing source":"unsupported pattern";
+            if(source!=null && matchingOffsets(source)) {
+                strength=parseStrength(source);reason=strength==0?"disabled or unsupported function":"matched preprocessed terrain";
             }
-            org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").info("DH actor shader jitter: strength="+strength+" program="+program);
+            if(frameLocation<0 || widthLocation<0 || heightLocation<0) { strength=0;reason="missing jitter uniforms"; }
+            org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").info("DH actor shader jitter: strength="+strength+" program="+program+" source="+reason);
+
         }
         if(strength==0) return;
         float frame=uniform(program,frameLocation),width=uniform(program,widthLocation),height=uniform(program,heightLocation);
@@ -51,7 +53,7 @@ final class ShaderActorJitter {
         out[0]=X[index]*strength/width;out[1]=Y[index]*strength/height;
     }
     private static float uniform(int program,int location) { value.clear();GL20.glGetUniform(program,location,value);return value.get(0); }
-    private static boolean matchingOffsets(String source) {
+    static boolean matchingOffsets(String source) {
         Matcher declaration=Pattern.compile("jitterOffsets\\s*\\[").matcher(source);
         if(!declaration.find()) return false;int table=declaration.start();
         int end=source.indexOf(";",table);if(end<0) return false;

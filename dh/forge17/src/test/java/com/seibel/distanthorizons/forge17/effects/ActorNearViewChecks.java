@@ -28,6 +28,10 @@ public final class ActorNearViewChecks {
         singleton.setAccessible(true);Object oldMinecraft=singleton.get(null);
         boolean capes=Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodCapes.get();int checks=0;
         try {
+            require(ActorRenderer.sameNativeDepth(5890,41,5890,41),"different shader FBOs sharing native depth belong to one scene");checks++;
+            require(!ActorRenderer.sameNativeDepth(5890,41,5890,42),"private scope and shadow depth cannot claim primary native draws");checks++;
+            require(!ActorRenderer.sameNativeDepth(5890,41,36161,41),"texture and renderbuffer names are separate namespaces");checks++;
+            require(!ActorRenderer.sameNativeDepth(0,0,0,0),"missing attachments cannot establish shared ownership");checks++;
             Minecraft mc=(Minecraft)allocator.allocateInstance(Minecraft.class);singleton.set(null,mc);
             mc.thePlayer=(net.minecraft.client.entity.EntityClientPlayerMP)allocator.allocateInstance(net.minecraft.client.entity.EntityClientPlayerMP.class);
             mc.renderViewEntity=(net.minecraft.entity.EntityLivingBase)allocator.allocateInstance(net.minecraft.entity.passive.EntityPig.class);
@@ -56,6 +60,16 @@ public final class ActorNearViewChecks {
                         for(org.spongepowered.asm.lib.tree.AbstractInsnNode insn:method.instructions.toArray()) if(insn instanceof org.spongepowered.asm.lib.tree.MethodInsnNode)
                             guarded|=((org.spongepowered.asm.lib.tree.MethodInsnNode)insn).name.equals("localVehicle");
                     require(guarded,"production "+methodName+" honours native cockpit ownership");checks++;
+                }
+            }
+            try(java.io.InputStream stream=ActorRenderer.class.getResourceAsStream("ActorRenderer.class")) {
+                org.spongepowered.asm.lib.tree.ClassNode node=new org.spongepowered.asm.lib.tree.ClassNode();new org.spongepowered.asm.lib.ClassReader(stream).accept(node,0);
+                for(String name:new String[]{"nativePre","nativePost","primaryNativeView"}) {
+                    boolean matched=false;
+                    for(org.spongepowered.asm.lib.tree.MethodNode method:node.methods) if(method.name.equals(name))
+                        for(org.spongepowered.asm.lib.tree.AbstractInsnNode insn:method.instructions.toArray()) if(insn instanceof org.spongepowered.asm.lib.tree.MethodInsnNode)
+                            matched|=((org.spongepowered.asm.lib.tree.MethodInsnNode)insn).name.equals("nativeTarget");
+                    require(matched,"native handoff uses shared depth identity in "+name);checks++;
                 }
             }
             return checks;

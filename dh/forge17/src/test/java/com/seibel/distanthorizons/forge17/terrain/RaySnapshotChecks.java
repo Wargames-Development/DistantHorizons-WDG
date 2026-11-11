@@ -56,6 +56,16 @@ public final class RaySnapshotChecks {
         Field conversions=type.getDeclaredField("conversions");conversions.setAccessible(true);conversions.setInt(cache,0);
         future.set(entry,java.util.concurrent.CompletableFuture.completedFuture(null));adopt.invoke(cache,entry,1_500_000_000L);
         require(((long[][])columns.get(entry)).length==0 && future.get(entry)==null,"missing replacement invalidates old terrain and consumes pending future");
+        Object older=entryConstructor.newInstance(java.util.concurrent.CompletableFuture.completedFuture(null));
+        Object newer=entryConstructor.newInstance(java.util.concurrent.CompletableFuture.completedFuture(null));
+        created.setLong(older,1);created.setLong(newer,2);
+        Field entries=type.getDeclaredField("entries");entries.setAccessible(true);
+        java.util.Map<Long,Object> queued=(java.util.Map<Long,Object>)entries.get(cache);queued.put(1L,older);queued.put(2L,newer);
+        conversions.setInt(cache,0);
+        Method ready=type.getDeclaredMethod("adoptReady",entryType,long.class);ready.setAccessible(true);ready.invoke(cache,newer,10L);
+        require(future.get(older)==null && future.get(newer)!=null,"completed older snapshots progress even when the ray first queries a newer one");
+        ready.invoke(cache,newer,11L);
+        require(future.get(newer)!=null,"oldest-first adoption retains the one-conversion budget");
         double[] hit=new double[3];
         int path=2+(15<<5),lower=2+(8<<5),upper=2+8+(16<<5);
         TerrainRayWalk.Cells paths=(x,y,z)->y==0?path:0;
@@ -71,7 +81,7 @@ public final class RaySnapshotChecks {
             boolean empty=cube==airCubes[meta][0] || cube==airCubes[meta][1];
             require(TerrainRayWalk.trace(x,y,z,x+.01,y,z,(cx,cy,cz)->shape,hit)==(empty?DhTerrainRayApi.Result.CLEAR:DhTerrainRayApi.Result.BLOCKED),"stairs preserve all eight native ray-trace orientations");
         }
-        return 79;
+        return 81;
         } catch(Exception failure) { throw new AssertionError("DH laser snapshot failure",failure); }
     }
     private static void require(boolean value,String message){if(!value)throw new AssertionError(message);}

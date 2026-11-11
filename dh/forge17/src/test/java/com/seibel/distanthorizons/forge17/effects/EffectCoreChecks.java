@@ -463,6 +463,7 @@ public final class EffectCoreChecks
         checks+=ActorNearViewChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.PlayerBodyAlignmentChecks.run();
         checks+=com.seibel.distanthorizons.forge17.terrain.TerrainRayChecks.run();
+        checks+=com.seibel.distanthorizons.forge17.terrain.RayBlockShapeChecks.run();
         checks+=com.seibel.distanthorizons.forge17.terrain.RaySnapshotChecks.run() + ShaderActorJitterChecks.run();
         checkShaderStages(args);
         checkProjectionCopy();

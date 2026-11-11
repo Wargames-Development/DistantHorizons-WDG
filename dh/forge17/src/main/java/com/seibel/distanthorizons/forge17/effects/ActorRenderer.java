@@ -48,6 +48,8 @@ public final class ActorRenderer {
     private long generation,sequence=-1,receipt;
     private double nx,ny,nz,dx,dy,dz;
     private int nativeFramebuffer,shaderFramebuffer,preparedWidth,preparedHeight;
+    private int nativeDepthType,nativeDepthObject;
+    private boolean reportedNativeDepthAlias;
     private boolean valid,drawing,failed,sceneComplete;
     private int drawn,unknown,outside,unprepared,projectionRejected,captureRejected;
     private String status="waiting for terrain view";
@@ -61,7 +63,11 @@ public final class ActorRenderer {
         vehicles=new McheliActors(()->vehiclesOwnLegacy(),this::replaceVehicle,this::observedVehicle);
         ApiEventInjector.INSTANCE.bind(DhApiBeforeRenderSetupEvent.class,new DhApiBeforeRenderSetupEvent() {
             public void beforeSetup(DhApiEventParam<DhApiRenderParam> event) {
-                if(!shadow()) nativeFramebuffer=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+                if(!shadow()) {
+                    nativeFramebuffer=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+                    nativeDepthType=depthAttachment(GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
+                    nativeDepthObject=nativeDepthType==GL11.GL_NONE?0:depthAttachment(GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+                }
             }
         });
         ApiEventInjector.INSTANCE.bind(DhApiBeforeRenderCleanupEvent.class,new DhApiBeforeRenderCleanupEvent() {
@@ -107,7 +113,7 @@ public final class ActorRenderer {
     }
     @SubscribeEvent(priority=EventPriority.LOWEST) public void nativePre(RenderPlayerEvent.Pre event) {
         if(failed || drawing || !valid || !owned() || shadow() || event.entityPlayer==Minecraft.getMinecraft().thePlayer) return;
-        if(GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=nativeFramebuffer) return;
+        if(!nativeTarget()) return;
         // Only actors with an authoritative recipient record are eligible for handoff.
         for(PlayerFrame.Pose pose:PlayerClient.INSTANCE.frames().players()) if(pose.uuid.equals(event.entityPlayer.getUniqueID())) {
             if(!DistantSmokeRenderer.nativeModelVisible(event.entityPlayer,8)) event.setCanceled(true);
@@ -115,7 +121,7 @@ public final class ActorRenderer {
         }
     }
     @SubscribeEvent public void nativePost(RenderPlayerEvent.Post event) {
-        if(!drawing && valid && !shadow() && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)==nativeFramebuffer) {
+        if(!drawing && valid && !shadow() && nativeTarget()) {
             nativeDrawn.add(event.entityPlayer.getUniqueID());
             if(owned()) {
                 update(PlayerClient.INSTANCE.frames());Contact contact=contacts.get(event.entityPlayer.getUniqueID());
@@ -131,7 +137,27 @@ public final class ActorRenderer {
     private boolean vehiclesOwnLegacy() { return vehicles!=null && vehicles.ownsLegacy(); }
     private boolean primaryNativeView() {
         return !failed && !drawing && valid && !shadow() && world==Minecraft.getMinecraft().theWorld
-            && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)==nativeFramebuffer;
+            && nativeTarget();
+    }
+    private static int depthAttachment(int property) {
+        if(GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)==0) return 0;
+        return GL30.glGetFramebufferAttachmentParameteri(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,property);
+    }
+    private boolean nativeTarget() {
+        int current=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        if(current==nativeFramebuffer) return true;
+        int type=depthAttachment(GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE);
+        boolean same=sameNativeDepth(nativeDepthType,nativeDepthObject,type,
+            type==GL11.GL_NONE?0:depthAttachment(GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME));
+        if(same && !reportedNativeDepthAlias) {
+            reportedNativeDepthAlias=true;
+            org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").info("DH native actor handoff: shader FBOs "+nativeFramebuffer+" and "+current+" share scene depth "+nativeDepthObject);
+        }
+        return same;
+    }
+    /** Shader phases use different FBOs over the same native scene depth attachment. */
+    static boolean sameNativeDepth(int expectedType,int expectedObject,int type,int object) {
+        return expectedObject>0 && expectedType!=GL11.GL_NONE && expectedType==type && expectedObject==object;
     }
     private boolean replaceVehicle(net.minecraft.entity.Entity entity) {
         return primaryNativeView() && !vehicles.localVehicle(entity) && vehicles.contains(entity) && !DistantSmokeRenderer.nativeModelVisible(entity,vehicles.radius(entity));
@@ -210,8 +236,11 @@ public final class ActorRenderer {
                 capture.prepare(width,height);scene.prepare(width,height);preparedWidth=width;preparedHeight=height;
             }
             DhApiMat4f renderProjection=new DhApiMat4f();renderProjection.set(frame.mcProjectionMatrix);
-            if(target!=null) ShaderActorJitter.apply(renderProjection,target.jitterX,target.jitterY);
+            // Mask 254 bypasses pack TAA: keep actor rasterisation stable. Only
+            // sampling of the jittered native/DH depth grids receives the offset.
             DhApiMat4f renderNativeMvp=new DhApiMat4f();renderNativeMvp.set(renderProjection);renderNativeMvp.multiply(frame.mcModelViewMatrix);
+            DhApiMat4f sampledNativeMvp=new DhApiMat4f();sampledNativeMvp.set(renderNativeMvp);
+            if(target!=null) ShaderActorJitter.apply(sampledNativeMvp,target.jitterX,target.jitterY);
             dhMvp.set(target==null?frame.dhProjectionMatrix:target.terrainProjection);
             if(target!=null) ShaderActorJitter.apply(dhMvp,target.jitterX,target.jitterY);
             dhMvp.multiply(frame.dhModelViewMatrix);
@@ -260,7 +289,7 @@ public final class ActorRenderer {
                     if(!capture.begin(width,height,bounds[0],bounds[1],bounds[2],bounds[3],localProjection)) { captureRejected++;continue; }
                     try { drawModel(model,x,y,z);modelComplete=true; }
                     finally { capture.end(modelComplete); }
-                    drawn++;capture.composite(inverseLocal,dhMvp,renderNativeMvp,0,0,0,terrainDepth,target==null?0:target.nativeSceneDepth,reverse,true);
+                    drawn++;capture.composite(inverseLocal,dhMvp,sampledNativeMvp,0,0,0,terrainDepth,target==null?0:target.nativeSceneDepth,reverse,true);
                 }
                 completed=true;
             } finally { scene.end(completed); }
@@ -268,12 +297,12 @@ public final class ActorRenderer {
             int oldRead=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),oldDraw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
             try {
                 if(target!=null) bindTarget(target);
-                scene.composite(inverseScene,dhMvp,renderNativeMvp,frame.mcModelViewMatrix,terrainDepth,target==null?0:target.nativeSceneDepth,shaders,clouds.texture,clouds.distance);
+                scene.composite(inverseScene,dhMvp,sampledNativeMvp,frame.mcModelViewMatrix,terrainDepth,target==null?0:target.nativeSceneDepth,shaders,clouds.texture,clouds.distance);
                 if(target!=null) {
                     GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,target.opaqueSceneDepth,0);
                     GL11.glDrawBuffer(GL11.GL_NONE);
                     if(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE) throw new IllegalStateException("Incomplete opaque actor depth target");
-                    scene.compositeOpaqueDepth(inverseScene,dhMvp,renderNativeMvp,frame.mcModelViewMatrix,terrainDepth,target.nativeSceneDepth,clouds.texture,clouds.distance);
+                    scene.compositeOpaqueDepth(inverseScene,dhMvp,sampledNativeMvp,frame.mcModelViewMatrix,terrainDepth,target.nativeSceneDepth,clouds.texture,clouds.distance);
                 }
                 sceneComplete=true;
             } finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldDraw); }
@@ -352,7 +381,7 @@ public final class ActorRenderer {
         if(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE) throw new IllegalStateException("Incomplete actor output target");
     }
     private void clearPlayers() { for(Contact contact:contacts.values()) contact.close();contacts.clear(); }
-    private void clear() { cameraPass.reset();clearPlayers();vehicles.clear();terrain.clear(); }
+    private void clear() { cameraPass.reset();clearPlayers();vehicles.clear();terrain.clear();reportedNativeDepthAlias=false; }
     private final class Contact implements ActorModel {
         final UUID uuid;
         float partial;

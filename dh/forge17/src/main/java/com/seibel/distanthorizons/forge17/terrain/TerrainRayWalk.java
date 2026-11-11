@@ -1,7 +1,12 @@
 package com.seibel.distanthorizons.forge17.terrain;
 /** Bounded voxel traversal; unknown prefixes never establish a surface behind them. */
 public final class TerrainRayWalk {
-    public interface Cells { int cell(int x,int y,int z); }
+    public interface Cells {
+        int cell(int x,int y,int z);
+        default double surface(int type,int x,int y,int z,double sx,double sy,double sz,double dx,double dy,double dz,double enter,double exit) {
+            return TerrainRayWalk.surface(type,x,y,z,sx,sy,sz,dx,dy,dz,enter,exit);
+        }
+    }
     private TerrainRayWalk() { }
     public static DhTerrainRayApi.Result trace(double x0,double y0,double z0,double x1,double y1,double z1,Cells cells,double[] hit) {
         if(hit==null || hit.length<3 || cells==null || !Double.isFinite(x0+y0+z0+x1+y1+z1)) return DhTerrainRayApi.Result.UNKNOWN;
@@ -18,7 +23,7 @@ public final class TerrainRayWalk {
             double end=Math.min(next[0],Math.min(next[1],next[2]));
             int type=cells.cell(cell[0],cell[1],cell[2]);
             if(type<0) return DhTerrainRayApi.Result.UNKNOWN;
-            double contact=surface(type,cell[0],cell[1],cell[2],x0,y0,z0,delta[0],delta[1],delta[2],t,Math.min(1,end));
+            double contact=cells.surface(type,cell[0],cell[1],cell[2],x0,y0,z0,delta[0],delta[1],delta[2],t,Math.min(1,end));
             if(Double.isFinite(contact)) { hit[0]=x0+delta[0]*contact;hit[1]=y0+delta[1]*contact;hit[2]=z0+delta[2]*contact;return DhTerrainRayApi.Result.BLOCKED; }
             if(end>1 || !Double.isFinite(end)) return DhTerrainRayApi.Result.CLEAR;
             t=end;
@@ -28,7 +33,7 @@ public final class TerrainRayWalk {
                 if(++work>=8192) return DhTerrainRayApi.Result.UNKNOWN;
                 int touched=cells.cell(cell[0]+((subset&1)!=0?step[0]:0),cell[1]+((subset&2)!=0?step[1]:0),cell[2]+((subset&4)!=0?step[2]:0));
                 if(touched<0) return DhTerrainRayApi.Result.UNKNOWN;
-                double corner=surface(touched,cell[0]+((subset&1)!=0?step[0]:0),cell[1]+((subset&2)!=0?step[1]:0),cell[2]+((subset&4)!=0?step[2]:0),x0,y0,z0,delta[0],delta[1],delta[2],t,t);
+                double corner=cells.surface(touched,cell[0]+((subset&1)!=0?step[0]:0),cell[1]+((subset&2)!=0?step[1]:0),cell[2]+((subset&4)!=0?step[2]:0),x0,y0,z0,delta[0],delta[1],delta[2],t,t);
                 if(Double.isFinite(corner)) { hit[0]=x0+delta[0]*corner;hit[1]=y0+delta[1]*corner;hit[2]=z0+delta[2]*corner;return DhTerrainRayApi.Result.BLOCKED; }
             }
             for(int axis=0;axis<3;axis++) if((tied&(1<<axis))!=0) { cell[axis]+=step[axis];next[axis]+=stepTime[axis]; }
@@ -57,7 +62,7 @@ public final class TerrainRayWalk {
     }
     // Forge 1.7.10 BlockStairs.collisionRayTrace excludes these two half-cubes per metadata.
     private static final int[][] STAIR_AIR={{2,6},{3,7},{2,3},{6,7},{0,4},{1,5},{0,1},{4,5}};
-    private static double box(double sx,double sy,double sz,double dx,double dy,double dz,double x0,double y0,double z0,double x1,double y1,double z1,double a,double b) {
+    static double box(double sx,double sy,double sz,double dx,double dy,double dz,double x0,double y0,double z0,double x1,double y1,double z1,double a,double b) {
         if(dx==0) { if(sx<x0 || sx>x1) return Double.NaN; }
         else { double p=(x0-sx)/dx,q=(x1-sx)/dx;a=Math.max(a,Math.min(p,q));b=Math.min(b,Math.max(p,q)); }
         if(dy==0) { if(sy<y0 || sy>y1) return Double.NaN; }

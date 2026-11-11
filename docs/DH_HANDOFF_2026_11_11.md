@@ -1,5 +1,9 @@
 # DH integration handoff — 11 November 2026
 
+> Latest status: [repository closeout assessment](REPOSITORY_CLOSEOUT_2026_11_11.md) records the user's subsequent successful laser and moving-actor tests, current checkout versions, completed commits, and remaining lighting/weather/sky and migration gaps. The reports below describe the earlier checkpoint.
+
+> Subsequent candidate: DH X70 / MCHELI X206-dh-lods-test / EFR X10 implements stable actor rasterisation with jittered depth lookup and broader native EFR laser shapes. See [implementation and validation](debugging/shader-zoom-laser-fix-2026-11-11.md). The X68 user reports below remain the runtime acceptance cases; no new in-game acceptance is claimed.
+
 ## Current outcome: incomplete shader and zoom work
 
 The user is moving the investigation to a new chat and explicitly requested that the existing work be committed on its branches. These are reproducible checkpoints, not a release or a claim that all rendering is correct.

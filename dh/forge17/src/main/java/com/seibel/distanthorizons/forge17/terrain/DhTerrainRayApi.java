@@ -48,27 +48,35 @@ public final class DhTerrainRayApi {
                 if(cache==null) { cache=new Cache();cache.level=new java.lang.ref.WeakReference<>(level);caches.put(world,cache); }
             }
             final Cache selected=cache;final ILevelWrapper bounds=wrapper;
-            Result result=TerrainRayWalk.trace(x0,y0,z0,x1,y1,z1,(x,y,z)->selected.cell(level,bounds,x,y,z),hit);
-            selected.report(result,world.isRemote);return result;
+            Result result=TerrainRayWalk.trace(x0,y0,z0,x1,y1,z1,new TerrainRayWalk.Cells() {
+                public int cell(int x,int y,int z) { return selected.cell(level,bounds,x,y,z); }
+                public double surface(int type,int x,int y,int z,double sx,double sy,double sz,double dx,double dy,double dz,double enter,double exit) {
+                    return selected.shapes.surface(type,x,y,z,sx,sy,sz,dx,dy,dz,enter,exit);
+                }
+            },hit);
+            selected.report(result,world.isRemote);
+            if(result==Result.UNKNOWN) selected.prefetch(level,x0,z0,x1,z1);
+            return result;
         } catch(ReflectiveOperationException | RuntimeException | LinkageError unavailable) { return Result.UNKNOWN; }
     }
     public static void unload(World world) {
         Cache cache;synchronized(caches) { cache=caches.remove(world); }
         if(cache!=null) cache.clear();
     }
-    private static int kind(Block block,int meta,String serial) {
+    private static int kind(Block block,int meta,String serial,RayBlockShapes shapes) {
         if(block==Blocks.air || block==Blocks.water || block==Blocks.flowing_water || block==Blocks.lava || block==Blocks.flowing_lava || block==Blocks.tallgrass || block==Blocks.deadbush || block==Blocks.yellow_flower
             || block==Blocks.red_flower || block==Blocks.double_plant || block==Blocks.sapling || block==Blocks.brown_mushroom
             || block==Blocks.red_mushroom || block==Blocks.wheat || block==Blocks.carrots || block==Blocks.potatoes
             || block==Blocks.nether_wart || block==Blocks.reeds || block==Blocks.vine) return 0;
+        String name=String.valueOf(Block.blockRegistry.getNameForObject(block));
+        if(name.equals("etfuturum:short_dry_grass") || name.equals("etfuturum:tall_dry_grass")) return 0;
         if(com.seibel.distanthorizons.core.dataObjects.transformers.EfrLodCompat.distinctDirtFaces(serial)) return height(0,15);
         if(block instanceof net.minecraft.block.BlockSlab) return block.isOpaqueCube()?1:((meta&8)==0?height(0,8):height(8,16));
         if(block instanceof net.minecraft.block.BlockStairs) return 1024+(meta&7);
         if(block==Blocks.snow_layer) return height(0,2*((meta&7)+1));
-        // Neighbour/tile-dependent shapes need more than a block ID. They remain unknown.
-        if(block==Blocks.glass || block==Blocks.stained_glass || block==Blocks.ice || block==Blocks.packed_ice
-            || block==Blocks.leaves || block==Blocks.leaves2) return 1;
-        return block.isOpaqueCube() && block.renderAsNormalBlock()?1:-1;
+        // Native ray selection is independent of opacity and render type (leaves,
+        // roots, transparent cubes and oriented amethyst buds are examples).
+        return shapes.kind(block,meta);
     }
     private static int height(int bottom,int top) { return 2+bottom+(top<<5); }
     private static final class Entry {
@@ -80,18 +88,33 @@ public final class DhTerrainRayApi {
         void discard() { if(future!=null) { future.whenComplete((source,error)->{if(source!=null)source.close();});future=null; } }
     }
     private static final class Cache {
+        final RayBlockShapes shapes=new RayBlockShapes();
         final LinkedHashMap<Long,Entry> entries=new LinkedHashMap<>(32,.75F,true);
         java.lang.ref.WeakReference<IDhLevel> level=new java.lang.ref.WeakReference<>(null);
         long window;int requests,conversions;
-        int reason,lastX,lastY,lastZ,reports;long lastReport;
+        int reason,lastX,lastY,lastZ;long lastReport;
         final java.util.Set<String> unsupported=new java.util.LinkedHashSet<>();
         int unknown(int reason,int x,int y,int z) { this.reason=reason;lastX=x;lastY=y;lastZ=z;return -1; }
         void report(Result result,boolean client) {
-            long now=System.nanoTime();if(result!=Result.UNKNOWN || reports>=20 || now-lastReport<1_000_000_000L) return;
-            reports++;lastReport=now;
+            long now=System.nanoTime();if(result!=Result.UNKNOWN || now-lastReport<1_000_000_000L) return;
+            lastReport=now;
             org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").info("DH laser pending ["+(client?"client":"server")+"]: reason="+reason+" cell="+lastX+","+lastY+","+lastZ+" cachedSections="+entries.size()+" unsupportedShapeCandidates="+unsupported);
         }
-        void clear() { for(Entry entry:entries.values()) entry.discard();entries.clear(); }
+        // Warm the rest of a rejected corridor within the same request budget.
+        // This never authorises a hit: the next query still verifies every cell.
+        void prefetch(IDhLevel level,double x0,double z0,double x1,double z1) {
+            double distance=Math.hypot(x1-x0,z1-z0);
+            int steps=Math.max(1,(int)Math.ceil(distance/32));
+            for(int i=0;i<=steps && requests<4;i++) {
+                long pos=DhSectionPos.encode(DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL,
+                    ((int)Math.floor(x0+(x1-x0)*i/steps))>>6,((int)Math.floor(z0+(z1-z0)*i/steps))>>6);
+                if(entries.containsKey(pos)) continue;
+                // Never evict the queried prefix just to prefetch beyond it.
+                if(entries.size()>=32) return;
+                requests++;entries.put(pos,new Entry(level.getFullDataProvider().getAsync(pos)));
+            }
+        }
+        void clear() { for(Entry entry:entries.values()) entry.discard();entries.clear();shapes.clear(); }
         int cell(IDhLevel level,ILevelWrapper bounds,int x,int y,int z) {
             if(y>=bounds.getMaxHeight()) return 0;
             if(y<bounds.getMinHeight()) return -1;
@@ -107,7 +130,9 @@ public final class DhTerrainRayApi {
             if(entry.refreshDue(now) && requests<4) {
                 requests++;entry.future=level.getFullDataProvider().getAsync(pos);
             }
-            adopt(entry,now);
+            // A frequently queried near section must not monopolise conversion while
+            // completed distant snapshots age out. Preserve the one-conversion budget.
+            if(conversions<1) adoptReady(entry,now);
             // Prefetch while the old snapshot is still within its original two-second validity.
             // Slow/missing refreshes still fail closed when that deadline is reached.
             if(!entry.usable(now)) return unknown(entry.columns==null?1:4,x,y,z);
@@ -123,6 +148,12 @@ public final class DhTerrainRayApi {
             }
             return relY>=highest?0:unknown(2,x,y,z);
         }
+        void adoptReady(Entry entry,long now) {
+            Entry oldest=entry;
+            for(Entry candidate:entries.values()) if(candidate.future!=null && candidate.future.isDone()
+                && (oldest.future==null || !oldest.future.isDone() || candidate.created<oldest.created)) oldest=candidate;
+            adopt(oldest,now);
+        }
         void adopt(Entry entry,long now) {
             if(entry.future==null || !entry.future.isDone() || conversions>=1) return;
             conversions++;
@@ -130,7 +161,7 @@ public final class DhTerrainRayApi {
             FullDataSourceV2 source=null;
             try {
                 source=future.getNow(null);entry.columns=source==null?null:copy(source);
-            } catch(RuntimeException unsupported) { entry.columns=null; }
+            } catch(RuntimeException | LinkageError unsupported) { entry.columns=null; }
             finally { if(source!=null) source.close();entry.created=now; }
             if(entry.columns==null) entry.columns=new long[0][];
         }
@@ -150,7 +181,7 @@ public final class DhTerrainRayApi {
                     if(type==null) {
                         com.seibel.distanthorizons.core.wrapperInterfaces.block.IBlockStateWrapper state=source.mapping.getBlockStateWrapper(id);
                         type=state.isAir()?0:state instanceof BlockStateWrapper && ((BlockStateWrapper)state).blockState!=null
-                            ?kind(((BlockStateWrapper)state).blockState.getBlock(),((BlockStateWrapper)state).blockState.getMeta(),state.getSerialString()):-1;
+                            ?kind(((BlockStateWrapper)state).blockState.getBlock(),((BlockStateWrapper)state).blockState.getMeta(),state.getSerialString(),shapes):-1;
                         if(type<0 && unsupported.size()<16) unsupported.add(state.getSerialString());
                         materials.put(id,type);
                     }
