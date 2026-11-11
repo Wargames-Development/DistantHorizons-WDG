@@ -10,14 +10,20 @@ uniform sampler2D uSourceDepthTexture;
 
 uniform vec2 uViewSize;
 uniform int uBlurRadius;
-uniform float uNearClipPlane;
-uniform float uFarClipPlane;
+uniform mat4 uInvProj;
+uniform bool uDepthIsZeroToPositiveOne;
 
 uniform bool uIsReverseZDepth;
 
 
 
-float linearizeDepth(const in float depth) { return (uNearClipPlane * uFarClipPlane) / (depth * (uNearClipPlane - uFarClipPlane) + uFarClipPlane); }
+// Reconstruct from the exact rendered projection. Reverse DH depth may use
+// only part of the hardware depth range, so flipping a near/far formula is insufficient.
+float linearizeDepth(vec2 uv, float depth) {
+    vec4 ndc = vec4(uv * 2.0 - 1.0, uDepthIsZeroToPositiveOne ? depth : depth * 2.0 - 1.0, 1.0);
+    vec4 eye = uInvProj * ndc;
+    return abs(eye.z / eye.w);
+}
 
 float Gaussian(const in float sigma, const in float x) { return exp(-(x*x) / (2.0 * (sigma*sigma))); }
 
@@ -41,11 +47,14 @@ float BilateralGaussianBlur(const in vec2 texcoord, const in float linearDepth, 
             float fx = Gaussian(g_sigmaX, ix);
 
             vec2 sampleTexCoord = texcoord + ivec2(ix, iy) * pixelSize;
+            if (any(lessThan(sampleTexCoord, vec2(0.0)))
+                || any(greaterThan(sampleTexCoord, vec2(1.0)))) continue;
 
             float sampleValue = textureLod(uSourceColorTexture, sampleTexCoord, 0).r;
 
             float sampleDepth = textureLod(uSourceDepthTexture, sampleTexCoord, 0).r;
-            float sampleLinearDepth = linearizeDepth(sampleDepth);
+            if (uIsReverseZDepth ? sampleDepth <= 0.0 : sampleDepth >= 1.0) continue;
+            float sampleLinearDepth = linearizeDepth(sampleTexCoord, sampleDepth);
 
             float depthDiff = abs(sampleLinearDepth - linearDepth);
             float fv = Gaussian(g_sigmaV, depthDiff);
@@ -86,7 +95,7 @@ void main()
     {
         if (uBlurRadius > 0)
         {
-            float fragmentDepthLinear = linearizeDepth(fragmentDepth);
+            float fragmentDepthLinear = linearizeDepth(texCoord, fragmentDepth);
             fragColor.a = BilateralGaussianBlur(texCoord, fragmentDepthLinear, 1.6);
         }
         else

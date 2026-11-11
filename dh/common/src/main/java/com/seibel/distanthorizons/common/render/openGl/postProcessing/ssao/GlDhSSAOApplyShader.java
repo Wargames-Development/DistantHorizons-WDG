@@ -20,6 +20,7 @@
 package com.seibel.distanthorizons.common.render.openGl.postProcessing.ssao;
 
 import com.seibel.distanthorizons.api.enums.config.EDhApiDepthDirection;
+import com.seibel.distanthorizons.api.enums.config.EDhApiDepthRange;
 import com.seibel.distanthorizons.common.render.openGl.GlDhMetaRenderer;
 import com.seibel.distanthorizons.common.render.openGl.glObject.shader.GlShaderProgram;
 import com.seibel.distanthorizons.common.render.openGl.postProcessing.GlScreenQuad;
@@ -27,7 +28,7 @@ import com.seibel.distanthorizons.common.wrappers.minecraft.MinecraftGLWrapper;
 import com.seibel.distanthorizons.common.render.openGl.util.GlAbstractShaderRenderer;
 import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
 import com.seibel.distanthorizons.core.render.RenderParams;
-import com.seibel.distanthorizons.core.util.RenderUtil;
+import com.seibel.distanthorizons.core.util.math.DhMat4f;
 import com.seibel.distanthorizons.core.wrapperInterfaces.render.AbstractDhRenderApiDefinition;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL13;
@@ -58,8 +59,8 @@ public class GlDhSSAOApplyShader extends GlAbstractShaderRenderer
 	public int uSourceDepthTexture;
 	public int uViewSize;
 	public int uBlurRadius;
-	public int uNearClipPlane;
-	public int uFarClipPlane;
+	public int uInvProj;
+	public int uDepthIsZeroToPositiveOne;
 	public int uIsReverseZDepth;
 	
 	
@@ -82,8 +83,8 @@ public class GlDhSSAOApplyShader extends GlAbstractShaderRenderer
 		this.uSourceDepthTexture = this.shader.getUniformLocation("uSourceDepthTexture");
 		this.uViewSize = this.shader.getUniformLocation("uViewSize");
 		this.uBlurRadius = this.shader.getUniformLocation("uBlurRadius");
-		this.uNearClipPlane = this.shader.getUniformLocation("uNearClipPlane");
-		this.uFarClipPlane = this.shader.getUniformLocation("uFarClipPlane");
+		this.uInvProj = this.shader.getUniformLocation("uInvProj");
+		this.uDepthIsZeroToPositiveOne = this.shader.getUniformLocation("uDepthIsZeroToPositiveOne");
 		this.uIsReverseZDepth = this.shader.getUniformLocation("uIsReverseZDepth");
 	}
 	
@@ -113,18 +114,12 @@ public class GlDhSSAOApplyShader extends GlAbstractShaderRenderer
 					MC_RENDER.getTargetFramebufferViewportHeight());
 		}
 		
-		if (this.uNearClipPlane  >= 0)
-		{
-			LWJGL.glUniform1f(this.uNearClipPlane,
-					RenderUtil.getNearClipPlaneInBlocks());
-		}
-		
-		if (this.uFarClipPlane >= 0)
-		{
-			float farClipPlane = RenderUtil.getFarClipPlaneDistanceInBlocks();
-			LWJGL.glUniform1f(this.uFarClipPlane, farClipPlane);
-		}
-		
+        DhMat4f inverseProjection = new DhMat4f(renderParams.dhProjectionMatrix);
+        inverseProjection.invert();
+        this.shader.setUniform(this.uInvProj, inverseProjection);
+        this.shader.setUniform(this.uDepthIsZeroToPositiveOne,
+            RENDER_DEF.getDepthRange() == EDhApiDepthRange.ZERO_TO_POS_ONE);
+
 		LWJGL.glUniform1i(this.uIsReverseZDepth, (RENDER_DEF.getDepthDirection() == EDhApiDepthDirection.REVERSE_Z) ? 1 : 0);
 	}
 	

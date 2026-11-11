@@ -63,6 +63,13 @@ public class FullDataOcclusionCuller
 				continue;
 			}
 			
+            // Preserve structural wood even when a leaf canopy surrounds it. Expanding
+            // a leaf interval into a trunk changes the material shown by reduced LODs.
+            byte material=dataSource.mapping.getBlockStateWrapper(FullDataPointUtil.getId(currentPoint)).getMaterialId();
+            byte aboveMaterial=dataSource.mapping.getBlockStateWrapper(FullDataPointUtil.getId(centerColumn.getLong(centerIndex-1))).getMaterialId();
+            if(material==com.seibel.distanthorizons.api.enums.rendering.EDhApiBlockMaterial.WOOD.index
+                || aboveMaterial==com.seibel.distanthorizons.api.enums.rendering.EDhApiBlockMaterial.WOOD.index) continue;
+
 			// the bottom segment can sometimes be culled.
 			// assume it will not be seen from below,
 			// because this would imply the player is in the void.
@@ -160,16 +167,18 @@ public class FullDataOcclusionCuller
 		
 		int bottomOfCenter = FullDataPointUtil.getBottomY(centerPoint);
 		int topOfCenter = bottomOfCenter + FullDataPointUtil.getHeight(centerPoint);
+        int coveredUntil=bottomOfCenter;
 		for (; adjacentIndex >= 0; adjacentIndex--)
 		{
 			long adjacentPoint = adjacentColumn.getLong(adjacentIndex);
 			int topOfAdjacent = FullDataPointUtil.getBottomY(adjacentPoint) + FullDataPointUtil.getHeight(adjacentPoint);
-			if (topOfAdjacent <= bottomOfCenter)
+			if (topOfAdjacent <= coveredUntil)
 			{
 				// the adjacent point is below the center point,
 				// check the next one
 				continue;
 			}
+            else if(FullDataPointUtil.getBottomY(adjacentPoint)>coveredUntil) return ~adjacentIndex;
 			else if (isTranslucent(source, adjacentPoint))
 			{
 				// this point is adjacent to a transparent LOD and should be shown
@@ -180,6 +189,7 @@ public class FullDataOcclusionCuller
 				// the adjacent point covers the center point
 				return adjacentIndex;
 			}
+            coveredUntil=Math.max(coveredUntil,topOfAdjacent);
 		}
 		
 		

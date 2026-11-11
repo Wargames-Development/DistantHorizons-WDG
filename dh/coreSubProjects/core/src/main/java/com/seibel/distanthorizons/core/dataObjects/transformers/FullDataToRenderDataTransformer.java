@@ -242,6 +242,17 @@ public class FullDataToRenderDataTransformer
 			// find the full data point containing the render data point's top block,
 			// the full data column is sorted top down
 			short textureId = 0;
+            if(materialId!=EDhApiBlockMaterial.SNOW.index) {
+                try {
+                    int selected=RenderTextureSource.select(fullDataColumn,RenderDataPointUtil.getYMin(renderData),
+                        RenderDataPointUtil.getYMax(renderData),materialId,
+                        id->fullDataSource.mapping.getBlockStateWrapper(id).getMaterialId());
+                    if(selected>=0) textureId=BlockTextureRegistry.INSTANCE.getOrRegisterBlockStateSetId(
+                        fullDataSource.mapping.getBlockStateWrapper(FullDataPointUtil.getId(fullDataColumn.getLong(selected))));
+                } catch(IndexOutOfBoundsException brokenMapping) { /* Flat colour is safer than a different material's texture. */ }
+                columnSource.setTextureSetId(sourceRelX,sourceRelZ,renderIndex,textureId);
+                continue;
+            }
 			for (int fullIndex = 0; fullIndex < fullDataColumn.size(); fullIndex++)
 			{
 				long fullData = fullDataColumn.getLong(fullIndex);

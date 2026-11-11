@@ -581,6 +581,15 @@ public class RenderDataPointReducingList extends AbstractPhantomArrayList
 	 * current's smaller neighbor, when fastPath is set to false,
 	 * this method will return current's bigger neighbor instead.
 	 */
+    private boolean sameMergeSurface(int a,int b) {
+        if(this.getAlpha(a)!=this.getAlpha(b)) return false;
+        int ma=RenderDataPointUtil.getBlockMaterialId(this.getData(a));
+        int mb=RenderDataPointUtil.getBlockMaterialId(this.getData(b));
+        int wood=com.seibel.distanthorizons.api.enums.rendering.EDhApiBlockMaterial.WOOD.index;
+        int leaves=com.seibel.distanthorizons.api.enums.rendering.EDhApiBlockMaterial.LEAVES.index;
+        return !((ma==wood && mb==leaves) || (ma==leaves && mb==wood));
+    }
+
 	private int tryMergeStep1(int current, boolean fastPath) 
 	{
 		int result = fastPath ? this.getSmaller(current) : this.getBigger(current);
@@ -590,9 +599,9 @@ public class RenderDataPointReducingList extends AbstractPhantomArrayList
 		int toRemove;
 		
 		
-		if (higher != NULL && this.getAlpha(higher) == this.getAlpha(current)) 
+		if (higher != NULL && this.sameMergeSurface(higher,current))
 		{
-			if (lower != NULL && this.getAlpha(lower) == this.getAlpha(current)) 
+			if (lower != NULL && this.sameMergeSurface(lower,current))
 			{
 				if (this.getSize(higher) <= this.getSize(lower)) 
 				{
@@ -613,7 +622,7 @@ public class RenderDataPointReducingList extends AbstractPhantomArrayList
 		}
 		else
 		{
-			if (lower != NULL && this.getAlpha(lower) == this.getAlpha(current))
+			if (lower != NULL && this.sameMergeSurface(lower,current))
 			{
 				toExtendDownwards = current;
 				toRemove = lower;
@@ -751,7 +760,7 @@ public class RenderDataPointReducingList extends AbstractPhantomArrayList
 			
 			int lower = this.getLower(center);
 			int higher = this.getHigher(center);
-			if (lower != NULL && higher != NULL && this.getAlpha(lower) == this.getAlpha(higher))
+			if (lower != NULL && higher != NULL && this.sameMergeSurface(lower,higher))
 			{
 				this.setMinY(higher, this.getMinY(lower));
 				this.resortSize(higher);

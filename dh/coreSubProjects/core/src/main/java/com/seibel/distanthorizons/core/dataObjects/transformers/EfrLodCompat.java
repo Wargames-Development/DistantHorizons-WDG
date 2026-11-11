@@ -13,6 +13,16 @@ public final class EfrLodCompat {
         return s.substring(10);
     }
     public static boolean visibleVolume(String serial) { return name(serial).equals("powder_snow"); }
+    public static boolean distinctDirtFaces(String serial) {
+        String n=name(serial);
+        if(n.equals("grass_path") || n.equals("dirt_path")) return true;
+        if("minecraft:farmland".equals(serial)) return true;
+        if(serial!=null && serial.startsWith("minecraft:farmland:")) try {
+            int meta=Integer.parseInt(serial.substring("minecraft:farmland:".length()));
+            return meta>=0 && meta<=15;
+        } catch(NumberFormatException invalid) { return false; }
+        return false;
+    }
     public static boolean submergedPlant(String serial) {
         String n=name(serial);
         return containsWater(serial) && (EfrAquaticLodCompat.isKelp(serial) || n.equals("seagrass") || n.equals("tall_seagrass")

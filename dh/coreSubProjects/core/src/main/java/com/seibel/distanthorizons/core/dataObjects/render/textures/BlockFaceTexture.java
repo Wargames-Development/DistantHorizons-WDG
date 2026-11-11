@@ -42,6 +42,8 @@ public class BlockFaceTexture
 	public final int[] argbPixels;
 	
 	public final boolean uploadAsColorRatio;
+    /** Shared representative block colour for faces whose mean differs from the top. */
+    public final Integer ratioReferenceColor;
 	
 	
 	
@@ -71,11 +73,18 @@ public class BlockFaceTexture
 	{ return new BlockFaceTexture(width, height, argbPixels, true); }
 	
 	private BlockFaceTexture(int width, int height, int[] argbPixels, boolean uploadAsColorRatio)
+    { this(width,height,argbPixels,uploadAsColorRatio,null); }
+
+    public BlockFaceTexture relativeToColor(int color)
+    { return new BlockFaceTexture(this.width,this.height,this.argbPixels,this.uploadAsColorRatio,color); }
+
+    private BlockFaceTexture(int width, int height, int[] argbPixels, boolean uploadAsColorRatio, Integer referenceColor)
 	{
 		this.width = width;
 		this.height = height;
 		this.argbPixels = argbPixels;
 		this.uploadAsColorRatio = uploadAsColorRatio;
+        this.ratioReferenceColor = referenceColor;
 	}
 	
 	//endregion

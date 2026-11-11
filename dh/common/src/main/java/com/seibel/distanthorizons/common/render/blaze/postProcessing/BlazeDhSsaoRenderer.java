@@ -215,18 +215,19 @@ public class BlazeDhSsaoRenderer implements IDhSsaoRenderer
 			
 			float viewWidth = (float)MC_RENDER.getTargetFramebufferViewportWidth();
 			float viewHeight = (float)MC_RENDER.getTargetFramebufferViewportHeight();
+            DhMat4f inverseProjection = new DhMat4f(renderParams.dhProjectionMatrix);
+            inverseProjection.invert();
 			
-			float nearClipPlane = RenderUtil.getNearClipPlaneInBlocks();
-			float farClipPlane = RenderUtil.getFarClipPlaneDistanceInBlocks();
+
 			
 			
 			// upload data //
 			this.applyFragUniformBufferWrapper
 				.putVec2f(viewWidth, viewHeight) // uViewSize
 				.putInt(2) // uBlurRadius
-				.putFloat(nearClipPlane) // uNearClipPlane
-				.putFloat(farClipPlane) // uFarClipPlane
-				.putInt((RENDER_DEF.getDepthDirection() == EDhApiDepthDirection.REVERSE_Z) ? 1 : 0) // uIsReverseZDepth
+                .putInt((RENDER_DEF.getDepthDirection() == EDhApiDepthDirection.REVERSE_Z) ? 1 : 0) // uIsReverseZDepth
+                .putMat4f(inverseProjection) // uInvProj
+                .putInt((RENDER_DEF.getDepthRange() == EDhApiDepthRange.ZERO_TO_POS_ONE) ? 1 : 0) // uDepthIsZeroToPositiveOne
 				.finishAndUpload()
 			;
 		}

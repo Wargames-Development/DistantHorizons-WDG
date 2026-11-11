@@ -306,7 +306,16 @@ public class ClientBlockStateTextureCache
             // shader. Do not cover a valid fallback colour with an error-grid texture.
             return BlockFaceTexture.createSolidColor(ColorUtil.INVISIBLE);
         }
-		return bakeSpriteTexture(sprite);
+        BlockFaceTexture face=bakeSpriteTexture(sprite);
+        if(com.seibel.distanthorizons.core.dataObjects.transformers.EfrLodCompat.distinctDirtFaces(blockStateWrapper.getSerialString())) {
+            TextureAtlasSprite top=getFaceSprite(blockStateWrapper,EDhDirection.UP);
+            if(top!=null) {
+                int reference=ClientBlockStateColorCache.calculateColorFromTexture(top,
+                    ClientBlockStateColorCache.EColorMode.getColorMode(blockStateWrapper.blockState.getBlock()));
+                face=face.relativeToColor(reference);
+            }
+        }
+        return face;
 		
 		#else
 		

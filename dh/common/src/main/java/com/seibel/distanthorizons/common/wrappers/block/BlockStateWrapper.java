@@ -877,6 +877,8 @@ public class BlockStateWrapper implements IBlockStateWrapper
 		//region
 		
 		if (
+            com.seibel.distanthorizons.core.dataObjects.transformers.EfrLodCompat.distinctDirtFaces(lowercaseSerialString)
+            ||
 			lowercaseSerialString.contains("dirt")
 			|| lowercaseSerialString.contains("gravel")
 			|| lowercaseSerialString.contains("mud")

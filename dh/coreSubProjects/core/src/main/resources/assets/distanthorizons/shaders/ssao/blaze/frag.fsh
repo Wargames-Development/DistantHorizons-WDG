@@ -91,11 +91,16 @@ float GetSpiralOcclusion(const in vec2 uv, const in vec3 viewPos, const in vec3 
         rotatePhase += GOLDEN_ANGLE;
 
         vec3 sampleViewPos = viewPos + vec3(offset, -0.1);
-        vec3 sampleClipPos = unproject(uProj * vec4(sampleViewPos, 1.0)) * 0.5 + 0.5;
-        sampleClipPos = saturate(sampleClipPos);
+        vec4 sampleClip = uProj * vec4(sampleViewPos, 1.0);
+        if (sampleClip.w <= EPSILON) continue;
+        vec3 sampleClipPos = unproject(sampleClip) * 0.5 + 0.5;
+        // Off-screen depth is unknown. Clamping/repeating it invents occluders
+        // at the screen edges, especially when zoom magnifies the sample radius.
+        if (any(lessThan(sampleClipPos.xy, vec2(0.0)))
+            || any(greaterThan(sampleClipPos.xy, vec2(1.0)))) continue;
 
         float sampleClipDepth = textureLod(uDhDepthTexture, sampleClipPos.xy, 0.0).r;
-        if (sampleClipDepth >= 1.0 - EPSILON)
+        if (uIsReverseZDepth ? sampleClipDepth <= 0.0 : sampleClipDepth >= 1.0)
         {
             continue;   
         }
@@ -118,6 +123,7 @@ float GetSpiralOcclusion(const in vec2 uv, const in vec3 viewPos, const in vec3 
         
         vec3 diff = sampleViewPos - viewPos;
         float sampleDist = length(diff);
+        if (sampleDist <= EPSILON) continue;
         vec3 sampleNormal = diff / sampleDist;
 
         float sampleNoLm = max(dot(viewNormal, sampleNormal) - uBias, 0.0);
@@ -160,8 +166,9 @@ void main()
         if (distanceFromCamera < fadeDistance)
         {
             vec3 viewNormal = cross(dFdx(viewPos.xyz), dFdy(viewPos.xyz));
-            viewNormal = normalize(viewNormal);
-            occlusion = GetSpiralOcclusion(texCoord, viewPos, viewNormal);
+            float normalLength = length(viewNormal);
+            if (normalLength > EPSILON)
+                occlusion = GetSpiralOcclusion(texCoord, viewPos, viewNormal / normalLength);
             
             // linearly fade with distance
             occlusion *= (fadeDistance - distanceFromCamera) / fadeDistance;

@@ -277,6 +277,12 @@ public class BlockTextureRegistry
 		float averageRed = Math.max(redSum / (float) visibleCount, 1.0f);
 		float averageGreen = Math.max(greenSum / (float) visibleCount, 1.0f);
 		float averageBlue = Math.max(blueSum / (float) visibleCount, 1.0f);
+        if(faceTexture.ratioReferenceColor!=null) {
+            int reference=faceTexture.ratioReferenceColor;
+            averageRed=Math.max(1,ColorUtil.getRed(reference));
+            averageGreen=Math.max(1,ColorUtil.getGreen(reference));
+            averageBlue=Math.max(1,ColorUtil.getBlue(reference));
+        }
 		
 		
 		byte[] uploadPixels = new byte[TILE_BYTE_COUNT];
