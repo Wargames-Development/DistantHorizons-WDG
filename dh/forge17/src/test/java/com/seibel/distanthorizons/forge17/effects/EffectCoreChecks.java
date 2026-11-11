@@ -149,7 +149,8 @@ public final class EffectCoreChecks
         fixtures.add(compileFixture);
         for(String file:fixtures) try(java.util.zip.ZipFile zip=new java.util.zip.ZipFile(file);
             java.io.InputStream input=zip.getInputStream(zip.getEntry("com/gtnewhorizons/angelica/mixins/early/shaders/MixinEntityRenderer.class"))) {
-            checkShaderStage(input);checkProjectionSupplier(zip);checks+=ShaderCloudContractChecks.run(zip);System.out.println("Checked actual Angelica shader stage/projection/cloud API: "+file);
+            checkShaderStage(input);checkProjectionSupplier(zip);checks+=ShaderCloudContractChecks.run(zip);checks+=NativeCoverageChecks.run(file);
+            System.out.println("Checked actual Angelica shader stage/projection/cloud/coverage API: "+file);
         } catch(java.io.IOException error) { throw new AssertionError(error); }
         check(com.seibel.distanthorizons.forge17.EffectCaptureTransformer.patchShaderFinalization(new org.spongepowered.asm.lib.tree.ClassNode())==0,
             "shaderless renderer receives no optional pipeline hook");
@@ -458,6 +459,11 @@ public final class EffectCoreChecks
         checkNativeEmitter();
         checkPrivateCameraScope();
         checks+=MissileCameraOriginChecks.run();
+        checks+=ActorCameraOriginChecks.run();
+        checks+=ActorNearViewChecks.run();
+        checks+=com.seibel.distanthorizons.forge17.actors.PlayerBodyAlignmentChecks.run();
+        checks+=com.seibel.distanthorizons.forge17.terrain.TerrainRayChecks.run();
+        checks+=com.seibel.distanthorizons.forge17.terrain.RaySnapshotChecks.run() + ShaderActorJitterChecks.run();
         checkShaderStages(args);
         checkProjectionCopy();
         checkProbeFailureIsolation();

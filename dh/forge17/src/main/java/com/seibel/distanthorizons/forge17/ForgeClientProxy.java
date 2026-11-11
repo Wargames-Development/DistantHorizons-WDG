@@ -57,6 +57,10 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
 	//=======//
 	//region
 	
+    @cpw.mods.fml.common.eventhandler.SubscribeEvent
+    public void rayLevelUnload(net.minecraftforge.event.world.WorldEvent.Unload event) {
+        if(event.world.isRemote) com.seibel.distanthorizons.forge17.terrain.DhTerrainRayApi.unload(event.world);
+    }
     @Override
     public void registerEvents()
     {

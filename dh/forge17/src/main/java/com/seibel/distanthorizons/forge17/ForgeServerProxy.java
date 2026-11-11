@@ -100,6 +100,7 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
 		{
             refreshWorldBorders();
 			ServerThreadTaskHandler.INSTANCE.onTickStart();
+            com.seibel.distanthorizons.forge17.terrain.DhTerrainRayApi.serverTick();
 		}
 		else
 		{
@@ -111,6 +112,7 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
     @SubscribeEvent 
     public void serverLevelLoadEvent(WorldEvent.Load event)
     {
+        com.seibel.distanthorizons.forge17.terrain.DhTerrainRayApi.unload(GetEventLevel(event));
 		if (GetEventLevel(event) instanceof WorldServer)
 	    {
             ServerLevelWrapper.getWrapper((WorldServer)GetEventLevel(event)).refreshLodBorder();
@@ -122,6 +124,7 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
     @SubscribeEvent
 	public void serverLevelUnloadEvent(WorldEvent.Unload event)
     {
+        com.seibel.distanthorizons.forge17.terrain.DhTerrainRayApi.unload(GetEventLevel(event));
 		if (GetEventLevel(event) instanceof WorldServer)
 	    {
 			// DH indexes loaded levels by wrapper identity, including during unload.

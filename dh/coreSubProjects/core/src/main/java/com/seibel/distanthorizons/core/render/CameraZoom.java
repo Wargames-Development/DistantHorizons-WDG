@@ -42,6 +42,18 @@ public class CameraZoom
     private static final boolean WDG_ZOOM_DIAGNOSTICS=Boolean.getBoolean("wdg.dh.zoomDiagnostics");
     private static final com.seibel.distanthorizons.core.logging.DhLogger WDG_ZOOM_LOG=new com.seibel.distanthorizons.core.logging.DhLoggerBuilder().build();
     private long lastZoomDiagnostic;
+    private java.lang.ref.WeakReference<Object> auxiliaryWorld=new java.lang.ref.WeakReference<>(null);
+    private float auxiliaryXScale,auxiliaryYScale;
+    private long auxiliaryTime;
+
+    /** Bounded, short-lived quality hint for a narrower view borrowing this world's meshes. */
+    public static void requestAuxiliaryZoom(Object world,float xScale,float yScale) {
+        if(world==null || !Float.isFinite(xScale) || !Float.isFinite(yScale) || xScale<=0 || yScale<=0) return;
+        long now=System.nanoTime();CameraZoom zoom=INSTANCE;
+        if(zoom.auxiliaryWorld.get()!=world || now-zoom.auxiliaryTime>250_000_000L || yScale>=zoom.auxiliaryYScale) {
+            zoom.auxiliaryWorld=new java.lang.ref.WeakReference<>(world);zoom.auxiliaryXScale=xScale;zoom.auxiliaryYScale=yScale;zoom.auxiliaryTime=now;
+        }
+    }
 	
 	/**
 	 * The tangent of half the zoom cone's horizontal angle. <br>
@@ -125,6 +137,10 @@ public class CameraZoom
 			MathUtil.pow2(projectionMatrix.m10)
 				+ MathUtil.pow2(projectionMatrix.m11)
 				+ MathUtil.pow2(projectionMatrix.m12));
+        boolean auxiliary=renderState.clientLevelWrapper!=null
+            && renderState.clientLevelWrapper.getWrappedMcObject()==auxiliaryWorld.get()
+            && System.nanoTime()-auxiliaryTime<=250_000_000L && auxiliaryYScale>projectionYScale;
+        if(auxiliary) projectionYScale=auxiliaryYScale;
 		double fovSettingYScale = 1.0 / Math.tan(Math.toRadians(MC_RENDER.getFovSetting()) / 2.0);
 		
 		// how many times larger objects appear on screen compared to the player's FOV setting
@@ -165,6 +181,7 @@ public class CameraZoom
 			MathUtil.pow2(projectionMatrix.m00)
 				+ MathUtil.pow2(projectionMatrix.m01)
 				+ MathUtil.pow2(projectionMatrix.m02));
+        if(auxiliary) projectionXScale=auxiliaryXScale;
 		double coneTanHalfAngle = (1.0 / projectionXScale) * ZOOM_CONE_PADDING_MULTIPLIER;
 		
 		

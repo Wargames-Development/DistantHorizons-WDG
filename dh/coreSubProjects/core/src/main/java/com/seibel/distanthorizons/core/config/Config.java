@@ -382,13 +382,15 @@ public class Config
                         .comment("Enable supported distant NTM missile bodies, exhaust, trails and explosion effects.").build();
                     public static ConfigEntry<Boolean> extendFlansTrails = new ConfigEntry.Builder<Boolean>().set(true)
                         .comment("Enable supported distant FMUR weapon effects. Excludes FMUR vehicles. Player equipment requires the player LOD provider.").build();
-                    // File-only until the depth-aware model provider is ready.
                     public static ConfigEntry<Boolean> enablePlayerLodSupport = new ConfigEntry.Builder<Boolean>()
-                        .set(false).setAppearance(EConfigEntryAppearance.ONLY_IN_FILE)
-                        .comment("Experimental DH-owned player pose delivery. Model rendering is not enabled yet. Independent of FMUR weapon effects.").build();
+                        .set(false)
+                        .comment("Enable experimental DH distant player models and ordinary equipment. FMUR armour/guns additionally require FMUR LOD support. Nearby native players are unaffected.").build();
                     public static ConfigEntry<Integer> playerLodDistance = new ConfigEntry.Builder<Integer>()
                         .setMinDefaultMax(0,512,1024).setAppearance(EConfigEntryAppearance.ONLY_IN_FILE)
                         .comment("Requested distant player visual range. The server may reduce it; zero disables delivery.").build();
+                    public static ConfigEntry<Boolean> enablePlayerLodCapes = new ConfigEntry.Builder<Boolean>()
+                        .set(false).setAppearance(EConfigEntryAppearance.ONLY_IN_FILE)
+                        .comment("Render capes on distant player models. Disabled by default; cape motion is not synchronised. Nearby player capes are unaffected.").build();
                     public static ConfigEntry<Integer> mcheliVehicleLodDistance = new ConfigEntry.Builder<Integer>()
                         .setMinDefaultMax(0,750,4096).setAppearance(EConfigEntryAppearance.ONLY_IN_FILE)
                         .comment("Requested MCHELI vehicle visual range. Server ceiling applies; provider remains gated until ready.").build();

@@ -35,6 +35,12 @@ public final class FmurPlayerBridge {
         }
         catch(ReflectiveOperationException | RuntimeException | LinkageError error) { return false; }
     }
+    private static java.lang.reflect.Method isolatedGeometry;
+    public static AutoCloseable beginModelCapture() throws ReflectiveOperationException {
+        resolve();if(!present) return null;
+        if(isolatedGeometry==null) isolatedGeometry=Class.forName("com.flansmod.client.ThermalRenderApi",false,FmurPlayerBridge.class.getClassLoader()).getMethod("beginIsolatedGeometry");
+        return (AutoCloseable)isolatedGeometry.invoke(null);
+    }
     public static boolean supportsViews() { resolve();return !present || auxiliaryView!=null; }
     public static boolean auxiliaryView() {
         resolve();if(!present) return false;if(auxiliaryView==null) return true;

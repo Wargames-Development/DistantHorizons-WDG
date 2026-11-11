@@ -426,8 +426,8 @@ public final class DistantSmokeRenderer
         if(r==null) return;
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
         // Angelica has already composited and finalized here. Never borrow this FBO.
-        if(iris!=null && iris.isShaderPackInUse()) return;
-        try { ActorRenderer.render(false);r.render(partialTicks); }
+        if(iris!=null && iris.isShaderPackInUse()) { MarkerOverlayApi.draw();return; }
+        try { ActorRenderer.render(false);r.render(partialTicks);MarkerOverlayApi.draw(); }
         finally { r.quads.clear();if(r.hbmNear!=null) r.hbmNear.clear(); }
     }
     /** Called immediately before Angelica's actual finalizeLevelRendering invocation. */
@@ -498,7 +498,7 @@ public final class DistantSmokeRenderer
         LWJGL.glActiveTexture(GL13.GL_TEXTURE5);int oldTexture5=LWJGL.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
         LWJGL.glActiveTexture(GL13.GL_TEXTURE6);int oldTexture6=LWJGL.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);LWJGL.glActiveTexture(activeTexture);
         if(target!=null) shaderClouds.refreshAtDraw(target);
-        try(GLState saved=new GLState())
+        try(GLState saved=new GLState();com.seibel.distanthorizons.forge17.actors.SamplerBindings samplers=new com.seibel.distanthorizons.forge17.actors.SamplerBindings(7))
         {
             drawingShaderPass=target!=null;
             if(target!=null) bindShaderTarget(target);

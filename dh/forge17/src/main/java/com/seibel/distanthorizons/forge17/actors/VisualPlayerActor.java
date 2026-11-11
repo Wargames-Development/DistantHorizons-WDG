@@ -41,6 +41,14 @@ public final class VisualPlayerActor extends EntityOtherPlayerMP implements Auto
         return partial;
     }
     public AutoCloseable beginExtensions() throws ReflectiveOperationException { return extension.begin(); }
+    @Override public boolean hasCape() {
+        return com.seibel.distanthorizons.core.config.Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodCapes.get()
+            && super.hasCape();
+    }
+    @Override public net.minecraft.util.ResourceLocation getLocationCape() {
+        return com.seibel.distanthorizons.core.config.Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodCapes.get()
+            ?super.getLocationCape():null;
+    }
     @Override public boolean isRiding() { return (visualFlags & 16)!=0; }
     @Override public boolean isPlayerSleeping() { return (visualFlags & 32)!=0; }
     @Override public float getBedOrientationInDegrees() { return bedYaw; }

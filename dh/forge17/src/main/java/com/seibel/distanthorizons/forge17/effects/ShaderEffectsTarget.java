@@ -14,18 +14,22 @@ final class ShaderEffectsTarget {
     static void invalidate() { cached=null; }
     private static Method manager,pipeline,compat,instance,depth,depthCopy,nativeDepth,packName;
     private static Method renderTargets,flipped,getTarget,mainTexture,altTexture;
+    private static final NativeSceneDepthCopy nativeSnapshot=new NativeSceneDepthCopy();
+    private static final NativeSceneDepthCopy terrainSnapshot=new NativeSceneDepthCopy();
     private static Method projection,writeProjection;
+    private static final float[] jitter=new float[2];
     private static final FloatBuffer projectionValues=org.lwjgl.BufferUtils.createFloatBuffer(16);
-    final int sceneDepth,terrainDepth,nativeSceneDepth,sceneColour,cloudDepth,particleMaterial;
+    final int sceneDepth,opaqueSceneDepth,terrainDepth,nativeSceneDepth,sceneColour,cloudDepth,particleMaterial,actorNormal;
     final int sceneWidth,sceneHeight;
+    final float jitterX,jitterY;
     final Object pipelineIdentity;
     final DhApiMat4f terrainProjection;
     final boolean colourFlipped,cloudFlipped;
     final boolean complementaryClouds;
-    private ShaderEffectsTarget(int depth,int copy,int nativeDepth,String pack,int colour,int cloud,int material,java.util.Set<?> flips,DhApiMat4f terrainProjection,long size,Object pipelineIdentity) {
-        this.pipelineIdentity=pipelineIdentity;
+    private ShaderEffectsTarget(int depth,int opaque,int copy,int nativeDepth,String pack,int colour,int cloud,int material,int normal,java.util.Set<?> flips,DhApiMat4f terrainProjection,long size,Object pipelineIdentity) {
+        this.pipelineIdentity=pipelineIdentity;jitterX=jitter[0];jitterY=jitter[1];
         this.terrainProjection=terrainProjection;
-        sceneDepth=depth;terrainDepth=copy;nativeSceneDepth=nativeDepth;sceneColour=colour;cloudDepth=cloud;
+        sceneDepth=depth;opaqueSceneDepth=opaque;terrainDepth=copy;nativeSceneDepth=nativeDepth;sceneColour=colour;cloudDepth=cloud;
         // A shader pack may render at a different scale from the Minecraft window.
         // Actor capture, scissor and final output must share the scene's pixel grid.
         sceneWidth=(int)(size>>>32);sceneHeight=(int)size;
@@ -33,6 +37,7 @@ final class ShaderEffectsTarget {
         String name=pack.toLowerCase(java.util.Locale.ROOT);
         complementaryClouds=name.contains("bountifulstars") || name.contains("complementary");
         particleMaterial=complementaryClouds?material:0;
+        actorNormal=complementaryClouds?normal:0;
     }
     private static long textureSize(int texture) {
         if(texture<=0) return 0;
@@ -85,18 +90,23 @@ final class ShaderEffectsTarget {
             Object c=compat.invoke(p);if(c==null) return null;
             Object dh=instance.invoke(c);if(dh==null) return null;
             int d=((Number)depth.invoke(dh)).intValue(),copy=((Number)depthCopy.invoke(dh)).intValue();
-            int n=((Number)nativeDepth.invoke(Minecraft.getMinecraft().getFramebuffer())).intValue();
+            int n=nativeSnapshot.capture(((Number)nativeDepth.invoke(Minecraft.getMinecraft().getFramebuffer())).intValue());
             java.util.Set<?> flips=(java.util.Set<?>)flipped.invoke(p);
             Object targets=renderTargets.invoke(p);
-            int colour=texture(targets,flips,0),cloud=texture(targets,flips,5),material=texture(targets,flips,6);
+            int colour=texture(targets,flips,0),cloud=texture(targets,flips,5),material=texture(targets,flips,6),normal=texture(targets,flips,4);
             long size=textureSize(colour);
             // A resize can briefly leave the pipeline between texture allocations.
             // Withhold this frame without permanently disabling compatibility.
             if(size==0 || size!=textureSize(d)) return null;
             projectionValues.clear();writeProjection.invoke(projection.invoke(null),projectionValues);
             DhApiMat4f terrainProjection=readColumnMajorProjection(projectionValues);
-            cached=d>0 && copy>0 && n>0 && colour>0 && d!=copy && d!=n
-                ?new ShaderEffectsTarget(d,copy,n,String.valueOf(packName.invoke(null)),colour,cloud,material,flips,terrainProjection,size,p):null;
+            jitter[0]=jitter[1]=0;
+            String pack=String.valueOf(packName.invoke(null));
+            String normalized=pack.toLowerCase(java.util.Locale.ROOT);
+            if(normalized.contains("bountifulstars") || normalized.contains("complementary")) ShaderActorJitter.read(p,dh,jitter);
+            int terrain=terrainSnapshot.capture(copy);
+            cached=d>0 && copy>0 && terrain>0 && n>0 && colour>0 && d!=copy && d!=n
+                ?new ShaderEffectsTarget(d,copy,terrain,n,pack,colour,cloud,material,normal,flips,terrainProjection,size,p):null;
             return cached;
         } catch(ReflectiveOperationException | RuntimeException | LinkageError error) {
             unsupported=true;

@@ -1,0 +1,340 @@
+{
+  "instance": "Wargames DH LOD Integration Test",
+  "installed_before_fix": true,
+  "jars": [
+    {
+      "path": "+unimixins-all-1.7.10-0.2.1.jar",
+      "bytes": 5710137,
+      "sha256": "69ecf53ec808c1219fc40b98c2464b4546f035e401591effd0229a2787e10666",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "1.7.10/CodeChickenLib-1.7.10-1.1.3.141-universal.jar",
+      "bytes": 311450,
+      "sha256": "49131e1960b8a968bdaf7806e595a73a9e96f7db1c128aaeb7b25a6a13c2788c",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "AppleCore-3.3.9.jar",
+      "bytes": 102192,
+      "sha256": "742af5bfe33b92d5fc67f862b536284ae20912b19568e5aacd37b57304c8351b",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "BetterBuildersWands-WDG-0.8.2_X4.jar",
+      "bytes": 65080,
+      "sha256": "07e73152ef84b821fc167cc3eed9e7465a186f2905c4e9357dfd8252f21e3057",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "BetterFoliage-LegacyEdition-1.2.4.jar",
+      "bytes": 859933,
+      "sha256": "ee2ea446d1db17052c12b02ed11559a8bb0a21cddf72fa1b71d11e2df7428eae",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "ChickenChunks-1.7.10-1.3.4.19-universal.jar",
+      "bytes": 106701,
+      "sha256": "4bf193e3b9a91bceef65e82f6a27ee5c050d29552ef7e1606f222a79571fc44e",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "CodeChickenCore-1.4.16.jar",
+      "bytes": 450201,
+      "sha256": "c965f63fdde8451afbb056551128eef2452b9273366bcd098624ee5e17954954",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "CoreTweaks-1.7.10-0.3.3.2.jar",
+      "bytes": 2196921,
+      "sha256": "60262b29626bbe588b2670a7cbe8ffee8569ff84d1343f27fe7dd7cdd91ff664",
+      "named_camera_renderer_hooks": [
+        "makamys/coretweaks/mixin/bugfix/displaylistdelete/MixinRenderGlobal.class",
+        "makamys/coretweaks/mixin/tweak/cloudheightcheck/MixinEntityRenderer$1.class",
+        "makamys/coretweaks/mixin/tweak/cloudheightcheck/MixinEntityRenderer.class",
+        "makamys/coretweaks/mixin/tweak/disablefog/MixinEntityRenderer.class",
+        "makamys/coretweaks/mixin/tweak/farplane/MixinEntityRenderer.class",
+        "makamys/coretweaks/mixin/tweak/ofupdaterenderersreturn/MixinRenderGlobal.class"
+      ]
+    },
+    {
+      "path": "CraftTweaker-1.7.10-3.1.0-legacy.jar",
+      "bytes": 1047406,
+      "sha256": "4eacf3356cee806bfc8085665a02d17191ab9a5199d517305c1e35205ba499b6",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "DistantHorizons-3.3.4_X55.jar",
+      "bytes": 43481075,
+      "sha256": "bf4a79c3ffc1de0f8f19337314ff94756e0f13941b896aa4be2ecfe939d94050",
+      "named_camera_renderer_hooks": [
+        "com/seibel/distanthorizons/forge17/mixin/MixinActiveRenderInfo.class",
+        "com/seibel/distanthorizons/forge17/mixin/MixinEntityRenderer.class",
+        "com/seibel/distanthorizons/forge17/mixin/MixinRenderGlobal.class"
+      ]
+    },
+    {
+      "path": "ExtraCells-1.7.10-2.4.0.jar",
+      "bytes": 1764966,
+      "sha256": "667ef22433f3ba7e48457e97edf8bf2a7e62be77bf13a6a13471b7e7b61abfc7",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "FMUR-WDG-Edition-1.8.06_X206-dh-lods-test.jar",
+      "bytes": 16559708,
+      "sha256": "14d48aed0410565b0590f24ac3f79d440b21fb1c35ce6632fda3f6c114c88e15",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "FoliagePlus-1.1.1_X15-release.jar",
+      "bytes": 103503,
+      "sha256": "81f3cd315499277dadaa22bbf7d51c175fd729b8229ab790304358934c3af5e4",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "ForgeMultipart-1.7.10-1.2.0.345-universal.jar",
+      "bytes": 943474,
+      "sha256": "6ff759efc10f9ea0deabb4aed7c1f61408d9bb9bce278949544c0a613f7ae4c8",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "GlibysVC-WDG-0.6.2a_X2.jar",
+      "bytes": 392507,
+      "sha256": "70b9db58f17aeed47a3e86910baaa19190a5d0ccf6ec731d7904defb40213f55",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "HBM-NTM-[1.0.27_X5852_H261_WG2.5.3].jar",
+      "bytes": 106662566,
+      "sha256": "3ea57d660e297c2a423acd3909486f9271551c7b19347c4cf02b564b90277ace",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "ItemControl-0.1.0_X4.jar",
+      "bytes": 203461,
+      "sha256": "e08d80e86c380f5c63df790745982e0bc6806bebaba773c9c3ed5963c74a54f0",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "LunatriusCore-1.7.10-1.1.2.21-universal.jar",
+      "bytes": 57644,
+      "sha256": "e4a3dd27370920b2be108ba7a18efe720a521d4956abb34a8ebf74958ff25f55",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "MineTweakerRecipeMaker-1.7.10-1.1.1.jar",
+      "bytes": 33495,
+      "sha256": "904819d2cc209e5c7b99f6a7310fafc1075dce4ac60a39474fcca7c6d967162d",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "NoMoreRecipeConflict-1.7.10-0.3.2.jar",
+      "bytes": 16391,
+      "sha256": "1a963a089b0741d7d1f748db78d10d33357394b4576a68ff2257b538abec6d2b",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "NotEnoughItems-2.8.114-GTNH.jar",
+      "bytes": 1602938,
+      "sha256": "fe2c74485e47a337cb0899f14206370471397031418414294478e528c6720528",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "Pam's HarvestCraft 1.7.10Lb.jar",
+      "bytes": 2482753,
+      "sha256": "b0dc253702948d19d9c2d5191ae78ae022b65fac73210ca7313d7ef3b1cd7a57",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "Pam's Simple Recipes 1.7.10a.jar",
+      "bytes": 4598,
+      "sha256": "217e6de4761a2157a699dddd24a23855b9f38df56dfbd44a98b35510e687dcb8",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "ReAuth-1.7.10-Forge-4.0.7.jar",
+      "bytes": 173919,
+      "sha256": "e8bbf2e7320210bbe3fd826b07742b0c3695499eca4aa3d4d380ba415c656bc6",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "ReplayMod-WDG-2.5.2-WDG_X77.jar",
+      "bytes": 11180973,
+      "sha256": "a02e7981e95c1cf3d8a88945ef4b31552a05660b88069c18d8481991188c12e0",
+      "named_camera_renderer_hooks": [
+        "com/replaymod/recording/mixin/MixinRenderGlobal.class",
+        "com/replaymod/render/mixin/MixinEntityRenderer.class",
+        "com/replaymod/render/mixin/MixinRenderManager.class",
+        "com/replaymod/replay/mixin/MixinEntityRenderer.class"
+      ]
+    },
+    {
+      "path": "Schematica-1.7.10-1.7.6.131-universal.jar",
+      "bytes": 255231,
+      "sha256": "023dc9b4a72ca0522b37eb9a5e34a3be12c7035fe120327e3bb1202733eef216",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "WGCore-2.8.0_X213.jar",
+      "bytes": 2548574,
+      "sha256": "b5754d76382abc39581b9c80f2efb320bbfdfdddff65f884d3e9f25cee369986",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "WGHangers-0.2.0_X50.jar",
+      "bytes": 651618,
+      "sha256": "f89502d3775811bba34cedd9c5d633ed95323b4d35175ecaed9a38367e1a7865",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "WGMap-0.1.2_X161.jar",
+      "bytes": 1592707,
+      "sha256": "26c5e2c4268ab20c71cf1ab92111e44dba696981d739cea3f00d7e8bd5819ef5",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "WGProfiler-0.3.01_X25.jar",
+      "bytes": 161138,
+      "sha256": "ae3fecff040f9fe392647f8593afd3324a6f156899feecc87f44d3bd99374195",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "WGQOL-1.15.1_X50.jar",
+      "bytes": 12453038,
+      "sha256": "4697a8c0301184fc277f36aacc81ae9f6a9a3b51a7325faa79d9323b95a99730",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "Wargames-Launcher-0.43.6_X123.jar",
+      "bytes": 399267,
+      "sha256": "6f70b3bd78e33cc8fb05fd7ac97eec804e3a09d14ded049d6715a7b480d12280",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "WorldBorder-Client-WDG-1.0.8.jar",
+      "bytes": 28899,
+      "sha256": "588b838f9898f8dff061067fcd9b668736946c4ae96b833bc4f3a285b969d0d8",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "WorldEdit-Forge-WDG-6.1.2_X8-dist.jar",
+      "bytes": 1447589,
+      "sha256": "bd6553eb3f74533042eef0a8004ff135c78dc8b3aee454ae69c8a882cc2dd1fa",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "angelica-2.2.14.jar",
+      "bytes": 10315266,
+      "sha256": "83987ae7c6b50e41161a4c14d476e8ede24a9822caeda12307881c67b46a36e0",
+      "named_camera_renderer_hooks": [
+        "com/gtnewhorizons/angelica/mixins/early/angelica/MixinActiveRenderInfo.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/MixinEntityRenderer.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/bugfixes/MixinRenderGlobal_DeferredEntityOverlay.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/bugfixes/MixinRenderGlobal_DestroyBlock.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/dynamiclights/MixinEntityRenderer.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/entity/MixinRenderGlobal_EntityBatch.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/entity/MixinRenderManager_BatchEligibility.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/hudcaching/MixinEntityRenderer_HUDCaching.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/optimizations/MixinRenderGlobal_ItemRenderDist.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/rendering/MixinRenderGlobal_SelectionBox.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/tracy/MixinRenderGlobal_Tracy.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/vbo/MixinRenderGlobal.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/zoom/MixinEntityRenderer_Zoom.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/zoom/MixinMinecraft_Zoom.class",
+        "com/gtnewhorizons/angelica/mixins/early/angelica/zoom/MixinMouseFilter.class",
+        "com/gtnewhorizons/angelica/mixins/early/celeritas/terrain/MixinRenderGlobal.class",
+        "com/gtnewhorizons/angelica/mixins/early/mcpatcherforge/cc/client/renderer/MixinEntityRenderer.class",
+        "com/gtnewhorizons/angelica/mixins/early/mcpatcherforge/cc/client/renderer/MixinRenderGlobal.class",
+        "com/gtnewhorizons/angelica/mixins/early/mcpatcherforge/cit/client/renderer/MixinRenderGlobal.class",
+        "com/gtnewhorizons/angelica/mixins/early/mcpatcherforge/renderpass/MixinEntityRenderer.class",
+        "com/gtnewhorizons/angelica/mixins/early/mcpatcherforge/sky/MixinRenderGlobal.class",
+        "com/gtnewhorizons/angelica/mixins/early/notfine/clouds/MixinEntityRenderer.class",
+        "com/gtnewhorizons/angelica/mixins/early/notfine/clouds/MixinRenderGlobal.class",
+        "com/gtnewhorizons/angelica/mixins/early/notfine/renderer/MixinRenderGlobal.class",
+        "com/gtnewhorizons/angelica/mixins/early/notfine/toggle/MixinEntityRenderer$RenderRainSnow.class",
+        "com/gtnewhorizons/angelica/mixins/early/notfine/toggle/MixinEntityRenderer.class",
+        "com/gtnewhorizons/angelica/mixins/early/rendering/MixinEntityRenderer.class",
+        "com/gtnewhorizons/angelica/mixins/early/shaders/MixinEntityRenderer.class",
+        "com/gtnewhorizons/angelica/mixins/early/shaders/MixinRenderGlobal.class",
+        "com/gtnewhorizons/angelica/mixins/early/shaders/MixinRenderManager.class",
+        "com/gtnewhorizons/angelica/mixins/early/shaders/MixinRenderManagerDAPI.class",
+        "com/gtnewhorizons/angelica/zoom/IMouseFilterExt.class",
+        "com/gtnewhorizons/angelica/zoom/Zoom.class"
+      ]
+    },
+    {
+      "path": "appliedenergistics2-rv3-beta-1065-GTNH.jar",
+      "bytes": 4981763,
+      "sha256": "055839840904ea075f63b2e1907c21b4faa6f6c3d82d64c21229451db7f38d8f",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "craftingtweaks-mc1.7.10-1.0.88.jar",
+      "bytes": 91325,
+      "sha256": "47412d9d54d937cce802d2e27f208019d81290a2c62fe34e73950f8ae9ccceee",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "etfuturum-3.6.0_X8.jar",
+      "bytes": 6143580,
+      "sha256": "8e885a50a4be264ad70e566a9a13f6337b4225452e9062aa57460ffb4b4d3e05",
+      "named_camera_renderer_hooks": [
+        "ganymedes01/etfuturum/mixins/early/backlytra/client/MixinEntityRenderer.class",
+        "ganymedes01/etfuturum/mixins/early/containedwater/client/MixinActiveRenderInfo.class",
+        "ganymedes01/etfuturum/mixins/early/extendedheight/client/MixinRenderGlobal.class",
+        "ganymedes01/etfuturum/mixins/early/spectator/client/MixinEntityRenderer.class"
+      ]
+    },
+    {
+      "path": "forgelin-mc1.7.10-2.4.1-2.3.10.jar",
+      "bytes": 136497,
+      "sha256": "8711e829459aa87b4a5a13f7dcd84b9a724971de1bc586a1933e92ac07f9f1b4",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "gtnhlib-0.11.48.jar",
+      "bytes": 1424495,
+      "sha256": "3f79882cb6e41e6eafa4c47414acae6093bbed87eb713b61fc14e7948cf17a2e",
+      "named_camera_renderer_hooks": [
+        "com/gtnewhorizon/gtnhlib/mixins/early/block_sounds/MixinRenderGlobal.class",
+        "com/gtnewhorizon/gtnhlib/mixins/early/models/MixinRenderGlobal.class",
+        "com/gtnewhorizon/gtnhlib/mixins/early/models/particles/MixinRenderGlobal.class"
+      ]
+    },
+    {
+      "path": "hitmarkerplus-1.0.45.jar",
+      "bytes": 34623,
+      "sha256": "cdec5561f090950290fac6d470b52fb87268aebeb3b3d022634f8ac95b0e5add",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "kinetic anti-cheat-7.3.1.jar",
+      "bytes": 13803,
+      "sha256": "a337ad453c3ae750e00bc2cda48bb4196f3c99b3c85340e48d9764540eb8c20d",
+      "named_camera_renderer_hooks": []
+    },
+    {
+      "path": "lwjgl3ify-3.0.28-development.11+d1361fcca1.jar",
+      "bytes": 11074278,
+      "sha256": "427420c15b531b50af8bea8a4afdd76a1a94afdf74e49dc390ca58ccbdc5ce7d",
+      "named_camera_renderer_hooks": [
+        "me/eigenraven/lwjgl3ify/mixins/early/game/MixinEntityRenderer.class"
+      ]
+    },
+    {
+      "path": "mchr-mixin.jar",
+      "bytes": 8818,
+      "sha256": "1ea10f472f04e23946d650541896460248c32565a9ada9adcbc95dd46e343bf5",
+      "named_camera_renderer_hooks": [
+        "net/tv90/mchrmixin/mixin/MixinRenderManager.class"
+      ]
+    }
+  ],
+  "extracted_mods": [
+    {
+      "path": "MCHELI-R-WDG-Edition-1.1.8_X200",
+      "class_count": 870,
+      "class_tree_sha256": "d04bf3db58da125a0e68ed8ef587b914d6d5f8dcc269b517ab16eb0e89488832"
+    }
+  ]
+}

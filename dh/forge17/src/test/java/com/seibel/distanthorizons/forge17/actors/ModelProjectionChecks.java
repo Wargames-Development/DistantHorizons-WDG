@@ -58,6 +58,45 @@ public final class ModelProjectionChecks {
         require(!ModelBounds.project(nativeProjection,0,0,32,8,1920,1080,rect),"behind camera bounds rejected");checks++;
         require(!ModelBounds.project(nativeProjection,10000,0,-512,8,1920,1080,rect),"offscreen bounds rejected");checks++;
         require(ModelBounds.project(nativeProjection,0,0,-1,8,1920,1080,rect) && rect[0]==0 && rect[2]==1920,"near crossing remains conservative");checks++;
+        // A model corridor contains sections behind/beside the camera which the
+        // native renderer quite correctly omits. Zoom must reduce required coverage.
+        for(double fov:new double[]{70,36,35,10,1}) {
+            DhApiMat4f view=new DhApiMat4f(nativeProjection);
+            view.m00=(float)(1/Math.tan(Math.toRadians(fov)*.5)/ (16.0/9));view.m11=(float)(1/Math.tan(Math.toRadians(fov)*.5));
+            view.m02=view.m12=0;
+            require(!ModelBounds.intersectsView(view,-16,-4,16,16,4,32),"behind-camera terrain cannot withhold a model");checks++;
+            require(ModelBounds.intersectsView(view,-1,-1,-750,1,1,-749),"distant sight corridor required at every FOV, beyond native far plane");checks++;
+            require(ModelBounds.intersectsView(view,-16,-16,-16,16,16,16),"camera-crossing terrain remains required");checks++;
+            require(!ModelBounds.intersectsView(view,512,-4,-32,528,4,-16),"offscreen corridor expansion is irrelevant");checks++;
+            TerrainCorridor corridor=new TerrainCorridor();corridor.reset(8192);
+            final int[] irrelevant={0},required={0};
+            require(corridor.known(0,65,0,0,65,-750,16,(sx,y0,y1,sz)->{
+                boolean visible=ModelBounds.intersectsView(view,sx*16,y0-65,sz*16,sx*16+16,y1+1-65,sz*16+16);
+                if(visible) required[0]++;else irrelevant[0]++;
+                // Simulate complete native/DH terrain in view, absent offscreen.
+                return !visible || sz<0 || sz==0;
+            }),"complete visible corridor survives offscreen native culling under zoom");checks++;
+            require(irrelevant[0]>0 && required[0]>0,"fixture exercises both culled and required columns");checks++;
+            corridor.reset(8192);
+            require(!corridor.known(0,65,0,0,65,-750,16,(sx,y0,y1,sz)->
+                !ModelBounds.intersectsView(view,sx*16,y0-65,sz*16,sx*16+16,y1+1-65,sz*16+16) || sx!=0 || sz!=-20),
+                "in-view terrain gap still withholds model under zoom");checks++;
+            // Independent point oracle: no box containing an on-screen point may
+            // be classified irrelevant, including translated/rotated camera views.
+            for(int angle=0;angle<360;angle+=15) {
+                double yaw=Math.toRadians(angle),cs=Math.cos(yaw),sn=Math.sin(yaw);
+                DhApiMat4f modelView=new DhApiMat4f();modelView.m00=modelView.m22=(float)cs;
+                modelView.m02=(float)sn;modelView.m20=(float)-sn;modelView.m11=modelView.m33=1;
+                modelView.m03=3;modelView.m13=-2;modelView.m23=7;
+                DhApiMat4f rotated=new DhApiMat4f(view);rotated.multiply(modelView);
+                for(int i=0;i<25;i++) {
+                    double depth=1+i*32,eyeX=((i%5)/2.0-1)*depth/view.m00*.99;
+                    double eyeY=((i/5)/2.0-1)*depth/view.m11*.99;
+                    double px=cs*(eyeX-3)-sn*(-depth-7),py=eyeY+2,pz=sn*(eyeX-3)+cs*(-depth-7);
+                    require(ModelBounds.intersectsView(rotated,px-1,py-1,pz-1,px+1,py+1,pz+1),"visible ray never escapes terrain coverage after camera rotation");checks++;
+                }
+            }
+        }
         java.util.Random random=new java.util.Random(783421);
         for(int i=0;i<1000;i++) {
             double z=-32-random.nextDouble()*992,x=(random.nextDouble()-.5)*-z*.5,y=(random.nextDouble()-.5)*-z*.5;

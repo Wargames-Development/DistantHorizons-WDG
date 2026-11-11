@@ -14,7 +14,7 @@ import net.minecraft.world.World;
 @SideOnly(Side.CLIENT)
 public final class McheliActors {
     private final Map<UUID,Contact> contacts=new LinkedHashMap<>();
-    private Method create,observe,sample,prepare,render,close,invalidate,nativeRadius;
+    private Method create,observe,sample,prepare,render,close,invalidate,nativeRadius,riddenVehicle;
     private boolean available;
     private long sequence=-1,receipt;
     public McheliActors(BooleanSupplier owner,Predicate<Entity> replacement,Predicate<Entity> observation) {
@@ -23,6 +23,7 @@ public final class McheliActors {
             Class<?> api=Class.forName("mcheli.lod.MCH_ExternalVehicleRenderer",false,getClass().getClassLoader());
             if(api.getField("API_VERSION").getInt(null)!=4) return;
             create=api.getMethod("create",World.class);nativeRadius=api.getMethod("nativeRadius",Entity.class);Class<?> context=create.getReturnType();
+            riddenVehicle=Class.forName("mcheli.aircraft.MCH_EntityAircraft",false,getClass().getClassLoader()).getMethod("getAircraft_RiddenOrControl",Entity.class);
             observe=context.getMethod("observe",byte[].class,UUID.class,int.class,double.class,double.class,double.class,long.class,long.class,int.class,int.class);
             sample=context.getMethod("sample",long.class,double[].class);prepare=context.getMethod("prepare");
             render=context.getMethod("render",double.class,double.class,double.class,float.class);close=context.getMethod("close");invalidate=context.getMethod("invalidate");
@@ -36,6 +37,17 @@ public final class McheliActors {
     public boolean ownsLegacy() { return available() && VehicleClient.INSTANCE.ownsLegacy(); }
     public boolean contains(Entity entity) {
         Contact contact=contacts.get(entity.getUniqueID());return contact!=null && contact.sampled && !contact.invalid && contact.entityId==entity.getEntityId();
+    }
+    /** Cockpit/local camera models belong to MCHELI's native near-depth path. */
+    public boolean localVehicle(Entity entity) {
+        if(entity==null || riddenVehicle==null) return false;
+        Minecraft mc=Minecraft.getMinecraft();
+        try {
+            return entity==riddenVehicle.invoke(null,mc.thePlayer) || entity==riddenVehicle.invoke(null,mc.renderViewEntity);
+        } catch(ReflectiveOperationException | RuntimeException | LinkageError failure) {
+            // Retain native ownership if the optional cockpit identity seam fails.
+            return true;
+        }
     }
     public double radius(Entity entity) {
         Contact contact=contacts.get(entity.getUniqueID());if(contact!=null && contact.sampled) return contact.position[3];
@@ -66,6 +78,8 @@ public final class McheliActors {
         for(Map.Entry<UUID,Contact> entry:contacts.entrySet()) {
             Contact contact=entry.getValue();if(contact.invalid) continue;
             try {
+                Entity loaded=Minecraft.getMinecraft().theWorld.getEntityByID(contact.entityId);
+                if(loaded!=null && loaded.getUniqueID().equals(entry.getKey()) && localVehicle(loaded)) continue;
                 contact.sampled=Boolean.TRUE.equals(sample.invoke(contact.context,now,contact.position));
                 if(contact.sampled && !nativeDrawn.contains(entry.getKey())) models.add(contact);
             }

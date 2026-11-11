@@ -5,6 +5,22 @@ import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 /** Conservative screen rectangle for a world-aligned model envelope in camera-relative space. */
 public final class ModelBounds {
     private ModelBounds() { }
+    /** True unless the entire box is strictly outside a camera side/eye plane.
+     * The far plane is deliberately omitted: actors and their terrain extend beyond it.
+     * Touching a plane still requires coverage, including the camera's own chunk.
+     */
+    public static boolean intersectsView(DhApiMat4f m,double x0,double y0,double z0,double x1,double y1,double z1) {
+        if(!Double.isFinite(x0+y0+z0+x1+y1+z1) || x0>x1 || y0>y1 || z0>z1) return true;
+        return boxPlane(m.m30,m.m31,m.m32,m.m33,x0,y0,z0,x1,y1,z1)
+            && boxPlane(m.m30+m.m00,m.m31+m.m01,m.m32+m.m02,m.m33+m.m03,x0,y0,z0,x1,y1,z1)
+            && boxPlane(m.m30-m.m00,m.m31-m.m01,m.m32-m.m02,m.m33-m.m03,x0,y0,z0,x1,y1,z1)
+            && boxPlane(m.m30+m.m10,m.m31+m.m11,m.m32+m.m12,m.m33+m.m13,x0,y0,z0,x1,y1,z1)
+            && boxPlane(m.m30-m.m10,m.m31-m.m11,m.m32-m.m12,m.m33-m.m13,x0,y0,z0,x1,y1,z1);
+    }
+    private static boolean boxPlane(double a,double b,double c,double d,double x0,double y0,double z0,double x1,double y1,double z1) {
+        double maximum=a*(a>=0?x1:x0)+b*(b>=0?y1:y0)+c*(c>=0?z1:z0)+d;
+        return !Double.isFinite(maximum) || maximum>=-0.00001;
+    }
     public static boolean project(DhApiMat4f m,double x,double y,double z,double radius,int width,int height,int[] out) {
         if(out.length<4 || width<=0 || height<=0 || !Double.isFinite(x+y+z+radius) || radius<=0) return false;
         double minX=Double.POSITIVE_INFINITY,minY=minX,maxX=Double.NEGATIVE_INFINITY,maxY=maxX;

@@ -1,6 +1,7 @@
 package com.seibel.distanthorizons.forge17.actors;
 
 import com.gtnewhorizons.angelica.rendering.celeritas.CeleritasWorldRenderer;
+import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
@@ -42,8 +43,9 @@ public final class AngelicaTerrainCoverage {
             if(sections.size()>MAX_SECTIONS) return false;
             for(RenderSection section:sections) {
                 int y=section.getChunkY()-minSection;
-                if(y<0 || y>maxSection-minSection || section.isDisposed() || !section.isBuilt()
-                        || section.getPendingUpdate()!=null || section.getBuildCancellationToken()!=null) continue;
+                // A queued/in-flight rebuild retains its built mesh until upload.
+                // Coverage follows that displayed mesh, not the pending replacement.
+                if(y<0 || y>maxSection-minSection || section.isDisposed() || !section.isBuilt()) continue;
                 // Known empty sections need no draw; occupied sections must be in
                 // this view's native render list to provide matching scene depth.
                 if(section.hasAnythingToRender() && !manager.isSectionVisible(section.getChunkX(),section.getChunkY(),section.getChunkZ())) continue;
@@ -58,12 +60,20 @@ public final class AngelicaTerrainCoverage {
         }
     }
     /** Inclusive vertical interval. Outside build height is known air. */
-    public boolean isKnown(World expectedWorld,int blockX,int minY,int maxY,int blockZ) {
+    public boolean isKnown(World expectedWorld,int blockX,int minY,int maxY,int blockZ,
+                           DhApiMat4f nativeMvp,double originX,double originY,double originZ) {
         if(expectedWorld!=world || world==null || minY>maxY) return false;
         int lo=Math.max(minSection,minY>>4),hi=Math.min(maxSection,maxY>>4);
         if(lo>hi) return true;
-        long required=(-1L >>> (63-(hi-minSection))) & (-1L << (lo-minSection));
-        return (columns.get(key(blockX>>4,blockZ>>4)) & required)==required;
+        long known=columns.get(key(blockX>>4,blockZ>>4));
+        for(int y=lo;y<=hi;y++) {
+            if((known & (1L<<(y-minSection)))!=0) continue;
+            // Celeritas correctly omits out-of-view occupied sections. Only the
+            // queried part of a section that can affect this view requires depth.
+            if(ModelBounds.intersectsView(nativeMvp,blockX-originX,Math.max(minY,y<<4)-originY,blockZ-originZ,
+                blockX+16-originX,Math.min(maxY+1,(y+1)<<4)-originY,blockZ+16-originZ)) return false;
+        }
+        return true;
     }
     public void clear() { world=null;renderer=null;manager=null;columns.clear(); }
     private static long key(int x,int z) { return ((long)x<<32) ^ (z & 0xffffffffL); }
