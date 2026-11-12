@@ -193,7 +193,7 @@ public final class ModelCapture implements AutoCloseable {
         if(width>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE) || height>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE))
             throw new IllegalArgumentException("Model capture exceeds texture limit");
         releaseTarget();
-        framebuffer=GL30.glGenFramebuffers();colour=texture(width,height,GL11.GL_RGBA8,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE);
+        framebuffer=GL30.glGenFramebuffers();colour=texture(width,height,GL30.GL_RGBA16F,GL11.GL_RGBA,GL11.GL_FLOAT);
         depth=texture(width,height,GL14.GL_DEPTH_COMPONENT24,GL11.GL_DEPTH_COMPONENT,GL11.GL_UNSIGNED_INT);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,colour,0);

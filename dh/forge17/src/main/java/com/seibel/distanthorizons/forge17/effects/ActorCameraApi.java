@@ -13,6 +13,10 @@ public final class ActorCameraApi {
                                 int width,int height,float partial,float transitionStart,boolean heat) {
         return ActorRenderer.INSTANCE!=null && ActorRenderer.INSTANCE.cameraPass.begin(world,projection,view,x,y,z,width,height,partial,transitionStart,heat);
     }
+    public static boolean beginShader(Object world,FloatBuffer projection,FloatBuffer view,double x,double y,double z,
+                                      int width,int height,float partial,int[] targets,FloatBuffer distantProjection) {
+        return ActorRenderer.INSTANCE!=null && ActorRenderer.INSTANCE.cameraPass.beginShader(world,projection,view,x,y,z,width,height,partial,targets,distantProjection);
+    }
     public static boolean renderNative(Entity entity) { return ActorRenderer.INSTANCE!=null && ActorRenderer.INSTANCE.cameraPass.nativeEntity(entity); }
     public static void renderDistant() { if(ActorRenderer.INSTANCE!=null) ActorRenderer.INSTANCE.cameraPass.distant(); }
     public static void end() { if(ActorRenderer.INSTANCE!=null) ActorRenderer.INSTANCE.cameraPass.end(); }

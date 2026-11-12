@@ -53,7 +53,7 @@ public final class ModelScene implements AutoCloseable {
     private void ensure(int width,int height) {
         if(framebuffer!=0 && this.width==width && this.height==height) return;
         if(width>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE) || height>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE)) throw new IllegalArgumentException("Actor scene texture limit");
-        release();framebuffer=GL30.glGenFramebuffers();colour=texture(width,height,GL11.GL_RGBA8,GL11.GL_RGBA,GL11.GL_UNSIGNED_BYTE);
+        release();framebuffer=GL30.glGenFramebuffers();colour=texture(width,height,GL30.GL_RGBA16F,GL11.GL_RGBA,GL11.GL_FLOAT);
         depth=texture(width,height,GL14.GL_DEPTH_COMPONENT24,GL11.GL_DEPTH_COMPONENT,GL11.GL_UNSIGNED_INT);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,colour,0);

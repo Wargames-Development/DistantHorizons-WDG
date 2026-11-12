@@ -298,6 +298,39 @@ static void actor_surface_check(void) {
     glReadBuffer(GL_COLOR_ATTACHMENT0);glDrawBuffer(GL_COLOR_ATTACHMENT0);glDisable(GL_BLEND);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT2,GL_RENDERBUFFER,0);glDeleteRenderbuffers(1,&surface);
 }
+static void hdr_lighting_check(void) {
+    // Real compositor must preserve pack scene colour until the one enclosing presentation pass.
+    uniform("uAuxiliary",0);uniform("uMarkerOverlay",0);uniform("uOpaqueDepthOnly",0);
+    uniform("uUseCloudDepth",0);uniform("uUseNativeDepth",0);uniform("uSceneDepth",0);
+    uniform("uDhReverseDepth",0);uniform("uModelReverseDepth",0);uniform("uWriteDhDepth",1);
+    matrix("uInverseModelMvp",0);matrix("uNativeMvp",0);matrix("uDhMvp",0);
+    glUniform3f(glGetUniformLocation(program,"uDhOriginOffset"),0,0,0);
+    tex(1,.5,0,0,1);tex(2,1,0,0,1);glDisable(GL_BLEND);glDepthFunc(GL_ALWAYS);
+    float levels[]={.015f,.2f,1.5f,6.f};
+    for(int i=0;i<4;i++) {
+        float level=levels[i];tex(0,level,level*.5f,level*.25f,.25f);
+        glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);glDrawArrays(GL_TRIANGLES,0,6);
+        float observed[4];glReadPixels(2,2,1,1,GL_RGBA,GL_FLOAT,observed);
+        if(fabsf(observed[0]-level)>.004f || fabsf(observed[1]-level*.5f)>.004f || fabsf(observed[3]-.25f)>.001f || glGetError()) {
+            fprintf(stderr,"FAIL HDR actor scene stage level=%g observed=%g alpha=%g\n",level,observed[0],observed[3]);exit(1);
+        }
+        checks++;
+    }
+    printf("PASS night, daylight and HDR block lighting retain premultiplied colour and coverage before presentation\n");
+}
+static void near_native_actor_depth_check(void) {
+    uniform("uWriteDhDepth",0);uniform("uOpaqueDepthOnly",1);uniform("uUseNativeDepth",0);
+    matrix("uDhMvp",-3);matrix("uNativeMvp",0);matrix("uInverseModelMvp",0);
+    tex(1,.5,0,0,1);tex(2,1,0,0,1);glDrawBuffer(GL_NONE);glDepthFunc(GL_LEQUAL);
+    for(int solid=0;solid<2;solid++) {
+        tex(0,.5,.25,.125,solid?1:.5);glClearDepth(1);glClear(GL_DEPTH_BUFFER_BIT);glDrawArrays(GL_TRIANGLES,0,6);
+        float d;glReadPixels(2,2,1,1,GL_DEPTH_COMPONENT,GL_FLOAT,&d);
+        if(fabsf(d-(solid?.5f:1.f))>.00001 || glGetError()) { fprintf(stderr,"FAIL native near actor depth/alpha %g\n",d);exit(1); }
+        checks++;
+    }
+    uniform("uOpaqueDepthOnly",0);glDrawBuffer(GL_COLOR_ATTACHMENT0);matrix("uDhMvp",0);
+    printf("PASS scope native opaque depth retains near surfaces while transparent parts leave depth unchanged\n");
+}
 int main(int argc,char **argv) {
     if(argc!=3) return 1;
     CGLPixelFormatAttribute attrs[]={kCGLPFAOpenGLProfile,(CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,kCGLPFAAllowOfflineRenderers,0};
@@ -315,7 +348,7 @@ int main(int argc,char **argv) {
     matrix("uInverseModelMvp",0);matrix("uDhMvp",0);matrix("uNativeMvp",0);
     uniform("uWriteDhDepth",1);
     GLuint fbo,colour,depth;glGenFramebuffers(1,&fbo);glBindFramebuffer(GL_FRAMEBUFFER,fbo);
-    glGenRenderbuffers(1,&colour);glBindRenderbuffer(GL_RENDERBUFFER,colour);glRenderbufferStorage(GL_RENDERBUFFER,GL_RGBA8,4,4);
+    glGenRenderbuffers(1,&colour);glBindRenderbuffer(GL_RENDERBUFFER,colour);glRenderbufferStorage(GL_RENDERBUFFER,GL_RGBA16F,4,4);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_RENDERBUFFER,colour);
     glGenRenderbuffers(1,&depth);glBindRenderbuffer(GL_RENDERBUFFER,depth);glRenderbufferStorage(GL_RENDERBUFFER,GL_DEPTH_COMPONENT24,4,4);
     glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,depth);
@@ -358,6 +391,6 @@ int main(int argc,char **argv) {
     matrix("uInverseModelMvp",0);matrix("uDhMvp",0);matrix("uNativeMvp",0);glUniform3f(glGetUniformLocation(program,"uDhOriginOffset"),0,0,0);
     glDepthFunc(GL_ALWAYS);check("translucent actor pixels do not enter opaque depth",0,0);
     tex(0,.5,.25,.125,1);check("solid actor pixels enter opaque depth",1,.5);uniform("uOpaqueDepthOnly",0);
-    jitter_alignment_check();stationary_actor_jitter_check();beam_segment_check();actor_surface_check();
+    jitter_alignment_check();stationary_actor_jitter_check();beam_segment_check();actor_surface_check();hdr_lighting_check();near_native_actor_depth_check();
     printf("PASS %d actor model GPU checks\n",checks);return 0;
 }

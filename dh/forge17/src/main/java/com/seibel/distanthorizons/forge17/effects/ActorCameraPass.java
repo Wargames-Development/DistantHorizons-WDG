@@ -3,6 +3,9 @@ package com.seibel.distanthorizons.forge17.effects;
 import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 import com.seibel.distanthorizons.forge17.actors.*;
 import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.*;
 import java.util.*;
 import net.minecraft.client.renderer.entity.Render;
 import net.minecraft.client.renderer.entity.RenderManager;
@@ -26,11 +29,30 @@ final class ActorCameraPass {
     private double x,y,z;
     private float partial,start;
     private int width,height,count;
-    private boolean active,heat;
+    private boolean active,heat,shaderLighting;
+    private int[] shaderTargets;
+    private int shaderFramebuffer,terrainSnapshot;
+    private final NativeSceneDepthCopy shaderTerrain = new NativeSceneDepthCopy();
+    private final DhApiMat4f shaderMvp = new DhApiMat4f();
     ActorCameraPass(ActorRenderer owner) { this.owner=owner; }
+    boolean beginShader(Object world,FloatBuffer p,FloatBuffer m,double x,double y,double z,
+                        int width,int height,float partial,int[] targets,FloatBuffer distantProjection) {
+        if(targets==null || targets.length!=10 || targets[0]<=0 || targets[3]<=0 || targets[4]<=0 || targets[5]<=0
+                || targets[6]!=width || targets[7]!=height || distantProjection==null) return false;
+        if(!begin(world,p,m,x,y,z,width,height,partial,16,false)) return false;
+        try {
+            shaderTargets=targets.clone();
+            if(!read(distantProjection,shaderMvp)) { end();return false; }
+            shaderMvp.multiply(view);
+            terrainSnapshot=shaderTerrain.capture(targets[3]);
+            if(terrainSnapshot<=0) { end();return false; }
+            shaderLighting=true;return true;
+        } catch(RuntimeException | LinkageError failure) { end();throw failure; }
+    }
     boolean begin(Object world,FloatBuffer p,FloatBuffer m,double x,double y,double z,int width,int height,float partial,float start,boolean heat) {
         if(active || p==null || m==null || p.limit()<16 || m.limit()<16 || !owner.cameraReady(world) || !ModelCapture.supportsSize(width,height)
             || !Double.isFinite(x+y+z) || !Float.isFinite(partial) || !Float.isFinite(start) || start<1 || start>=4096) return false;
+        shaderLighting=false;
         reuseColour=heat && colourWorld==world && colourFrame==DistantSmokeRenderer.frameId()
             && this.x==x && this.y==y && this.z==z && this.width==width && this.height==height
             && same(p,projection) && same(m,view);
@@ -74,7 +96,7 @@ final class ActorCameraPass {
     void distant() {
         if(!active) return;
         if(reuseColour) models.addAll(colourModels);else owner.cameraModels(models,nativeIds);
-        models.sort((a,b)->Double.compare(distance(a),distance(b)));
+        models.sort((a,b)->shaderLighting?Double.compare(distance(b),distance(a)):Double.compare(distance(a),distance(b)));
         if(!heat) {
             colourModels.addAll(models);colourWorld=net.minecraft.client.Minecraft.getMinecraft().theWorld;
             colourFrame=DistantSmokeRenderer.frameId();
@@ -98,15 +120,59 @@ final class ActorCameraPass {
             localMvp.set(localProjection);localMvp.multiply(view);
             if(!ModelProjection.inverse(localMvp,inverse) || !capture.begin(width,height,bounds[0],bounds[1],bounds[2],bounds[3],localProjection)) return;
             boolean completed=false;
-            try { owner.cameraDraw(model,rx,ry,rz,view);completed=true; }
+            try { owner.cameraDraw(model,rx,ry,rz,view,shaderLighting);completed=true; }
             finally { capture.end(completed); }
-            capture.compositeAuxiliary(inverse,mvp,view,projection,start,heat);
+            if(shaderLighting) compositeShader();
+            else capture.compositeAuxiliary(inverse,mvp,view,projection,start,heat);
         } catch(Exception | LinkageError failure) {
             throw new IllegalStateException("DH isolated actor draw failed",failure);
         }
     }
-    void reset() { end();colourModels.clear();colourWorld=null;colourFrame=-1; }
-    void end() { if(active) { active=false;owner.cameraTerrainEnd();nativeIds.clear();models.clear();nativeModel.entity=null; } }
+    private void compositeShader() {
+        int read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);
+        int draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+        try {
+            if(shaderFramebuffer==0) shaderFramebuffer=GL30.glGenFramebuffers();
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,shaderFramebuffer);
+            for(int i=0;i<3;i++) GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,
+                GL30.GL_COLOR_ATTACHMENT0+i,GL11.GL_TEXTURE_2D,shaderTargets[i],0);
+            IntBuffer outputs=BufferUtils.createIntBuffer(3);
+            for(int i=0;i<3;i++) outputs.put(shaderTargets[i]>0?GL30.GL_COLOR_ATTACHMENT0+i:GL11.GL_NONE);
+            outputs.flip();GL20.glDrawBuffers(outputs);
+            GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,
+                GL11.GL_TEXTURE_2D,shaderTargets[3],0);
+            if(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE)
+                throw new IllegalStateException("Incomplete scope actor scene");
+            capture.composite(inverse,shaderMvp,mvp,0,0,0,terrainSnapshot,shaderTargets[5],false,true);
+            GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,
+                GL11.GL_TEXTURE_2D,shaderTargets[4],0);
+            GL11.glDrawBuffer(GL11.GL_NONE);
+            capture.opaqueDepthOnly(true);
+            try { capture.composite(inverse,shaderMvp,mvp,0,0,0,terrainSnapshot,shaderTargets[5],false,true); }
+            finally { capture.opaqueDepthOnly(false); }
+            // Near native vehicles need native depth too: DH's near plane alone
+            // cannot order two cockpit-range surfaces or reconstruct their fog distance.
+            // No attached native image is sampled during these depth-only writes.
+            capture.opaqueDepthOnly(true);
+            try {
+                for(int index:new int[]{5,8,9}) {
+                    if(shaderTargets[index]<=0) continue;
+                    GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,
+                        GL11.GL_TEXTURE_2D,shaderTargets[index],0);
+                    capture.composite(inverse,shaderMvp,mvp,0,0,0,terrainSnapshot,0,false,false);
+                }
+            } finally { capture.opaqueDepthOnly(false); }
+        } finally {
+            GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,draw);
+        }
+    }
+    void reset() {
+        end();colourModels.clear();colourWorld=null;colourFrame=-1;
+        if(shaderFramebuffer!=0) { GL30.glDeleteFramebuffers(shaderFramebuffer);shaderFramebuffer=0; }
+        shaderTerrain.close();
+    }
+    void end() { if(active) { active=false;shaderLighting=false;shaderTargets=null;owner.cameraTerrainEnd();nativeIds.clear();models.clear();nativeModel.entity=null; } }
     private final class NativeModel implements ActorModel {
         Entity entity;double px,py,pz,radius;
         public double x(){return px;}public double y(){return py;}public double z(){return pz;}

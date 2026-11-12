@@ -6,6 +6,11 @@ import org.lwjgl.opengl.*;
 /** Immutable native scene depth, including hands/cockpit, before detached models draw. */
 final class NativeSceneDepthCopy {
     private int framebuffer,texture;
+    void close() {
+        if(framebuffer!=0) GL30.glDeleteFramebuffers(framebuffer);
+        if(texture!=0) GL11.glDeleteTextures(texture);
+        framebuffer=texture=0;
+    }
     int capture(int source) {
         if(source<=0) return 0;
         int read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);

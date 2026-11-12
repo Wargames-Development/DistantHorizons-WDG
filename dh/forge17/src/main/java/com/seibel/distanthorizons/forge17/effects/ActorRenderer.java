@@ -187,7 +187,7 @@ public final class ActorRenderer {
         vehicles.collect(output,nativeIds);
     }
     double cameraVehicleRadius(net.minecraft.entity.Entity entity) { return vehicles.available()?vehicles.radius(entity):Double.NaN; }
-    void cameraDraw(ActorModel model,double x,double y,double z,DhApiMat4f view) throws Exception { drawModel(model,x,y,z,view); }
+    void cameraDraw(ActorModel model,double x,double y,double z,DhApiMat4f view,boolean shaderLighting) throws Exception { drawModel(model,x,y,z,view,shaderLighting); }
     MarkerOverlayApi.MarkerView markerView() {
         if(!valid || failed || world!=Minecraft.getMinecraft().theWorld) return null;
         IIrisAccessor iris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
@@ -287,7 +287,7 @@ public final class ActorRenderer {
                     if(!ModelProjection.inverse(localMvp,inverseLocal)) { projectionRejected++;continue; }
                     boolean modelComplete=false;
                     if(!capture.begin(width,height,bounds[0],bounds[1],bounds[2],bounds[3],localProjection)) { captureRejected++;continue; }
-                    try { drawModel(model,x,y,z);modelComplete=true; }
+                    try { drawModel(model,x,y,z,frame.mcModelViewMatrix,shaders);modelComplete=true; }
                     finally { capture.end(modelComplete); }
                     drawn++;capture.composite(inverseLocal,dhMvp,sampledNativeMvp,0,0,0,terrainDepth,target==null?0:target.nativeSceneDepth,reverse,true);
                 }
@@ -325,15 +325,15 @@ public final class ActorRenderer {
         while(iterator.hasNext()) { Map.Entry<UUID,Contact> entry=iterator.next();if(!retained.contains(entry.getKey())) { entry.getValue().close();iterator.remove(); } }
     }
     private void drawModel(ActorModel model,double x,double y,double z) throws Exception {
-        drawModel(model,x,y,z,frame.mcModelViewMatrix);
+        drawModel(model,x,y,z,frame.mcModelViewMatrix,false);
     }
-    private void drawModel(ActorModel model,double x,double y,double z,DhApiMat4f view) throws Exception {
+    private void drawModel(ActorModel model,double x,double y,double z,DhApiMat4f view,boolean shaderLighting) throws Exception {
         float partial=model.partial();
-        AutoCloseable isolated=FmurPlayerBridge.beginModelCapture();
+        AutoCloseable isolated=shaderLighting?ShaderActorLighting.begin():FmurPlayerBridge.beginModelCapture();
         int mode=GL11.glGetInteger(GL11.GL_MATRIX_MODE);float lightX=OpenGlHelper.lastBrightnessX,lightY=OpenGlHelper.lastBrightnessY;
         GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glPushMatrix();drawing=true;
         try {
-            load(view);GL20.glUseProgram(0);
+            load(view);if(!shaderLighting) GL20.glUseProgram(0);
             Minecraft.getMinecraft().entityRenderer.enableLightmap(partial);
             RenderHelper.enableStandardItemLighting();GL11.glEnable(GL11.GL_NORMALIZE);GL11.glDisable(GL11.GL_FOG);
             int units=GL11.glGetInteger(GL13.GL_MAX_TEXTURE_UNITS);
@@ -356,6 +356,7 @@ public final class ActorRenderer {
             int light=model.light();OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit,light&65535,light>>>16);
             GL11.glEnable(GL11.GL_BLEND);GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA,GL11.GL_ONE_MINUS_SRC_ALPHA,GL11.GL_ONE,GL11.GL_ONE_MINUS_SRC_ALPHA);
             GL11.glColor4f(1,1,1,1);
+            if(shaderLighting) ShaderActorLighting.refresh();
             model.draw(x,y,z);
         } finally {
             Minecraft.getMinecraft().entityRenderer.disableLightmap(partial);
