@@ -11,7 +11,7 @@ import org.lwjgl.opengl.*;
 public final class ModelScene implements AutoCloseable {
     private final ModelCapture compositor=new ModelCapture();
     private int framebuffer,colour,depth,width,height,read,draw;
-    private boolean reverse,ready;
+    private boolean ready;
     private GLState saved;
     public void prepare(int width,int height) {
         if(!ModelCapture.supportsSize(width,height)) throw new IllegalArgumentException("Actor scene budget: "+width+"x"+height);
@@ -19,15 +19,15 @@ public final class ModelScene implements AutoCloseable {
         try(GLState state=new GLState()) { ensure(width,height);compositor.prepareCompositor(); }
         finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldDraw); }
     }
-    public void begin(int width,int height,boolean reverse) {
+    public void begin(int width,int height) {
         if(saved!=null) throw new IllegalStateException("Nested actor scene");
         read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING);draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-        saved=new GLState();GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);ready=false;this.reverse=reverse;
+        saved=new GLState();GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);ready=false;
         try {
             if(!ModelCapture.supportsSize(width,height)) throw new IllegalArgumentException("Actor scene budget: "+width+"x"+height);
             ensure(width,height);GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);GL11.glViewport(0,0,width,height);
             GL11.glDisable(GL11.GL_SCISSOR_TEST);GL11.glColorMask(true,true,true,true);GL11.glDepthMask(true);
-            GL11.glClearColor(0,0,0,0);GL11.glClearDepth(reverse?0:1);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT|GL11.GL_DEPTH_BUFFER_BIT);
+            GL11.glClearColor(0,0,0,0);GL11.glClearDepth(0);GL11.glClear(GL11.GL_COLOR_BUFFER_BIT|GL11.GL_DEPTH_BUFFER_BIT);
         } catch(RuntimeException | LinkageError error) { end(false);throw error; }
     }
     public void end(boolean completed) {
@@ -38,14 +38,14 @@ public final class ModelScene implements AutoCloseable {
             saved=null;ready=completed;
         }
     }
-    public void composite(DhApiMat4f inverseDh,DhApiMat4f dhMvp,DhApiMat4f nativeFromDh,DhApiMat4f nativeView,int terrainDepth,int nativeDepth,boolean shaderScene,int cloudTexture,float cloudDistance) {
+    public void composite(DhApiMat4f inverseNative,DhApiMat4f dhMvp,DhApiMat4f nativeFromDh,DhApiMat4f nativeView,int terrainDepth,int nativeDepth,boolean reverseTerrainDepth,boolean shaderScene,int cloudTexture,float cloudDistance) {
         if(!ready || saved!=null) throw new IllegalStateException("Incomplete actor scene");
-        compositor.compositeSource(colour,depth,width,height,0,0,width,height,reverse,inverseDh,dhMvp,nativeFromDh,
-            0,0,0,terrainDepth,nativeDepth,reverse,shaderScene,nativeView,cloudTexture,cloudDistance,true);
+        compositor.compositeSource(colour,depth,width,height,0,0,width,height,true,inverseNative,dhMvp,nativeFromDh,
+            0,0,0,terrainDepth,nativeDepth,reverseTerrainDepth,shaderScene,nativeView,cloudTexture,cloudDistance,true,false);
     }
-    public void compositeOpaqueDepth(DhApiMat4f inverse,DhApiMat4f dh,DhApiMat4f nativeMvp,DhApiMat4f view,int terrain,int nativeDepth,int cloud,float distance) {
+    public void compositeOpaqueDepth(DhApiMat4f inverse,DhApiMat4f dh,DhApiMat4f nativeMvp,DhApiMat4f view,int terrain,int nativeDepth,boolean reverseTerrainDepth,int cloud,float distance) {
         compositor.opaqueDepthOnly(true);
-        try { composite(inverse,dh,nativeMvp,view,terrain,nativeDepth,true,cloud,distance); }
+        try { composite(inverse,dh,nativeMvp,view,terrain,nativeDepth,reverseTerrainDepth,true,cloud,distance); }
         finally { compositor.opaqueDepthOnly(false); }
     }
     public int colourTexture() { return ready && saved==null?colour:0; }
@@ -54,7 +54,7 @@ public final class ModelScene implements AutoCloseable {
         if(framebuffer!=0 && this.width==width && this.height==height) return;
         if(width>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE) || height>GL11.glGetInteger(GL11.GL_MAX_TEXTURE_SIZE)) throw new IllegalArgumentException("Actor scene texture limit");
         release();framebuffer=GL30.glGenFramebuffers();colour=texture(width,height,GL30.GL_RGBA16F,GL11.GL_RGBA,GL11.GL_FLOAT);
-        depth=texture(width,height,GL14.GL_DEPTH_COMPONENT24,GL11.GL_DEPTH_COMPONENT,GL11.GL_UNSIGNED_INT);
+        depth=texture(width,height,GL30.GL_DEPTH_COMPONENT32F,GL11.GL_DEPTH_COMPONENT,GL11.GL_FLOAT);
         GL30.glBindFramebuffer(GL30.GL_FRAMEBUFFER,framebuffer);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_COLOR_ATTACHMENT0,GL11.GL_TEXTURE_2D,colour,0);
         GL30.glFramebufferTexture2D(GL30.GL_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,depth,0);

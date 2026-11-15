@@ -7,8 +7,11 @@ import net.minecraft.entity.Entity;
 @cpw.mods.fml.relauncher.SideOnly(cpw.mods.fml.relauncher.Side.CLIENT)
 public final class ActorCameraApi {
     public static final int API_VERSION=1;
+    /** Additive capability: player bit 1, vehicle bit 2; render-thread snapshot. */
+    public static final int OWNERSHIP_VERSION=1;
     private ActorCameraApi() { }
     public static boolean isOwned() { return ActorRenderer.INSTANCE!=null && ActorRenderer.INSTANCE.cameraOwned(); }
+    public static int ownedKinds() { return ActorRenderer.INSTANCE==null?0:ActorRenderer.INSTANCE.cameraOwnedKinds(); }
     public static boolean begin(Object world,FloatBuffer projection,FloatBuffer view,double x,double y,double z,
                                 int width,int height,float partial,float transitionStart,boolean heat) {
         return ActorRenderer.INSTANCE!=null && ActorRenderer.INSTANCE.cameraPass.begin(world,projection,view,x,y,z,width,height,partial,transitionStart,heat);

@@ -18,7 +18,9 @@ public final class TerrainCorridorChecks {
         corridor.reset(8192);
         require(!corridor.known(Double.NaN,0,0,1,1,1,4,(x,y0,y1,z)->true),"invalid camera rejected");checks++;
         require(!corridor.known(0,0,0,Double.POSITIVE_INFINITY,1,1,4,(x,y0,y1,z)->true),"invalid actor rejected");checks++;
-        require(!corridor.known(0,0,0,1,1,1,129,(x,y0,y1,z)->true),"unbounded model radius rejected");checks++;
+        require(!corridor.known(0,0,0,1,1,1,257,(x,y0,y1,z)->true),"unbounded model radius rejected");checks++;
+        corridor.reset(8192);
+        require(corridor.known(0,64,0,0,64,200,256,(x,y0,y1,z)->true),"maximum capture envelope has matching coverage support");checks++;
         corridor.reset(128);
         require(corridor.known(0,65,0,512,65,512,4,(x,y0,y1,z)->Math.abs(x-z)<=2),"diagonal corridor excludes unrelated rectangle corners and fits a linear work budget");checks++;
         corridor.reset(8192);

@@ -52,10 +52,10 @@ void main() {
     if(uUseActorDepth && dhClip.w>0.0) {
         vec2 actorUv=nativeClip.xy/nativeClip.w*0.5+0.5;
         if(all(greaterThanEqual(actorUv,vec2(0.0))) && all(lessThanEqual(actorUv,vec2(1.0)))) {
-            // Only fully opaque actor pixels occlude later effects. Shared scene depth is DH Z at native XY.
+            // Only opaque actor pixels occlude effects. Match actor_model.frag's private reverse depth.
             float alpha=texture(uActorColour,actorUv).a;
             float actor=texture(uActorDepth,actorUv).r;
-            if(alpha>=0.999 && (uDhReverseDepth ? projected.z<actor-0.00000006 : projected.z>actor+0.00000006)) discard;
+            if(alpha>=0.999 && 16.0/(16.0+nativeClip.w)<actor-0.00000006) discard;
         }
     }
     if(uShaderPass) {

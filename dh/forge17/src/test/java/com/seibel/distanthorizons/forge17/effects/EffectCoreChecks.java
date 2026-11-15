@@ -453,6 +453,7 @@ public final class EffectCoreChecks
         checks+=com.seibel.distanthorizons.forge17.actors.PlayerProtocolChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.VehicleProtocolChecks.run();
         checks+=ActorLifecycleChecks.run();
+        checks+=VisualTerrainChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.ModelProjectionChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.TerrainCorridorChecks.run();
         checks+=com.seibel.distanthorizons.forge17.actors.PlayerTrackChecks.run();

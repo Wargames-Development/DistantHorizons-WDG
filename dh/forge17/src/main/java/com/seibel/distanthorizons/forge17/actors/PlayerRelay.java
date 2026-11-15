@@ -8,12 +8,15 @@ import cpw.mods.fml.common.network.FMLNetworkEvent;
 import cpw.mods.fml.common.network.NetworkRegistry;
 import cpw.mods.fml.common.network.simpleimpl.*;
 import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.ReflectionHelper;
 import io.netty.buffer.ByteBuf;
+import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.server.MinecraftServer;
 
@@ -35,6 +38,18 @@ public final class PlayerRelay {
     private long sequence;
     private boolean legacySafe;
     private static final byte[] NO_EXTENSION=new byte[0];
+    private static final class PlayerUseCount {
+        // The public getter is client-only. Resolve the common field lazily for server relay.
+        private static final Field FIELD=ReflectionHelper.findField(EntityPlayer.class, "itemInUseCount", "field_71072_f");
+
+        static int read(EntityPlayer player) {
+            try {
+                return FIELD.getInt(player);
+            } catch (IllegalAccessException failure) {
+                throw new IllegalStateException("Cannot read player item use count", failure);
+            }
+        }
+    }
     private PlayerRelay() { }
     public void initialize() {
         if(initialized) return;initialized=true;
@@ -138,7 +153,7 @@ public final class PlayerRelay {
                     byte[] visual=visualPoses.get(p.getUniqueID());
                     if(visual==null) { visual=fmur?FmurPlayerBridge.capturePose(p):NO_EXTENSION;visualPoses.put(p.getUniqueID(),visual); }
                     poses.add(new PlayerFrame.Pose(p.getUniqueID(),p.getEntityId(),p.posX,p.posY,p.posZ,p.rotationYaw,
-                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision,Math.max(0,Math.min(1000000,((com.seibel.distanthorizons.forge17.mixin.MixinPlayerUseState)p).dh$getItemInUseCount())),bedYaw(p),visual));
+                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision,Math.max(0,Math.min(1000000,PlayerUseCount.read(p))),bedYaw(p),visual));
                 } catch(IllegalArgumentException invalid) { continue; }
                 if(poses.size()==PlayerFrame.MAX_PLAYERS) break;
             }

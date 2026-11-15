@@ -8,7 +8,7 @@ uniform bool uUseCloudDepth;
 uniform float uCloudRenderDistance;
 uniform mat4 uNativeView;
 uniform bool uSceneDepth;
-uniform mat4 uDhFromNativeClip;
+uniform bool uStoreSceneDepth;
 uniform mat4 uInverseModelMvp;
 uniform mat4 uDhMvp;
 uniform mat4 uNativeMvp;
@@ -38,18 +38,21 @@ void main() {
     if(colour.a<=0.001 || (uOpaqueDepthOnly && colour.a<0.999)) discard;
     vec2 xy=screenUv*2.0-1.0;
     float z=depth*2.0-1.0;
+    vec4 model;
     if(uSceneDepth) {
-        // The shared scene stores native XY but DH Z. Their camera origins can
-        // differ, so solve for native clip Z along this pixel's ray first.
-        vec4 base=uDhFromNativeClip*vec4(xy,0.0,1.0);
-        vec4 axis=uDhFromNativeClip[2];
-        float denominator=axis.z-z*axis.w;
-        if(abs(denominator)<0.0000000001) discard;
-        z=(z*base.w-base.z)/denominator;
+        // Private actor depth stores reciprocal native eye distance. Recover
+        // position along the native pixel ray without using DH's near plane.
+        vec4 base=uInverseModelMvp*vec4(xy,0.0,1.0);
+        vec4 axis=uInverseModelMvp[2];
+        if(abs(axis.w)<0.0000000001) discard;
+        vec3 origin=axis.xyz/axis.w;
+        float eyeDistance=16.0*(1.0/depth-1.0);
+        model=vec4(origin+(base.xyz-origin*base.w)*eyeDistance,1.0);
+    } else {
+        model=uInverseModelMvp*vec4(xy,z,1.0);
+        if(abs(model.w)<0.000001) discard;
+        model=vec4(model.xyz/model.w,1.0);
     }
-    vec4 model=uInverseModelMvp*vec4(xy,z,1.0);
-    if(abs(model.w)<0.000001) discard;
-    model=vec4(model.xyz/model.w,1.0);
     if(uAuxiliary) {
         float distance=uAuxiliaryDepth.z-(uNativeView*model).z;
         if(distance<=0.0) discard;
@@ -81,6 +84,7 @@ void main() {
     }
     vec4 dhClip=uDhMvp*vec4(terrainModel.xyz+uDhOriginOffset,1.0);
     if(nativeClip.w<=0.0 || dhClip.w<=0.0) discard;
+    if(uStoreSceneDepth && nativeClip.z < -nativeClip.w) discard;
     vec3 nativePosition=nativeClip.xyz/nativeClip.w*0.5+0.5;
     vec3 dhPosition=dhClip.xyz/dhClip.w*0.5+0.5;
     if(any(lessThan(dhPosition.xy,vec2(0.0))) || any(greaterThan(dhPosition.xy,vec2(1.0)))) discard;
@@ -107,5 +111,6 @@ void main() {
     fragActorMaterial=vec4(0.0,254.0/255.0,0.0,1.0);
     // Capture is already lit. Never inherit the glossy terrain normal/fresnel underneath it.
     fragActorNormal=vec4(0.0,1.0,0.0,0.0);
-    gl_FragDepth=uWriteDhDepth ? clamp(dhPosition.z,0.0,1.0) : clamp(nativePosition.z,0.0,1.0);
+    // Match distant_smoke.frag when reading the private actor depth.
+    gl_FragDepth=uStoreSceneDepth ? 16.0/(16.0+nativeClip.w) : uWriteDhDepth ? clamp(dhPosition.z,0.0,1.0) : clamp(nativePosition.z,0.0,1.0);
 }

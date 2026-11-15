@@ -143,7 +143,7 @@ public final class PlayerProtocolChecks {
                 for(cpw.mods.fml.relauncher.Side value:cpw.mods.fml.relauncher.Side.values()) {
                     side.set(null,value);
                     java.util.List<String> early=new com.seibel.distanthorizons.DistantHorizonsTweaker().getMixins(Collections.emptySet());
-                    check(Collections.frequency(early,"MixinPlayerUseState")==1,"actual early loader selects the common player accessor exactly once on "+value);
+                    check(!early.contains("MixinPlayerUseState"),"player use count must not require a startup mixin on "+value);
                 }
             } finally { side.set(null,previousSide);net.minecraft.launchwrapper.Launch.classLoader=previousLoader; }
         } catch(java.io.IOException | ReflectiveOperationException failure) { throw new AssertionError("Early mixin selector fixture failed",failure); }

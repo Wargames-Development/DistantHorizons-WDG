@@ -99,7 +99,11 @@ final class ShaderEffectsTarget {
             // Withhold this frame without permanently disabling compatibility.
             if(size==0 || size!=textureSize(d)) return null;
             projectionValues.clear();writeProjection.invoke(projection.invoke(null),projectionValues);
-            DhApiMat4f terrainProjection=readColumnMajorProjection(projectionValues);
+            // Angelica can publish a nonfinite projection while its first terrain
+            // frame or a shader reload is still being prepared. Retry next frame.
+            DhApiMat4f terrainProjection;
+            try { terrainProjection=readColumnMajorProjection(projectionValues); }
+            catch(IllegalArgumentException transientProjection) { return null; }
             jitter[0]=jitter[1]=0;
             String pack=String.valueOf(packName.invoke(null));
             String normalized=pack.toLowerCase(java.util.Locale.ROOT);

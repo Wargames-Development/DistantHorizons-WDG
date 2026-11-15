@@ -21,6 +21,12 @@ final class ActorCameraPass {
     private final int[] bounds=new int[4];
     private final Set<UUID> nativeIds=new HashSet<>();
     private final List<ActorModel> models=new ArrayList<>();
+    private final List<ActorModel> submitted=new ArrayList<>();
+    boolean isActive() { return active; }
+    boolean submit(ActorModel model) {
+        if(!active || submitted.size()>=VisualTerrainApi.MAX_MODELS) return false;
+        submitted.add(model);return true;
+    }
     private final List<ActorModel> colourModels=new ArrayList<>();
     private Object colourWorld;
     private long colourFrame=-1;
@@ -29,11 +35,15 @@ final class ActorCameraPass {
     private double x,y,z;
     private float partial,start;
     private int width,height,count;
+    private int diagnosticCandidates, diagnosticOutside, diagnosticUnknown, diagnosticCaptured;
+    private String diagnosticMissing = "none";
+    private long nextDiagnostic;
     private boolean active,heat,shaderLighting;
     private int[] shaderTargets;
     private int shaderFramebuffer,terrainSnapshot;
     private final NativeSceneDepthCopy shaderTerrain = new NativeSceneDepthCopy();
     private final DhApiMat4f shaderMvp = new DhApiMat4f();
+    private final DhApiMat4f sampledNativeMvp = new DhApiMat4f();
     ActorCameraPass(ActorRenderer owner) { this.owner=owner; }
     boolean beginShader(Object world,FloatBuffer p,FloatBuffer m,double x,double y,double z,
                         int width,int height,float partial,int[] targets,FloatBuffer distantProjection) {
@@ -43,6 +53,10 @@ final class ActorCameraPass {
         try {
             shaderTargets=targets.clone();
             if(!read(distantProjection,shaderMvp)) { end();return false; }
+            float[] jitter=ShaderActorJitter.readScope();
+            sampledNativeMvp.set(mvp);
+            ShaderActorJitter.apply(sampledNativeMvp,jitter[0],jitter[1]);
+            ShaderActorJitter.apply(shaderMvp,jitter[0],jitter[1]);
             shaderMvp.multiply(view);
             terrainSnapshot=shaderTerrain.capture(targets[3]);
             if(terrainSnapshot<=0) { end();return false; }
@@ -61,7 +75,9 @@ final class ActorCameraPass {
         mvp.set(projection);mvp.multiply(view);
         if(!ModelProjection.inverse(mvp,inverse) || !owner.cameraTerrainBegin(mvp,x,y,z)) return false;
         this.x=x;this.y=y;this.z=z;this.width=width;this.height=height;this.partial=partial;this.start=start;this.heat=heat;
-        nativeIds.clear();models.clear();count=0;
+        nativeIds.clear();models.clear();submitted.clear();count=0;
+        diagnosticCandidates=diagnosticOutside=diagnosticUnknown=diagnosticCaptured=0;
+        diagnosticMissing="none";
         try { capture.prepare(width,height);active=true;return true; }
         catch(RuntimeException | LinkageError failure) { owner.cameraTerrainEnd();return false; }
     }
@@ -81,8 +97,10 @@ final class ActorCameraPass {
     }
     boolean nativeEntity(Entity entity) {
         if(!active || entity==null) return false;
+        int kind=entity instanceof EntityPlayer?1:2;
+        if((owner.cameraOwnedKinds() & kind)==0) return false;
         double radius=entity instanceof EntityPlayer?8:owner.cameraVehicleRadius(entity);
-        if(!Double.isFinite(radius) || radius<=0 || radius>128) return false;
+        if(!Double.isFinite(radius) || radius<=0 || radius>256) return false;
         if(count>=128) return true;
         nativeIds.add(entity.getUniqueID());
         if(heat && owner.cameraLocalVehicle(entity)) return true;
@@ -95,23 +113,33 @@ final class ActorCameraPass {
     }
     void distant() {
         if(!active) return;
+        models.clear();
         if(reuseColour) models.addAll(colourModels);else owner.cameraModels(models,nativeIds);
-        models.sort((a,b)->shaderLighting?Double.compare(distance(b),distance(a)):Double.compare(distance(a),distance(b)));
         if(!heat) {
+            colourModels.clear();
             colourModels.addAll(models);colourWorld=net.minecraft.client.Minecraft.getMinecraft().theWorld;
             colourFrame=DistantSmokeRenderer.frameId();
         }
+        // Companion callbacks capture the current camera/thermal state; never replay
+        // a colour callback in a heat view or retain it beyond this pass.
+        models.addAll(submitted);submitted.clear();
+        models.sort((a,b)->shaderLighting?Double.compare(distance(b),distance(a)):Double.compare(distance(a),distance(b)));
         for(ActorModel model:models) {
-            if(count++>=128) break;
+            if(count++>=VisualTerrainApi.MAX_MODELS) break;
             draw(model);
         }
     }
     private double distance(ActorModel model) { double dx=model.x()-x,dy=model.centerY()-y,dz=model.z()-z;return dx*dx+dy*dy+dz*dz; }
     private void draw(ActorModel model) {
+        diagnosticCandidates++;
         double radius=model.radius();
-        if(!Double.isFinite(radius) || radius<=0 || radius>128
-            || !ModelBounds.project(mvp,model.x()-x,model.centerY()-y,model.z()-z,radius,width,height,bounds)
-            || !owner.cameraTerrainKnown(x,y,z,model)) return;
+        if(!Double.isFinite(radius) || radius<=0 || radius>256
+            || !ModelBounds.project(mvp,model.x()-x,model.centerY()-y,model.z()-z,radius,width,height,bounds)) {
+            diagnosticOutside++;return;
+        }
+        if(!owner.cameraTerrainKnown(x,y,z,model)) {
+            diagnosticUnknown++;diagnosticMissing=owner.cameraTerrainMissing();return;
+        }
         try {
             if(!model.prepare()) return;
             double rx=model.x()-x,ry=model.y()-y,rz=model.z()-z;
@@ -124,6 +152,7 @@ final class ActorCameraPass {
             finally { capture.end(completed); }
             if(shaderLighting) compositeShader();
             else capture.compositeAuxiliary(inverse,mvp,view,projection,start,heat);
+            diagnosticCaptured++;
         } catch(Exception | LinkageError failure) {
             throw new IllegalStateException("DH isolated actor draw failed",failure);
         }
@@ -143,12 +172,12 @@ final class ActorCameraPass {
                 GL11.GL_TEXTURE_2D,shaderTargets[3],0);
             if(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE)
                 throw new IllegalStateException("Incomplete scope actor scene");
-            capture.composite(inverse,shaderMvp,mvp,0,0,0,terrainSnapshot,shaderTargets[5],false,true);
+            capture.composite(inverse,shaderMvp,sampledNativeMvp,0,0,0,terrainSnapshot,shaderTargets[5],false,true);
             GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,
                 GL11.GL_TEXTURE_2D,shaderTargets[4],0);
             GL11.glDrawBuffer(GL11.GL_NONE);
             capture.opaqueDepthOnly(true);
-            try { capture.composite(inverse,shaderMvp,mvp,0,0,0,terrainSnapshot,shaderTargets[5],false,true); }
+            try { capture.composite(inverse,shaderMvp,sampledNativeMvp,0,0,0,terrainSnapshot,shaderTargets[5],false,true); }
             finally { capture.opaqueDepthOnly(false); }
             // Near native vehicles need native depth too: DH's near plane alone
             // cannot order two cockpit-range surfaces or reconstruct their fog distance.
@@ -172,7 +201,16 @@ final class ActorCameraPass {
         if(shaderFramebuffer!=0) { GL30.glDeleteFramebuffers(shaderFramebuffer);shaderFramebuffer=0; }
         shaderTerrain.close();
     }
-    void end() { if(active) { active=false;shaderLighting=false;shaderTargets=null;owner.cameraTerrainEnd();nativeIds.clear();models.clear();nativeModel.entity=null; } }
+    void end() {
+        if(active && shaderLighting && System.nanoTime()>=nextDiagnostic) {
+            nextDiagnostic=System.nanoTime()+5_000_000_000L;
+            org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").info(
+                "DH shader camera actors: candidates="+diagnosticCandidates+" outside="+diagnosticOutside
+                +" unknown="+diagnosticUnknown+" composited="+diagnosticCaptured+" missing="+diagnosticMissing);
+        }
+        submitted.clear();models.clear();
+        if(active) { active=false;shaderLighting=false;shaderTargets=null;owner.cameraTerrainEnd();nativeIds.clear();nativeModel.entity=null; }
+    }
     private final class NativeModel implements ActorModel {
         Entity entity;double px,py,pz,radius;
         public double x(){return px;}public double y(){return py;}public double z(){return pz;}

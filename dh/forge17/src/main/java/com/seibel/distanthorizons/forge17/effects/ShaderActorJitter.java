@@ -9,9 +9,8 @@ import org.lwjgl.opengl.*;
 
 /** Read the active pack's compiled DH jitter; no frame counter guesses or shader-pack edits. */
 final class ShaderActorJitter {
-    private static Object previousPipeline;
-    private static int previousProgram=-1,frameLocation,widthLocation,heightLocation;
-    private static float strength;
+    private static final State primary=new State(),scope=new State();
+    private static Method scopeProgram,scopeSource;
     private static Method solid,terrainSource,vertexSource;
     private static Field programId;
     private static final FloatBuffer value=BufferUtils.createFloatBuffer(16);
@@ -29,28 +28,52 @@ final class ShaderActorJitter {
         }
         Object shader=solid.invoke(dh);if(shader==null) return;
         int program=programId.getInt(shader);if(program<=0) return;
-        if(previousPipeline!=pipeline || previousProgram!=program) {
-            previousPipeline=pipeline;previousProgram=program;strength=0;
-            frameLocation=GL20.glGetUniformLocation(program,"framemod8");
-            widthLocation=GL20.glGetUniformLocation(program,"viewWidth");heightLocation=GL20.glGetUniformLocation(program,"viewHeight");
+        if(primary.identity!=pipeline || primary.program!=program) {
             // ProgramSource is the option-preprocessed input used to create this exact
             // pipeline's terrain program. Do not depend on retained GL shader objects.
             java.util.Optional<?> terrain=(java.util.Optional<?>)terrainSource.invoke(pipeline);
             String source="";
             if(terrain.isPresent()) source=(String)((java.util.Optional<?>)vertexSource.invoke(terrain.get())).orElse(null);
-            String reason=source==null || source.isEmpty()?"missing source":"unsupported pattern";
-            if(source!=null && matchingOffsets(source)) {
-                strength=parseStrength(source);reason=strength==0?"disabled or unsupported function":"matched preprocessed terrain";
-            }
-            if(frameLocation<0 || widthLocation<0 || heightLocation<0) { strength=0;reason="missing jitter uniforms"; }
-            org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").info("DH actor shader jitter: strength="+strength+" program="+program+" source="+reason);
-
+            primary.update(pipeline,program,source);
         }
-        if(strength==0) return;
-        float frame=uniform(program,frameLocation),width=uniform(program,widthLocation),height=uniform(program,heightLocation);
-        if(!Float.isFinite(frame) || width<=0 || height<=0) return;
-        int index=((int)frame)&7;
-        out[0]=X[index]*strength/width;out[1]=Y[index]*strength/height;
+        primary.read(out);
+    }
+    static float[] readScope() {
+        float[] out=new float[2];
+        try {
+            if(scopeProgram==null) {
+                Class<?> api=Class.forName("com.gtnewhorizons.angelica.api.FlansScope");
+                scopeProgram=api.getMethod("actorTerrainProgram");scopeSource=api.getMethod("actorTerrainSource");
+            }
+            int program=((Number)scopeProgram.invoke(null)).intValue();
+            String source=(String)scopeSource.invoke(null);
+            if(program<=0) throw new IllegalStateException("No private terrain program");
+            if(scope.program!=program || !java.util.Objects.equals(scope.identity,source)) scope.update(source,program,source);
+            scope.read(out);
+            return out;
+        } catch(ReflectiveOperationException failure) {
+            throw new IllegalStateException("Private shader terrain metadata unavailable",failure);
+        }
+    }
+    private static final class State {
+        Object identity;
+        int program=-1,frameLocation,widthLocation,heightLocation;
+        float strength;
+        void update(Object identity,int program,String source) {
+            this.identity=identity;this.program=program;
+            frameLocation=GL20.glGetUniformLocation(program,"framemod8");
+            widthLocation=GL20.glGetUniformLocation(program,"viewWidth");heightLocation=GL20.glGetUniformLocation(program,"viewHeight");
+            strength=source!=null && matchingOffsets(source)?parseStrength(source):0;
+            if(frameLocation<0 || widthLocation<0 || heightLocation<0) strength=0;
+        }
+        void read(float[] out) {
+            out[0]=out[1]=0;
+            if(strength==0) return;
+            float frame=uniform(program,frameLocation),width=uniform(program,widthLocation),height=uniform(program,heightLocation);
+            if(!Float.isFinite(frame) || !Float.isFinite(width+height) || width<=0 || height<=0) return;
+            int index=((int)frame)&7;
+            out[0]=X[index]*strength/width;out[1]=Y[index]*strength/height;
+        }
     }
     private static float uniform(int program,int location) { value.clear();GL20.glGetUniform(program,location,value);return value.get(0); }
     static boolean matchingOffsets(String source) {

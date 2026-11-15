@@ -75,48 +75,37 @@ static void perspective_check(float distance,int reverse) {
     check("physical distant model hidden by nearer terrain",0,0);
 }
 static void scene_check(int reverse) {
-    uniform("uDhReverseDepth",reverse);uniform("uWriteDhDepth",1);uniform("uUseNativeDepth",0);uniform("uModelReverseDepth",0);
-    matrix("uInverseModelMvp",0);matrix("uNativeMvp",0);
-    float dh[16]={.5f,0,0,0,0,.75f,0,0,0,0,reverse?-1:1,0,0,0,0,1};
+    // The actor is at eye distance 4 before DH's near plane at 16.
+    // Native terrain at 5 must leave it visible and terrain at 3 must hide it.
+    float native[16]={1,0,0,0,0,1,0,0,0,0,-1,-1,0,0,-.1f,0};
+    float inverse[16]={1,0,0,0,0,1,0,0,0,0,0,-10,0,0,-1,10};
+    float dh[16]={.8f,0,0,0,0,.8f,0,0,0,0,reverse?1:-1,-1,0,0,reverse?32:-32,0};
+    glUniformMatrix4fv(glGetUniformLocation(program,"uInverseModelMvp"),1,GL_FALSE,inverse);
+    glUniformMatrix4fv(glGetUniformLocation(program,"uNativeMvp"),1,GL_FALSE,native);
     glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,dh);
-    glUniform3f(glGetUniformLocation(program,"uDhOriginOffset"),0,0,0);tex(2,reverse?0:1,0,0,1);
-    glClearColor(0,0,0,0);glClearDepth(reverse?0:1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-    glDepthFunc(reverse?GL_GEQUAL:GL_LEQUAL);
-    tex(0,.1,.1,.1,1);tex(1,.6,0,0,1);glDrawArrays(GL_TRIANGLES,0,6);
-    tex(0,.5,.25,.125,1);tex(1,.4,0,0,1);glDrawArrays(GL_TRIANGLES,0,6);
-    float pixel[4],d;glReadPixels(2,2,1,1,GL_RGBA,GL_FLOAT,pixel);glReadPixels(2,2,1,1,GL_DEPTH_COMPONENT,GL_FLOAT,&d);
-    if(fabsf(pixel[0]-.5f)>.003 || fabsf(d-(reverse?.6f:.4f))>.00001) { fprintf(stderr,"FAIL inter-actor depth\n");exit(1); }
+    glUniform3f(glGetUniformLocation(program,"uDhOriginOffset"),0,0,0);
+    uniform("uDhReverseDepth",reverse);uniform("uWriteDhDepth",0);uniform("uUseNativeDepth",0);
+    uniform("uStoreSceneDepth",1);tex(2,reverse?0:1,0,0,1);
+    glClearColor(0,0,0,0);glClearDepth(0);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    glDepthFunc(GL_GEQUAL);
+    tex(0,.1,.1,.1,1);tex(1,.995f,0,0,1);glDrawArrays(GL_TRIANGLES,0,6); // distance 10
+    tex(0,.5,.25,.125,1);tex(1,.9875f,0,0,1);glDrawArrays(GL_TRIANGLES,0,6); // distance 4
+    tex(0,.1,.1,.1,1);tex(1,.99f,0,0,1);glDrawArrays(GL_TRIANGLES,0,6); // distance 5
+    float pixel[4],d;glReadPixels(2,2,1,1,GL_RGBA,GL_FLOAT,pixel);
+    glReadPixels(2,2,1,1,GL_DEPTH_COMPONENT,GL_FLOAT,&d);
+    if(fabsf(pixel[0]-.5f)>.003 || fabsf(d-.8f)>.00001) { fprintf(stderr,"FAIL near actor depth/order\n");exit(1); }
     checks++;
-    GLuint source[2];glGenTextures(2,source);
-    for(int i=0;i<2;i++) {
-        glActiveTexture(GL_TEXTURE0+i);glBindTexture(GL_TEXTURE_2D,source[i]);
-        glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
-        glCopyTexImage2D(GL_TEXTURE_2D,0,i==0?GL_RGBA8:GL_DEPTH_COMPONENT24,0,0,4,4,0);
-    }
-    // The second pass reconstructs from DH's scene coordinates, then writes native depth.
-    matrix("uInverseModelMvp",0);uniform("uSceneDepth",1);
-    glUniformMatrix4fv(glGetUniformLocation(program,"uDhFromNativeClip"),1,GL_FALSE,dh);
-    tex(3,1,0,0,1);uniform("uUseNativeDepth",1);
-    uniform("uModelReverseDepth",reverse);uniform("uWriteDhDepth",0);glDepthFunc(GL_ALWAYS);
-    check("combined actor scene retains physical native depth",1,.4f);
-    glReadPixels(3,2,1,1,GL_RGBA,GL_FLOAT,pixel);
-    if(fabsf(pixel[0]-.5f)>.003f) { fprintf(stderr,"FAIL native/DH FOV mismatch reconstruction\n");exit(1); }
-    checks++;
-    glDeleteTextures(2,source);uniform("uModelReverseDepth",0);uniform("uSceneDepth",0);
-}
-static void different_camera_check(int reverse) {
-    matrix("uInverseModelMvp",0);matrix("uNativeMvp",0);uniform("uSceneDepth",1);
-    // Independent oracle point at the centre sample: native=(.25,.25,.2,1).
-    // DH has a different perspective denominator, as camera-origin offsets produce.
-    float h[16]={1,0,0,.25f,0,1,0,0,0,0,reverse?-.8f:.8f,.5f,0,0,reverse?-.1f:.1f,1};
-    glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,h);
-    glUniformMatrix4fv(glGetUniformLocation(program,"uDhFromNativeClip"),1,GL_FALSE,h);
-    float depth=(.26f/1.1625f+1)*.5f;if(reverse) depth=1-depth;
-    tex(0,.5,.25,.125,1);tex(1,depth,0,0,1);tex(2,reverse?0:1,0,0,1);tex(3,1,0,0,1);
-    uniform("uDhReverseDepth",reverse);uniform("uModelReverseDepth",reverse);uniform("uWriteDhDepth",0);uniform("uUseNativeDepth",1);
-    check("different native/DH camera bases reconstruct physical model depth",1,.6f);
-    tex(3,.55f,0,0,1);check("native occlusion remains valid with different camera bases",0,0);
-    tex(3,1,0,0,1);tex(2,reverse?.9f:.1f,0,0,1);check("DH occlusion remains valid with different camera bases",0,0);
+    glActiveTexture(GL_TEXTURE0);glBindTexture(GL_TEXTURE_2D,textures[0]);glCopyTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,0,0,4,4,0);
+    glActiveTexture(GL_TEXTURE1);glBindTexture(GL_TEXTURE_2D,textures[1]);glCopyTexImage2D(GL_TEXTURE_2D,0,GL_DEPTH_COMPONENT24,0,0,4,4,0);
+    uniform("uStoreSceneDepth",0);uniform("uSceneDepth",1);uniform("uModelReverseDepth",1);
+    glDepthFunc(GL_ALWAYS);
+    check("near actor retains native depth after shared scene merge",1,.9875f);
+    uniform("uUseNativeDepth",1);tex(3,.99f,0,0,1);
+    check("near actor remains in front of native terrain at five blocks",1,.9875f);
+    tex(3,1-.05f/3,0,0,1);
+    check("native terrain at three blocks still hides near actor",0,0);
+    uniform("uWriteDhDepth",1);tex(3,1,0,0,1);
+    check("shader target retains its own DH depth convention",1,reverse?1:0);
     uniform("uSceneDepth",0);uniform("uModelReverseDepth",0);
 }
 static void partial_cover_check(void) {
@@ -247,22 +236,21 @@ static void stationary_actor_jitter_check(void) {
     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA32F,4,4,0,GL_RGBA,GL_FLOAT,colour);
     const float x[]={.125,-.125,.625,.375,-.625,-.875,.375,.875};
     const float y[]={-.375,.375,.125,-.625,.625,-.125,-.875,.875};
-    for(int scene=0;scene<2;scene++) for(int frame=0;frame<8;frame++) {
+    for(int frame=0;frame<8;frame++) {
         float jitter[]={1,0,0,0,0,1,0,0,0,0,1,0,x[frame]*.125f/4,y[frame]*.125f/4,0,1};
         glUniformMatrix4fv(glGetUniformLocation(program,"uNativeMvp"),1,GL_FALSE,jitter);
         glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,jitter);
-        glUniformMatrix4fv(glGetUniformLocation(program,"uDhFromNativeClip"),1,GL_FALSE,jitter);
-        uniform("uSceneDepth",scene);
+        uniform("uSceneDepth",0);
         glClearColor(0,0,0,0);glClearDepth(1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
         glDepthFunc(GL_ALWAYS);glDrawArrays(GL_TRIANGLES,0,6);glReadPixels(0,0,4,4,GL_RGBA,GL_FLOAT,observed);
-        if(frame==0 && scene==0) for(int i=0;i<64;i++) reference[i]=observed[i];
+        if(frame==0) for(int i=0;i<64;i++) reference[i]=observed[i];
         for(int i=0;i<64;i++) if(fabsf(observed[i]-reference[i])>.00001) {
-            fprintf(stderr,"FAIL stationary actor raster shifts in jitter frame %d scene %d\n",frame,scene);exit(1);
+            fprintf(stderr,"FAIL stationary actor raster shifts in jitter frame %d\n",frame);exit(1);
         }
         if(glGetError() || fabsf(observed[4]-.5f)>.003f || observed[0]>.003f) exit(1);
         checks++;
     }
-    printf("PASS stable actor colour across eight shader jitter phases and both scene stages\n");
+    printf("PASS stable actor colour across eight shader jitter phases\n");
     uniform("uSceneDepth",0);
 }
 static void beam_segment_check(void) {
@@ -383,7 +371,7 @@ int main(int argc,char **argv) {
         float distances[]={64,128,256,512,750,1024,4096};perspective_check(distances[i],reverse);
     }
     scene_check(0);scene_check(1);partial_cover_check();
-    cloud_check();different_camera_check(0);different_camera_check(1);
+    cloud_check();
     for(int i=0;i<5;i++){float d[]={16,64,128,750,4096};auxiliary_check(d[i],0);auxiliary_check(d[i],1);}
     marker_check();native_depth_copy_check();sampler_state_check();
     uniform("uOpaqueDepthOnly",1);tex(0,.5,.25,.125,.5);tex(1,.5,0,0,1);tex(2,1,0,0,1);

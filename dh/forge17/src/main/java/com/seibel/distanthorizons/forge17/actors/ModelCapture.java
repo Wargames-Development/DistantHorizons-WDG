@@ -27,7 +27,7 @@ public final class ModelCapture implements AutoCloseable {
     private GlShaderProgram shader;
     private int inverseUniform,dhUniform,nativeUniform,reverseUniform,useNativeUniform,writeDepthUniform,reverseModelUniform,offsetUniform;
     private int viewUniform,cloudSamplerUniform,cloudEnabledUniform,cloudRangeUniform;
-    private int sceneDepthUniform,clipTransformUniform;
+    private int sceneDepthUniform,storeSceneDepthUniform;
     private int auxiliaryUniform,auxiliaryHeatUniform,auxiliaryDepthUniform,markerUniform,markerDepthUniform,markerTerrainDepthUniform,markerAnchorUniform;
     private boolean opaqueDepthOnly;private int opaqueDepthUniform;
     public void opaqueDepthOnly(boolean value) { opaqueDepthOnly=value; }
@@ -36,7 +36,7 @@ public final class ModelCapture implements AutoCloseable {
     private boolean marker;private float markerDepth,markerTerrainDepth,markerX,markerY;
     private boolean auxiliary,auxiliaryHeat;
     private float auxiliaryZ,auxiliaryOffset,auxiliaryEye,auxiliaryStart;
-    private final DhApiMat4f clipTransform=new DhApiMat4f();
+
     private final int[] samplerUniforms=new int[4];
     private final FloatBuffer matrix=BufferUtils.createFloatBuffer(16);
     private final float[] rows=new float[16];
@@ -95,7 +95,14 @@ public final class ModelCapture implements AutoCloseable {
                           boolean reverseDepth,boolean writeDhDepth) {
         if(!ready || captureState!=null) throw new IllegalStateException("No completed model capture");
         compositeSource(colour,depth,width,height,left,bottom,right,top,false,inverseCapture,dhMvp,nativeMvp,
-            offsetX,offsetY,offsetZ,terrainDepth,nativeDepth,reverseDepth,writeDhDepth,nativeMvp,0,0,false);
+            offsetX,offsetY,offsetZ,terrainDepth,nativeDepth,reverseDepth,writeDhDepth,nativeMvp,0,0,false,false);
+    }
+    /** Merge captured physical surfaces into the private actor depth buffer. */
+    public void compositeActorScene(DhApiMat4f inverseCapture,DhApiMat4f dhMvp,DhApiMat4f nativeMvp,
+                                    int terrainDepth,int nativeDepth,boolean reverseTerrainDepth) {
+        if(!ready || captureState!=null) throw new IllegalStateException("No completed model capture");
+        compositeSource(colour,depth,width,height,left,bottom,right,top,false,inverseCapture,dhMvp,nativeMvp,
+            0,0,0,terrainDepth,nativeDepth,reverseTerrainDepth,false,nativeMvp,0,0,false,true);
     }
     /** World-space overlay: mask per fragment, without changing scene depth. */
     public void compositeWorldOverlay(DhApiMat4f inverse,DhApiMat4f dh,DhApiMat4f nativeMvp,
@@ -108,7 +115,7 @@ public final class ModelCapture implements AutoCloseable {
                                 int x0,int y0,int x1,int y1,boolean sourceReverseDepth,
                                 DhApiMat4f inverseCapture,DhApiMat4f dhMvp,DhApiMat4f nativeMvp,
                                 float offsetX,float offsetY,float offsetZ,int terrainDepth,int nativeDepth,
-                                boolean reverseDepth,boolean writeDhDepth,DhApiMat4f nativeView,int cloudTexture,float cloudDistance,boolean sceneDepth) {
+                                boolean reverseDepth,boolean writeDhDepth,DhApiMat4f nativeView,int cloudTexture,float cloudDistance,boolean sceneDepth,boolean storeSceneDepth) {
         if(captureState!=null || sourceColour<=0 || sourceDepth<=0 || sourceWidth<=0 || sourceHeight<=0
                 || (long)sourceWidth*sourceHeight>MAX_PIXELS || x0<0 || y0<0 || x1>sourceWidth || y1>sourceHeight || x0>=x1 || y0>=y1)
             throw new IllegalArgumentException("Invalid model composite input");
@@ -134,7 +141,7 @@ public final class ModelCapture implements AutoCloseable {
                 GL20.glUniform4f(auxiliaryDepthUniform,auxiliaryZ,auxiliaryOffset,auxiliaryEye,auxiliaryStart);
                 shader.setUniform(inverseUniform,inverseCapture);shader.setUniform(dhUniform,dhMvp);shader.setUniform(nativeUniform,nativeMvp);
                 shader.setUniform(sceneDepthUniform,sceneDepth);
-                if(sceneDepth) { clipTransform.set(dhMvp);clipTransform.multiply(inverseCapture);shader.setUniform(clipTransformUniform,clipTransform); }
+                shader.setUniform(storeSceneDepthUniform,storeSceneDepth);
                 shader.setUniform(reverseUniform,reverseDepth);
                 shader.setUniform(useNativeUniform,nativeDepth>0);
                 shader.setUniform(writeDepthUniform,writeDhDepth);
@@ -151,7 +158,7 @@ public final class ModelCapture implements AutoCloseable {
                 GL30.glDisablei(GL11.GL_BLEND,2);
                 GL11.glColorMask(!opaqueDepthOnly,!opaqueDepthOnly,!opaqueDepthOnly,!opaqueDepthOnly);GL11.glDepthMask(!marker && !worldOverlay);
                 if(marker || worldOverlay) GL11.glDisable(GL11.GL_DEPTH_TEST);else GL11.glEnable(GL11.GL_DEPTH_TEST);GL11.glDepthRange(0,1);
-                GL11.glDepthFunc(writeDhDepth && reverseDepth?GL11.GL_GEQUAL:GL11.GL_LEQUAL);
+                GL11.glDepthFunc(storeSceneDepth || (writeDhDepth && reverseDepth)?GL11.GL_GEQUAL:GL11.GL_LEQUAL);
                 GL30.glBindVertexArray(vao);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,6);
             } finally { GL11.glPopAttrib(); }
         } finally {
@@ -167,7 +174,7 @@ public final class ModelCapture implements AutoCloseable {
             throw new IllegalArgumentException("Invalid marker depth");
         marker=true;markerDepth=frontDepth;markerTerrainDepth=terrainDepthAtTarget;markerX=anchorX;markerY=anchorY;
         try { compositeSource(colour,depth,width,height,left,bottom,right,top,false,inverseNative,dhMvp,nativeMvp,
-            0,0,0,terrainDepth,nativeDepth,reverse,false,nativeMvp,0,0,false); }
+            0,0,0,terrainDepth,nativeDepth,reverse,false,nativeMvp,0,0,false,false); }
         finally { marker=false; }
     }
     /** Composite physical model depth into FMUR's existing isolated-camera depth law. */
@@ -176,7 +183,7 @@ public final class ModelCapture implements AutoCloseable {
         if(!ready || captureState!=null || !Float.isFinite(start) || start<1 || start>=4096) throw new IllegalArgumentException("Invalid auxiliary capture");
         auxiliary=true;auxiliaryHeat=heat;auxiliaryZ=projection.m22;auxiliaryOffset=projection.m23;auxiliaryEye=view.m23;auxiliaryStart=start;
         try { compositeSource(colour,depth,width,height,left,bottom,right,top,false,inverseCapture,mvp,mvp,
-                0,0,0,0,0,false,false,view,0,0,false); }
+                0,0,0,0,0,false,false,view,0,0,false,false); }
         finally { auxiliary=false;auxiliaryHeat=false; }
     }
     private void bindTexture(int unit,int texture) {
@@ -224,7 +231,7 @@ public final class ModelCapture implements AutoCloseable {
         reverseModelUniform=shader.getUniformLocation("uModelReverseDepth");offsetUniform=shader.getUniformLocation("uDhOriginOffset");
         viewUniform=shader.getUniformLocation("uNativeView");cloudSamplerUniform=shader.getUniformLocation("uCloudDepth");
         cloudEnabledUniform=shader.getUniformLocation("uUseCloudDepth");cloudRangeUniform=shader.getUniformLocation("uCloudRenderDistance");
-        sceneDepthUniform=shader.getUniformLocation("uSceneDepth");clipTransformUniform=shader.getUniformLocation("uDhFromNativeClip");
+        sceneDepthUniform=shader.getUniformLocation("uSceneDepth");storeSceneDepthUniform=shader.getUniformLocation("uStoreSceneDepth");
         markerUniform=shader.getUniformLocation("uMarkerOverlay");markerDepthUniform=shader.getUniformLocation("uMarkerDepth");markerTerrainDepthUniform=shader.getUniformLocation("uMarkerTerrainDepth");markerAnchorUniform=shader.getUniformLocation("uMarkerAnchor");
         auxiliaryUniform=shader.getUniformLocation("uAuxiliary");auxiliaryHeatUniform=shader.getUniformLocation("uAuxiliaryHeat");auxiliaryDepthUniform=shader.getUniformLocation("uAuxiliaryDepth");
         String[] names={"uModelColour","uModelDepth","uDhDepth","uNativeDepth"};

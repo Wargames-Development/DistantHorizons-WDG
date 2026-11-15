@@ -8,7 +8,7 @@ public final class TerrainCorridor {
     public int remaining() { return remaining; }
     public boolean known(double cx,double cy,double cz,double x,double y,double z,double radius,Columns source) {
         if(source==null || !coordinate(cx) || !coordinate(cy) || !coordinate(cz) || !coordinate(x) || !coordinate(y)
-                || !coordinate(z) || !Double.isFinite(radius) || radius<=0 || radius>128) return false;
+                || !coordinate(z) || !Double.isFinite(radius) || radius<=0 || radius>256) return false;
         // A square-expanded segment contains every ray from the camera to the actor's
         // bounding cube. A full X/Z rectangle also includes unrelated off-ray terrain.
         int minX=floor(Math.min(cx,x)-radius)>>4,maxX=floor(Math.max(cx,x)+radius)>>4;
