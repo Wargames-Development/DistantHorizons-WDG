@@ -412,6 +412,17 @@ public class GlGenericObjectRenderer implements IDhGenericRenderer
 	@Override
 	public void render(RenderParams renderEventParam, IProfilerWrapper profiler, boolean renderingWithSsao)
 	{
+		this.render(renderEventParam, profiler, renderingWithSsao, false);
+	}
+
+	/** Replay DH's cloud groups in a caller-owned camera and framebuffer. */
+	public void renderClouds(RenderParams params, IProfilerWrapper profiler)
+	{
+		this.render(params, profiler, false, true);
+	}
+
+	private void render(RenderParams renderEventParam, IProfilerWrapper profiler, boolean renderingWithSsao, boolean cloudsOnly)
+	{
 		// generic rendering (both instanced and direct) is extremely unstable on Mac, so don't render anything
 		if (EPlatform.get() == EPlatform.MACOS)
 		{
@@ -426,7 +437,7 @@ public class GlGenericObjectRenderer implements IDhGenericRenderer
 			
 			this.init();
 			
-			ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeGenericRenderSetupEvent.class, renderEventParam.apiCopy);
+			if (!cloudsOnly) ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeGenericRenderSetupEvent.class, renderEventParam.apiCopy);
 			
 			
 			boolean renderWireframe = Config.Client.Advanced.Debugging.renderWireframe.get();
@@ -447,7 +458,7 @@ public class GlGenericObjectRenderer implements IDhGenericRenderer
 			
 			IDhApiGenericObjectShaderProgram shaderProgram = this.instancedRenderingAvailable ? this.instancedShaderProgram : this.directShaderProgram;
 			IDhApiGenericObjectShaderProgram shaderProgramOverride = OverrideInjector.INSTANCE.get(IDhApiGenericObjectShaderProgram.class);
-			if (shaderProgramOverride != null && shaderProgram.overrideThisFrame())
+			if (!cloudsOnly && shaderProgramOverride != null && shaderProgram.overrideThisFrame())
 			{
 				shaderProgram = shaderProgramOverride;
 			}
@@ -471,6 +482,11 @@ public class GlGenericObjectRenderer implements IDhGenericRenderer
 				{
 					continue;
 				}
+				if (cloudsOnly && !(ModInfo.NAME.equalsIgnoreCase(boxGroup.getResourceLocationNamespace())
+						&& "Clouds".equalsIgnoreCase(boxGroup.getResourceLocationPath())))
+				{
+					continue;
+				}
 				
 				// skip boxes that shouldn't render this pass
 				if (boxGroup.ssaoEnabled != renderingWithSsao)
@@ -488,11 +504,13 @@ public class GlGenericObjectRenderer implements IDhGenericRenderer
 				}
 				
 				// allow API users to cancel this object's rendering
-				EVENT_PARAM.update(renderEventParam, boxGroup);
-				boolean cancelRendering = ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeGenericObjectRenderEvent.class, EVENT_PARAM);
-				if (cancelRendering)
+				if (!cloudsOnly)
 				{
-					continue;
+					EVENT_PARAM.update(renderEventParam, boxGroup);
+					if (ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeGenericObjectRenderEvent.class, EVENT_PARAM))
+					{
+						continue;
+					}
 				}
 				
 				// update instanced data if needed
@@ -536,7 +554,7 @@ public class GlGenericObjectRenderer implements IDhGenericRenderer
 			
 			profiler.popPush("cleanup");
 			
-			ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeGenericRenderCleanupEvent.class, renderEventParam.apiCopy);
+			if (!cloudsOnly) ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeGenericRenderCleanupEvent.class, renderEventParam.apiCopy);
 			
 			if (renderWireframe)
 			{
