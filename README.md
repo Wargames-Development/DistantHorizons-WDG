@@ -71,11 +71,30 @@ gtnh-dh/
     └── coreSubProjects/ # subtree ← upstream DH core
 ```
 
+## IntelliJ IDEA
+
+The wrapper uses JDK 25 for Gradle and JDK 8 for compiling the Forge 1.7.10 code.
+From the repository root, run `gradlew.bat idea` on Windows or `./gradlew idea`
+on Linux or macOS. Open the generated `DistantHorizons-WDG.ipr` in IntelliJ
+from the checkout you want to work in. If IntelliJ prompts for a project SDK,
+select Java 8. The generated Gradle settings use the JDK 25 from the wrapper's
+Gradle daemon.
+
+On Windows, with JDK 25 on `PATH`, select **Build Distant Horizons** in the
+IntelliJ run configuration menu and click Run. This runs the repository
+wrapper's `build` task in the IDE terminal, including Forge remapping, and
+works independently of IntelliJ's Gradle sync.
+
 ## Build
 
 ```bash
-./gradlew build          # jars land in build/libs
+./gradlew build
 ```
+
+The playable JAR is `build/libs/DistantHorizons-<major>.<minor>.<patch>_X<build>.jar`.
+A successful packaging build advances `modBuildNumber` in `gradle.properties`
+once. Generating the IntelliJ project does not advance it. The separate
+`-dev.jar` is for development dependencies.
 
 ## Working on a fix
 

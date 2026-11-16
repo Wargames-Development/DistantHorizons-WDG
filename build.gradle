@@ -1,5 +1,62 @@
 plugins {
+    id 'idea'
     id 'com.gtnewhorizons.gtnhgradle' version '2.0.31'
+}
+
+idea {
+    project {
+        outputFile = file('DistantHorizons-WDG.ipr')
+        jdkName = '1.8'
+        languageLevel = '1.8'
+        vcs = 'Git'
+        ipr.withXml {
+            def projectXml = asNode()
+            def settings = projectXml.component.find { it.@name == 'GradleSettings' } ?:
+                    projectXml.appendNode('component', [name: 'GradleSettings'])
+            def linked = settings.option.find { it.@name == 'linkedExternalProjectsSettings' } ?:
+                    settings.appendNode('option', [name: 'linkedExternalProjectsSettings'])
+            def rootBuild = linked.GradleProjectSettings.find { build ->
+                build.option.any { it.@name == 'externalProjectPath' && it.@value == '$PROJECT_DIR$' }
+            }
+            if (rootBuild == null) {
+                rootBuild = linked.appendNode('GradleProjectSettings')
+                rootBuild.appendNode('option', [name: 'externalProjectPath', value: '$PROJECT_DIR$'])
+            }
+            def gradleJvm = rootBuild.option.find { it.@name == 'gradleJvm' } ?:
+                    rootBuild.appendNode('option', [name: 'gradleJvm'])
+            gradleJvm.@value = '#GRADLE_LOCAL_JAVA_HOME'
+        }
+    }
+    workspace {
+        iws.withXml {
+            def workspaceXml = asNode()
+            def runManager = workspaceXml.component.find { it.@name == 'RunManager' } ?:
+                    workspaceXml.appendNode('component', [name: 'RunManager'])
+            if (!runManager.@selected || runManager.@selected == 'Gradle.distant-horizons [build]') {
+                runManager.@selected = 'Shell Script.Build Distant Horizons'
+            }
+        }
+    }
+}
+
+tasks.named('ideaWorkspace') {
+    outputFile = file('DistantHorizons-WDG.iws')
+}
+
+tasks.named('ideaProject') {
+    doLast {
+        // IDEA reads this machine-local JDK path separately from the Java 8 project SDK.
+        def localConfig = file('.gradle/config.properties')
+        def properties = new Properties()
+        if (localConfig.isFile()) {
+            localConfig.withInputStream { properties.load(it) }
+        }
+        def javaHome = System.getProperty('java.home')
+        if (properties.getProperty('java.home') != javaHome) {
+            properties.setProperty('java.home', javaHome)
+            localConfig.withOutputStream { properties.store(it, null) }
+        }
+    }
 }
 
 def dhBuild = gradle.includedBuild('dh')

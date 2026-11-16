@@ -3,6 +3,18 @@ plugins {
     id 'io.github.pacifistmc.forgix' version '2.+'
 }
 
+// The wrapper's IDEA project includes the active loader and its source modules.
+allprojects {
+    apply plugin: 'idea'
+}
+
+project(':common') {
+    plugins.withId('dh-loader') {
+        idea.module.sourceDirs += sourceSets.lwjglCommon.java.srcDirs +
+                sourceSets.lwjgl2.java.srcDirs + sourceSets.lwjgl3.java.srcDirs
+    }
+}
+
 forgix {
 
     // add the mod loaders to the end of the jar

@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Build Distant Horizons" type="ShConfigurationType">
+    <option name="SCRIPT_TEXT" value="cmd.exe /d /c &quot;set JAVA_HOME=&amp;&amp; gradlew.bat build&quot;" />
+    <option name="SCRIPT_WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="EXECUTE_IN_TERMINAL" value="true" />
+    <option name="EXECUTE_SCRIPT_FILE" value="false" />
+    <method v="2" />
+  </configuration>
+</component>
