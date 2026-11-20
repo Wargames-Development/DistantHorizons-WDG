@@ -22,6 +22,7 @@ import com.seibel.distanthorizons.core.api.internal.SharedApi;
 import com.seibel.distanthorizons.core.wrapperInterfaces.misc.IServerPlayerWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.ILevelWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IServerLevelWrapper;
+import com.seibel.distanthorizons.forge17.terrain.DhRadarTerrainApi;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -71,6 +72,7 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
 	public static void serverStopping()
 	{
 		ServerThreadTaskHandler.INSTANCE.cancelPendingTasks();
+		DhRadarTerrainApi.serverStopping();
 	}
 
     private int borderTicks;
@@ -101,6 +103,7 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
             refreshWorldBorders();
 			ServerThreadTaskHandler.INSTANCE.onTickStart();
             com.seibel.distanthorizons.forge17.terrain.DhTerrainRayApi.serverTick();
+            DhRadarTerrainApi.serverTick();
 		}
 		else
 		{
@@ -113,6 +116,7 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
     public void serverLevelLoadEvent(WorldEvent.Load event)
     {
         com.seibel.distanthorizons.forge17.terrain.DhTerrainRayApi.unload(GetEventLevel(event));
+        if (event.world instanceof WorldServer) DhRadarTerrainApi.unload(event.world);
 		if (GetEventLevel(event) instanceof WorldServer)
 	    {
             ServerLevelWrapper.getWrapper((WorldServer)GetEventLevel(event)).refreshLodBorder();
@@ -125,6 +129,7 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
 	public void serverLevelUnloadEvent(WorldEvent.Unload event)
     {
         com.seibel.distanthorizons.forge17.terrain.DhTerrainRayApi.unload(GetEventLevel(event));
+        if (event.world instanceof WorldServer) DhRadarTerrainApi.unload(event.world);
 		if (GetEventLevel(event) instanceof WorldServer)
 	    {
 			// DH indexes loaded levels by wrapper identity, including during unload.
@@ -158,7 +163,10 @@ public class ForgeServerProxy implements AbstractModInitializer.IEventProxy
 		{
             return;
         }
-	    MixinChunkMapCommon.onChunkSave((WorldServer) event.world, event.getChunk());
+        WorldServer world = (WorldServer) event.world;
+        Chunk chunk = event.getChunk();
+        if (chunk.isModified) DhRadarTerrainApi.chunkSaved(world, chunk.xPosition, chunk.zPosition);
+	    MixinChunkMapCommon.onChunkSave(world, chunk);
     }
 
     @SubscribeEvent

@@ -191,6 +191,17 @@ public class FullDataSourceProviderV2 implements IDebugRenderable, AutoCloseable
 			return CompletableFuture.completedFuture(null);
 		}
 	}
+
+	/** File-handler thread only. Read an existing row without repairing, deleting, or generating data. */
+	@Nullable
+	public FullDataSourceV2 readExisting(long pos) throws IOException, InterruptedException, DataCorruptedException
+	{
+		if (this.isShutdownRef.get()) return null;
+		try (FullDataSourceV2DTO dto = this.repo.getByKey(pos))
+		{
+			return dto == null ? null : this.createDataSourceFromDto(dto);
+		}
+	}
 	/**
 	 * Should only be used in internal file handler methods where we are already running on a file handler thread.
 	 * Can return null if the repo is in the process of being shut down

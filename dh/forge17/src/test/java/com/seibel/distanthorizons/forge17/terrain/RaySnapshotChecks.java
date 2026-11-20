@@ -1,7 +1,10 @@
 package com.seibel.distanthorizons.forge17.terrain;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
+import com.seibel.distanthorizons.api.enums.config.EDhApiWorldCompressionMode;
+import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
 import com.seibel.distanthorizons.core.util.FullDataPointUtil;
+import com.seibel.distanthorizons.core.util.objects.DataCorruptedException;
 import com.seibel.distanthorizons.core.wrapperInterfaces.block.IBlockStateWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.IBiomeWrapper;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
@@ -81,8 +84,38 @@ public final class RaySnapshotChecks {
             boolean empty=cube==airCubes[meta][0] || cube==airCubes[meta][1];
             require(TerrainRayWalk.trace(x,y,z,x+.01,y,z,(cx,cy,cz)->shape,hit)==(empty?DhTerrainRayApi.Result.CLEAR:DhTerrainRayApi.Result.BLOCKED),"stairs preserve all eight native ray-trace orientations");
         }
-        return 81;
-        } catch(Exception failure) { throw new AssertionError("DH laser snapshot failure",failure); }
+        return 81 + radarSnapshots();
+        } catch(Exception failure) { throw new AssertionError("DH terrain snapshot failure",failure); }
+    }
+
+    private static int radarSnapshots() throws DataCorruptedException {
+        try (FullDataSourceV2 source = FullDataSourceV2.createEmpty(
+                DhSectionPos.encode(DhSectionPos.SECTION_BLOCK_DETAIL_LEVEL, -1, 0))) {
+            IBiomeWrapper biome = (IBiomeWrapper) proxy(IBiomeWrapper.class, false);
+            int stone = source.mapping.addIfNotPresentAndGetId(biome, (IBlockStateWrapper) proxy(IBlockStateWrapper.class, false));
+            int air = source.mapping.addIfNotPresentAndGetId(biome, (IBlockStateWrapper) proxy(IBlockStateWrapper.class, true));
+            long stoneRun = FullDataPointUtil.encode(stone, 20, 320, (byte) 0, (byte) 0);
+            long airRun = FullDataPointUtil.encode(air, 20, 320, (byte) 0, (byte) 0);
+            EDhApiWorldGenerationStep light = EDhApiWorldGenerationStep.LIGHT;
+            EDhApiWorldCompressionMode exact = EDhApiWorldCompressionMode.MERGE_SAME_BLOCKS;
+            source.setSingleColumn(new LongArrayList(new long[] {stoneRun}), 63, 0, light, exact);
+            source.setSingleColumn(new LongArrayList(new long[] {stoneRun}), 1, 0, light, EDhApiWorldCompressionMode.VISUALLY_EQUAL);
+            source.setSingleColumn(new LongArrayList(new long[] {airRun}), 2, 0, light, exact);
+            source.setSingleColumn(new LongArrayList(new long[] {stoneRun}), 3, 0, EDhApiWorldGenerationStep.DOWN_SAMPLED, exact);
+            DhRadarTerrainApi.Snapshot radar = DhRadarTerrainApi.decode(source, 512, id -> id == stone);
+            require(radar.blocks(63, 320, 0) && radar.blocks(63, 339, 0), "radar uses full opaque spans in exact data");
+            require(!radar.blocks(63, 319, 0) && !radar.blocks(63, 340, 0), "radar checks the span's exact boundaries");
+            require(radar.blocks(1, 339, 0) && !radar.blocks(1, 338, 0), "visual compression only proves the original top cell");
+            require(!radar.blocks(2, 330, 0) && !radar.blocks(3, 330, 0) && !radar.blocks(4, 330, 0),
+                    "transparent, downsampled, and missing columns contribute no radar obstruction");
+            source.getColumnAtRelPos(63, 0).clear();
+            require(radar.blocks(63, 320, 0), "radar snapshot owns its immutable cell data");
+        }
+        try (FullDataSourceV2 coarse = FullDataSourceV2.createEmpty(DhSectionPos.encode((byte) 7, 0, 0))) {
+            require(DhRadarTerrainApi.decode(coarse, 256, id -> true) == null,
+                    "radar rejects lower detail data");
+        }
+        return 6;
     }
     private static void require(boolean value,String message){if(!value)throw new AssertionError(message);}
 }
