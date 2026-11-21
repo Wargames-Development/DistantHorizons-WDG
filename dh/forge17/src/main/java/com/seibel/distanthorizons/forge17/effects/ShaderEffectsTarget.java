@@ -10,26 +10,28 @@ import org.lwjgl.opengl.GL11;
  * Depth and parity APIs are public; RenderTargets lookup is a checked private compatibility seam. */
 final class ShaderEffectsTarget {
     private static boolean resolved,unsupported;
-    private static ShaderEffectsTarget cached;
+    private static ShaderEffectsTarget cached,opaqueActorTarget;
     static void invalidate() { cached=null; }
+    static void beginFrame() { cached=null;opaqueActorTarget=null; }
     private static Method manager,pipeline,compat,instance,depth,depthCopy,nativeDepth,packName;
-    private static Method renderTargets,flipped,getTarget,mainTexture,altTexture;
+    private static Method renderTargets,flipped,flippedBeforeDeferred,getTarget,mainTexture,altTexture;
     private static final NativeSceneDepthCopy nativeSnapshot=new NativeSceneDepthCopy();
     private static final NativeSceneDepthCopy terrainSnapshot=new NativeSceneDepthCopy();
     private static Method projection,writeProjection;
     private static final float[] jitter=new float[2];
     private static final FloatBuffer projectionValues=org.lwjgl.BufferUtils.createFloatBuffer(16);
-    final int sceneDepth,opaqueSceneDepth,terrainDepth,nativeSceneDepth,sceneColour,cloudDepth,particleMaterial,actorNormal;
+    final int sceneDepth,opaqueSceneDepth,terrainDepth,nativeSceneDepth,nativeDepthTexture,sceneColour,cloudDepth,particleMaterial,actorNormal;
     final int sceneWidth,sceneHeight;
     final float jitterX,jitterY;
     final Object pipelineIdentity;
     final DhApiMat4f terrainProjection;
     final boolean colourFlipped,cloudFlipped;
     final boolean complementaryClouds;
-    private ShaderEffectsTarget(int depth,int opaque,int copy,int nativeDepth,String pack,int colour,int cloud,int material,int normal,java.util.Set<?> flips,DhApiMat4f terrainProjection,long size,Object pipelineIdentity) {
+    private ShaderEffectsTarget(int depth,int opaque,int copy,int nativeDepth,int nativeDepthTexture,String pack,int colour,int cloud,int material,int normal,java.util.Set<?> flips,DhApiMat4f terrainProjection,long size,Object pipelineIdentity) {
         this.pipelineIdentity=pipelineIdentity;jitterX=jitter[0];jitterY=jitter[1];
         this.terrainProjection=terrainProjection;
         sceneDepth=depth;opaqueSceneDepth=opaque;terrainDepth=copy;nativeSceneDepth=nativeDepth;sceneColour=colour;cloudDepth=cloud;
+        this.nativeDepthTexture=nativeDepthTexture;
         // A shader pack may render at a different scale from the Minecraft window.
         // Actor capture, scissor and final output must share the scene's pixel grid.
         sceneWidth=(int)(size>>>32);sceneHeight=(int)size;
@@ -56,8 +58,17 @@ final class ShaderEffectsTarget {
     }
     static ShaderEffectsTarget current() {
         if(!com.seibel.distanthorizons.forge17.EffectCaptureTransformer.shaderFinalizationHookInstalled) return null;
+        if(cached==null) cached=load(false);
+        return cached;
+    }
+    static ShaderEffectsTarget beforeDeferred() {
+        invalidate();
+        opaqueActorTarget=load(true);
+        return opaqueActorTarget;
+    }
+
+    private static ShaderEffectsTarget load(boolean beforeDeferred) {
         if(unsupported) return null;
-        if(cached!=null) return cached;
         try {
             if(!resolved) {
                 Class<?> iris=Class.forName("net.coderbot.iris.Iris");
@@ -80,6 +91,7 @@ final class ShaderEffectsTarget {
                 Class<?> deferred=Class.forName("net.coderbot.iris.pipeline.DeferredWorldRenderingPipeline");
                 renderTargets=deferred.getDeclaredMethod("getRenderTargets");renderTargets.setAccessible(true);
                 flipped=deferred.getMethod("getFlippedAfterTranslucent");
+                flippedBeforeDeferred=deferred.getMethod("getFlippedAfterPrepare");
                 getTarget=renderTargets.getReturnType().getMethod("get",int.class);
                 mainTexture=getTarget.getReturnType().getMethod("getMainTexture");
                 altTexture=getTarget.getReturnType().getMethod("getAltTexture");
@@ -90,14 +102,16 @@ final class ShaderEffectsTarget {
             Object c=compat.invoke(p);if(c==null) return null;
             Object dh=instance.invoke(c);if(dh==null) return null;
             int d=((Number)depth.invoke(dh)).intValue(),copy=((Number)depthCopy.invoke(dh)).intValue();
-            int n=nativeSnapshot.capture(((Number)nativeDepth.invoke(Minecraft.getMinecraft().getFramebuffer())).intValue());
-            java.util.Set<?> flips=(java.util.Set<?>)flipped.invoke(p);
+            int nativeTexture=((Number)nativeDepth.invoke(Minecraft.getMinecraft().getFramebuffer())).intValue();
+            java.util.Set<?> flips=(java.util.Set<?>)(beforeDeferred?flippedBeforeDeferred:flipped).invoke(p);
             Object targets=renderTargets.invoke(p);
-            int colour=texture(targets,flips,0),cloud=texture(targets,flips,5),material=texture(targets,flips,6),normal=texture(targets,flips,4);
+            int colour=texture(targets,flips,0),cloud=beforeDeferred?0:texture(targets,flips,5);
+            int material=texture(targets,flips,6),normal=texture(targets,flips,4);
             long size=textureSize(colour);
             // A resize can briefly leave the pipeline between texture allocations.
             // Withhold this frame without permanently disabling compatibility.
-            if(size==0 || size!=textureSize(d)) return null;
+            if(size==0 || size!=textureSize(d) || (beforeDeferred
+                && (d==nativeTexture || copy==nativeTexture || size!=textureSize(copy) || size!=textureSize(nativeTexture)))) return null;
             projectionValues.clear();writeProjection.invoke(projection.invoke(null),projectionValues);
             // Angelica can publish a nonfinite projection while its first terrain
             // frame or a shader reload is still being prepared. Retry next frame.
@@ -108,10 +122,15 @@ final class ShaderEffectsTarget {
             String pack=String.valueOf(packName.invoke(null));
             String normalized=pack.toLowerCase(java.util.Locale.ROOT);
             if(normalized.contains("bountifulstars") || normalized.contains("complementary")) ShaderActorJitter.read(p,dh,jitter);
-            int terrain=terrainSnapshot.capture(copy);
-            cached=d>0 && copy>0 && terrain>0 && n>0 && colour>0 && d!=copy && d!=n
-                ?new ShaderEffectsTarget(d,copy,terrain,n,pack,colour,cloud,material,normal,flips,terrainProjection,size,p):null;
-            return cached;
+            int n=nativeSnapshot.capture(nativeTexture);
+            // Actor submission adds opaque model depth to the pack's copy. Late
+            // effects still sample terrain and stable actor depth separately.
+            ShaderEffectsTarget opaque=beforeDeferred?null:opaqueActorTarget;
+            int terrain=opaque!=null && opaque.pipelineIdentity==p && opaque.opaqueSceneDepth==copy
+                && opaque.sceneWidth==(int)(size>>>32) && opaque.sceneHeight==(int)size
+                ?opaque.terrainDepth:terrainSnapshot.capture(copy);
+            return d>0 && copy>0 && terrain>0 && n>0 && colour>0 && d!=copy && d!=n
+                ?new ShaderEffectsTarget(d,copy,terrain,n,nativeTexture,pack,colour,cloud,material,normal,flips,terrainProjection,size,p):null;
         } catch(ReflectiveOperationException | RuntimeException | LinkageError error) {
             unsupported=true;
             org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").warn("Distant effects cannot access this Angelica DH pipeline; native rendering retained",error);

@@ -56,7 +56,7 @@ public final class ActorRenderer {
     private int nativeFramebuffer,shaderFramebuffer,preparedWidth,preparedHeight;
     private int nativeDepthType,nativeDepthObject;
     private boolean reportedNativeDepthAlias;
-    private boolean valid,drawing,failed,sceneComplete;
+    private boolean valid,drawing,failed,sceneComplete,actorsBeforeDeferred;
     private int drawn,unknown,outside,unprepared,projectionRejected,captureRejected;
     private String status="waiting for terrain view";
     private String lastRejection="none";
@@ -110,7 +110,7 @@ public final class ActorRenderer {
     @SubscribeEvent public void start(TickEvent.RenderTickEvent event) {
         if(event.phase!=TickEvent.Phase.START) return;
         VisualTerrainApi.beginFrame();
-        MarkerOverlayApi.reset();valid=false;sceneComplete=false;nativeDrawn.clear();nativeVehicles.clear();drawn=unknown=outside=unprepared=projectionRejected=captureRejected=0;
+        MarkerOverlayApi.reset();valid=false;sceneComplete=false;actorsBeforeDeferred=false;nativeDrawn.clear();nativeVehicles.clear();drawn=unknown=outside=unprepared=projectionRejected=captureRejected=0;
         models.clear();submitted.clear();status="waiting for terrain view";
         Minecraft mc=Minecraft.getMinecraft();
         if(world!=mc.theWorld || connection!=mc.getNetHandler()) {
@@ -221,22 +221,28 @@ public final class ActorRenderer {
         return terrain.isKnown(view.x,view.y,view.z,x,y,z,Math.max(.5,radius));
     }
     public static void render(boolean shaders) {
-        if(INSTANCE!=null) INSTANCE.draw(shaders);
+        if(INSTANCE!=null && (!shaders || !INSTANCE.actorsBeforeDeferred)) INSTANCE.draw(shaders,false);
     }
-    private void draw(boolean shaders) {
+    /** Called by Angelica after opaque geometry and before hand and deferred passes. */
+    public static void renderBeforeDeferred() {
+        if(INSTANCE!=null && !INSTANCE.actorsBeforeDeferred) INSTANCE.draw(true,true);
+    }
+    private void draw(boolean shaders,boolean beforeDeferred) {
         Minecraft mc=Minecraft.getMinecraft();PlayerClient client=PlayerClient.INSTANCE;
         if(failed || !valid || world!=mc.theWorld || shadow()) return;
         boolean playersWanted=client!=null && client.fmurReady() && (Config.Client.Advanced.Graphics.GenericRendering.enablePlayerLodSupport.get() || owned());
         boolean vehiclesWanted=vehicles.available();
-        ShaderEffectsTarget target=shaders?ShaderEffectsTarget.current():null;
+        ShaderEffectsTarget target=beforeDeferred?ShaderEffectsTarget.beforeDeferred():shaders?ShaderEffectsTarget.current():null;
         if(shaders && target==null) { status="unsupported shader target";return; }
-        if(!clouds.refresh(target)) { status="waiting for shader cloud contract";return; }
+        // Deferred clouds already composite over this actor depth. Only the legacy late pass samples cloud alpha.
+        if(!clouds.refresh(beforeDeferred?null:target)) { status="waiting for shader cloud contract";return; }
         if(!shaders && GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getFramebuffer().framebufferObject) return;
         int terrainDepth=target==null?com.seibel.distanthorizons.core.render.DhApiRenderProxy.activeOpenGlDhDepthTextureId:target.terrainDepth;
         if(terrainDepth<=0 || !terrain.begin(source,mc.theWorld,generation,nativeMvp,nx,ny,nz)) return;
         int width=target==null?mc.getFramebuffer().framebufferWidth:target.sceneWidth;
         int height=target==null?mc.getFramebuffer().framebufferHeight:target.sceneHeight;
         if(!ModelCapture.supportsSize(width,height)) { status="unsupported target "+width+"x"+height;terrain.clear();return; }
+        actorsBeforeDeferred=beforeDeferred;
         status="preparing models";
         try {
             VisualTerrainApi.collect(frame.partialTicks);
@@ -312,7 +318,13 @@ public final class ActorRenderer {
                     GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,target.opaqueSceneDepth,0);
                     GL11.glDrawBuffer(GL11.GL_NONE);
                     if(GL30.glCheckFramebufferStatus(GL30.GL_DRAW_FRAMEBUFFER)!=GL30.GL_FRAMEBUFFER_COMPLETE) throw new IllegalStateException("Incomplete opaque actor depth target");
-                    scene.compositeOpaqueDepth(inverseScene,dhMvp,sampledNativeMvp,frame.mcModelViewMatrix,terrainDepth,target.nativeSceneDepth,reverse,clouds.texture,clouds.distance);
+                    scene.compositeOpaqueDepth(inverseScene,dhMvp,sampledNativeMvp,frame.mcModelViewMatrix,terrainDepth,target.nativeSceneDepth,reverse,true,clouds.texture,clouds.distance);
+                    if(beforeDeferred) {
+                        // Near actors can sit in front of DH's near plane. Vanilla depth
+                        // gives the deferred shader their real distance in that range.
+                        GL30.glFramebufferTexture2D(GL30.GL_DRAW_FRAMEBUFFER,GL30.GL_DEPTH_ATTACHMENT,GL11.GL_TEXTURE_2D,target.nativeDepthTexture,0);
+                        scene.compositeOpaqueDepth(inverseScene,dhMvp,sampledNativeMvp,frame.mcModelViewMatrix,terrainDepth,target.nativeSceneDepth,reverse,false,0,0);
+                    }
                 }
                 sceneComplete=true;
             } finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldDraw); }

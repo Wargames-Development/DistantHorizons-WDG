@@ -43,9 +43,9 @@ public final class ModelScene implements AutoCloseable {
         compositor.compositeSource(colour,depth,width,height,0,0,width,height,true,inverseNative,dhMvp,nativeFromDh,
             0,0,0,terrainDepth,nativeDepth,reverseTerrainDepth,shaderScene,nativeView,cloudTexture,cloudDistance,true,false);
     }
-    public void compositeOpaqueDepth(DhApiMat4f inverse,DhApiMat4f dh,DhApiMat4f nativeMvp,DhApiMat4f view,int terrain,int nativeDepth,boolean reverseTerrainDepth,int cloud,float distance) {
+    public void compositeOpaqueDepth(DhApiMat4f inverse,DhApiMat4f dh,DhApiMat4f nativeMvp,DhApiMat4f view,int terrain,int nativeDepth,boolean reverseTerrainDepth,boolean writeDhDepth,int cloud,float distance) {
         compositor.opaqueDepthOnly(true);
-        try { composite(inverse,dh,nativeMvp,view,terrain,nativeDepth,reverseTerrainDepth,true,cloud,distance); }
+        try { composite(inverse,dh,nativeMvp,view,terrain,nativeDepth,reverseTerrainDepth,writeDhDepth,cloud,distance); }
         finally { compositor.opaqueDepthOnly(false); }
     }
     public int colourTexture() { return ready && saved==null?colour:0; }

@@ -140,7 +140,7 @@ public final class DistantSmokeRenderer
         IIrisAccessor activeIris=ModAccessorInjector.INSTANCE.get(IIrisAccessor.class);
         boolean activeShaders=activeIris!=null && activeIris.isShaderPackInUse();
         if(activeShaders!=lastShaderActive) { shaderFailed=false;lastShaderActive=activeShaders; }
-        renderFrame++;ShaderEffectsTarget.invalidate();shaderClouds.clear();
+        renderFrame++;ShaderEffectsTarget.beginFrame();shaderClouds.clear();
         NtmTrace.frame();
         frameReady=false;quads.clear();missileQuads.clear();plumeQuads.clear();depth=0;observed=0;rejected=0;cullingHandoffs=0;nativeNearQuads=0;nativeStateRead=false;
         for(int i=0;i<seen.length;i++) seen[i]=0;
