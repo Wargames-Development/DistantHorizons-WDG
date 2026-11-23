@@ -153,7 +153,8 @@ public final class PlayerRelay {
                     byte[] visual=visualPoses.get(p.getUniqueID());
                     if(visual==null) { visual=fmur?FmurPlayerBridge.capturePose(p):NO_EXTENSION;visualPoses.put(p.getUniqueID(),visual); }
                     poses.add(new PlayerFrame.Pose(p.getUniqueID(),p.getEntityId(),p.posX,p.posY,p.posZ,p.rotationYaw,
-                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision,Math.max(0,Math.min(1000000,PlayerUseCount.read(p))),bedYaw(p),visual));
+                        p.rotationPitch,p.rotationYawHead,p.renderYawOffset,p.swingProgress,flags,p.ticksExisted,light(p),appearance.revision,
+                        Math.max(0,Math.min(1000000,PlayerUseCount.read(p))),EfrPlayerPose.capture(p,bedYaw(p)),visual));
                 } catch(IllegalArgumentException invalid) { continue; }
                 if(poses.size()==PlayerFrame.MAX_PLAYERS) break;
             }

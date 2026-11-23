@@ -1,5 +1,8 @@
 package com.seibel.distanthorizons.forge17.actors;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import java.util.Collections;
 import java.util.UUID;
 
 public final class PlayerTrackChecks {
@@ -30,6 +33,23 @@ public final class PlayerTrackChecks {
         use.observe(new PlayerFrame.Pose(new UUID(1,2),1,0,65,0,0,0,0,0,0,64,0,0,1,100,270),0,0,2);
         use.observe(new PlayerFrame.Pose(new UUID(1,2),1,0,65,0,0,0,0,0,0,64,2,0,1,98,270),2,100000000L,2);
         require(use.sample(150000000L,sample) && sample.useTicks==99 && sample.bedYaw==270,"item use and sleeping orientation share pose time");checks++;
+        PlayerTrack movement=new PlayerTrack();
+        int[] orientations={0,-1,-2,-3,270,0};
+        for(int i=0;i<orientations.length;i++) {
+            ByteBuf packet=Unpooled.buffer();
+            try {
+                int flags=i==4?32:0;
+                PlayerFrame.Pose pose=new PlayerFrame.Pose(new UUID(1,2),1,i,65,0,0,0,0,0,0,flags,i,0,1,0,orientations[i]);
+                new PlayerFrame(1,i,new UUID(3,4),0,512,Collections.singletonList(pose)).write(packet);
+                movement.observe(PlayerFrame.read(packet).players.get(0),i*2,i*100000000L,2);
+                if(i>0) {
+                    require(movement.sample(i*100000000L+50000000L,sample)
+                        && sample.x==i-.5 && sample.bedYaw==orientations[i-1],"orientation uses a discrete sample while position interpolates");checks++;
+                }
+                require(movement.sample((i+1)*100000000L,sample)
+                    && sample.bedYaw==orientations[i] && sample.flags==flags,"awake orientation and bed yaw survive the existing wire layout");checks++;
+            } finally { packet.release(); }
+        }
         for(int interval=1;interval<=20;interval++) {
             PlayerTrack every=new PlayerTrack();
             every.observe(pose(1,0,0,0,1),0,0,interval);

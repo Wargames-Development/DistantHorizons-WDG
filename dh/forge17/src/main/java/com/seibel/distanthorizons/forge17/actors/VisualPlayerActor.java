@@ -51,7 +51,7 @@ public final class VisualPlayerActor extends EntityOtherPlayerMP implements Auto
     }
     @Override public boolean isRiding() { return (visualFlags & 16)!=0; }
     @Override public boolean isPlayerSleeping() { return (visualFlags & 32)!=0; }
-    @Override public float getBedOrientationInDegrees() { return bedYaw; }
+    @Override public float getBedOrientationInDegrees() { return isPlayerSleeping() ? bedYaw : 0F; }
     @Override public int getBrightnessForRender(float partial) { return (visualFlags & 8)!=0?0xF000F0:visualBrightness; }
     @Override public float getBrightness(float partial) {
         int block=(visualBrightness & 65535)>>4,sky=Math.max(0,(visualBrightness>>>20)-worldObj.skylightSubtracted);

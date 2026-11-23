@@ -440,9 +440,12 @@ public final class ActorRenderer {
             return true;
         }
         public void draw(double x,double y,double z) throws Exception {
+            Runnable endPose=EfrPlayerPose.begin(actor,sample.bedYaw);
             try(AutoCloseable scope=actor.beginExtensions()) {
                 Render renderer=RenderManager.instance.getEntityRenderObject(actor);
                 if(renderer!=null) renderer.doRender(actor,x,y,z,actor.rotationYaw,partial);
+            } finally {
+                if(endPose!=null) endPose.run();
             }
         }
         void close() { if(actor!=null) actor.close(); }
