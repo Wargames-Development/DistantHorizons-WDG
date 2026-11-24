@@ -86,6 +86,13 @@ static void scene_check(int reverse) {
     glUniform3f(glGetUniformLocation(program,"uDhOriginOffset"),0,0,0);
     uniform("uDhReverseDepth",reverse);uniform("uWriteDhDepth",0);uniform("uUseNativeDepth",0);
     uniform("uStoreSceneDepth",1);tex(2,reverse?0:1,0,0,1);
+    dh[13]=6.0f;
+    glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,dh);
+    tex(0,.5,.25,.125,1);tex(1,.9875f,0,0,1);
+    check("near actor outside the DH viewport enters the shared scene",1,.8f);
+
+    dh[13]=0.0f;
+    glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,dh);
     glClearColor(0,0,0,0);glClearDepth(0);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
     glDepthFunc(GL_GEQUAL);
     tex(0,.1,.1,.1,1);tex(1,.995f,0,0,1);glDrawArrays(GL_TRIANGLES,0,6); // distance 10
@@ -104,8 +111,16 @@ static void scene_check(int reverse) {
     check("near actor remains in front of native terrain at five blocks",1,.9875f);
     tex(3,1-.05f/3,0,0,1);
     check("native terrain at three blocks still hides near actor",0,0);
+    dh[13]=6.0f;
+    glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,dh);
+    check("native terrain still hides near actor outside the DH viewport",0,0);
+    tex(3,.99f,0,0,1);
+    check("near actor outside the DH viewport reaches the native scene",1,.9875f);
     uniform("uWriteDhDepth",1);tex(3,1,0,0,1);
     check("shader target retains its own DH depth convention",1,reverse?1:0);
+    dh[14]=0.0f;
+    glUniformMatrix4fv(glGetUniformLocation(program,"uDhMvp"),1,GL_FALSE,dh);
+    check("actor inside the DH depth range still requires DH viewport coverage",0,0);
     uniform("uSceneDepth",0);uniform("uModelReverseDepth",0);
 }
 static void partial_cover_check(void) {

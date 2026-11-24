@@ -87,8 +87,11 @@ void main() {
     if(uStoreSceneDepth && nativeClip.z < -nativeClip.w) discard;
     vec3 nativePosition=nativeClip.xyz/nativeClip.w*0.5+0.5;
     vec3 dhPosition=dhClip.xyz/dhClip.w*0.5+0.5;
-    if(any(lessThan(dhPosition.xy,vec2(0.0))) || any(greaterThan(dhPosition.xy,vec2(1.0)))) discard;
     bool beforeDh=uDhReverseDepth ? dhPosition.z>1.0 : dhPosition.z<0.0;
+    // A near actor can be inside the native viewport and outside DH's viewport.
+    // Before DH's near plane, its visibility is determined by the native scene.
+    bool nearActor=beforeDh && (uStoreSceneDepth || uSceneDepth);
+    if(!nearActor && (any(lessThan(dhPosition.xy,vec2(0.0))) || any(greaterThan(dhPosition.xy,vec2(1.0))))) discard;
     if(uOccludeWorld && !beforeDh) {
         if(dhPosition.z<0.0 || dhPosition.z>1.0) discard;
         float terrain=texture(uDhDepth,dhPosition.xy).r;
