@@ -3,7 +3,6 @@ package com.seibel.distanthorizons.forge17.effects;
 import com.seibel.distanthorizons.api.objects.math.DhApiMat4f;
 import com.seibel.distanthorizons.forge17.actors.ModelCapture;
 import com.seibel.distanthorizons.forge17.actors.ModelProjection;
-import com.seibel.distanthorizons.common.render.openGl.glObject.GLState;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 import java.util.ArrayList;
@@ -17,7 +16,6 @@ public final class MarkerOverlayApi {
     public static final int API_VERSION=1;
     private static final List<Marker> pending=new ArrayList<>();
     private static final ModelCapture capture=new ModelCapture();
-    private static int nativeCopy;
     private static boolean failed;
     private static final List<Beam> beams=new ArrayList<>();
     private MarkerOverlayApi() { }
@@ -32,50 +30,35 @@ public final class MarkerOverlayApi {
     static void draw() {
         if(pending.isEmpty() && beams.isEmpty()) return;
         Minecraft mc=Minecraft.getMinecraft();
-        if(GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING)!=mc.getFramebuffer().framebufferObject) { pending.clear();beams.clear();return; }
-        int read=GL11.glGetInteger(GL30.GL_READ_FRAMEBUFFER_BINDING),draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
-        int mode=GL11.glGetInteger(GL11.GL_MATRIX_MODE);
-        try(GLState saved=new GLState()) {
-            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-            GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glPushMatrix();GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glPushMatrix();
-            try {
-                ActorRenderer owner=ActorRenderer.INSTANCE;
-                MarkerView view=owner.markerView();if(view==null || !ModelCapture.supportsSize(view.width,view.height)) return;
-                int nativeDepth=view.nativeDepth;
-                if(nativeDepth<=0) {
-                    if(nativeCopy==0) nativeCopy=GL11.glGenTextures();
-                    GL13.glActiveTexture(GL13.GL_TEXTURE0);GL11.glBindTexture(GL11.GL_TEXTURE_2D,nativeCopy);
-                    GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MIN_FILTER,GL11.GL_NEAREST);
-                    GL11.glTexParameteri(GL11.GL_TEXTURE_2D,GL11.GL_TEXTURE_MAG_FILTER,GL11.GL_NEAREST);
-                    GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,draw);
-                    GL11.glCopyTexImage2D(GL11.GL_TEXTURE_2D,0,GL14.GL_DEPTH_COMPONENT24,0,0,view.width,view.height,0);
-                    nativeDepth=nativeCopy;
+        try {
+            int draw=GL11.glGetInteger(GL30.GL_DRAW_FRAMEBUFFER_BINDING);
+            if(draw!=mc.getFramebuffer().framebufferObject) return;
+            ActorRenderer owner=ActorRenderer.INSTANCE;
+            MarkerView view=owner.markerView();
+            if(view==null || !ModelCapture.supportsSize(view.width,view.height)
+                    || !owner.cameraTerrainBegin(view.nativeMvp,view.x,view.y,view.z)) return;
+            try(ModelCapture.OverlayPass pass=capture.overlays(draw,view.width,view.height,view.dhMvp,view.nativeMvp,view.terrainDepth,view.nativeDepth,view.reverse)) {
+                drawBeams(view,pass,mc.theWorld);
+                for(Marker marker:pending) {
+                    if(marker.world!=mc.theWorld) continue;
+                    int left=Math.max(0,marker.left),bottom=Math.max(0,marker.bottom);
+                    int right=Math.min(view.width,marker.right),top=Math.min(view.height,marker.top);
+                    if(left>=right || bottom>=top) continue;
+                    float front=targetDepth(view,marker,true);
+                    if(!Float.isFinite(front) || front<0 || !owner.markerKnown(view,marker.x,marker.y,marker.z,marker.radius)) continue;
+                    if(!pass.begin(left,bottom,right,top,view.projection)) continue;
+                    try { marker.draw.run(); }
+                    finally { pass.end(); }
+                    pass.marker(view.inverse,front,targetDepth(view,marker,false),
+                        projected(view.nativeMvp,marker.x-view.x,marker.y-view.y,marker.z-view.z,true),
+                        projected(view.nativeMvp,marker.x-view.x,marker.y-view.y,marker.z-view.z,false));
                 }
-                capture.prepare(view.width,view.height);
-                if(!owner.cameraTerrainBegin(view.nativeMvp,view.x,view.y,view.z)) return;
-                try {
-                    drawBeams(view,nativeDepth);
-                    for(Marker marker:pending) {
-                        if(marker.world!=mc.theWorld || !owner.markerKnown(view,marker.x,marker.y,marker.z,marker.radius)) continue;
-                        float front=targetDepth(view,marker,true);if(!Float.isFinite(front) || front<0) continue;
-                        if(!capture.begin(view.width,view.height,Math.max(0,marker.left),Math.max(0,marker.bottom),Math.min(view.width,marker.right),Math.min(view.height,marker.top),view.projection)) continue;
-                        boolean complete=false;
-                        try { GL20.glUseProgram(0);marker.draw.run();complete=true; }
-                        finally { capture.end(complete); }
-                        capture.compositeMarker(view.inverse,view.dhMvp,view.nativeMvp,view.terrainDepth,nativeDepth,view.reverse,front,targetDepth(view,marker,false),
-                            projected(view.nativeMvp,marker.x-view.x,marker.y-view.y,marker.z-view.z,true),
-                            projected(view.nativeMvp,marker.x-view.x,marker.y-view.y,marker.z-view.z,false));
-                    }
-                } finally { owner.cameraTerrainEnd(); }
-            } finally {
-                GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glPopMatrix();GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glPopMatrix();
-                GL11.glMatrixMode(mode);GL11.glPopAttrib();
-            }
+            } finally { owner.cameraTerrainEnd(); }
         } catch(RuntimeException | LinkageError error) {
             failed=true;
             org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").error("DH visual marker pass stopped",error);
         } finally {
-            pending.clear();beams.clear();GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,read);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,draw);
+            reset();
         }
     }
     /** Optional WGMap beam handoff. Callback draws absolute world geometry on this frame only.
@@ -86,30 +69,29 @@ public final class MarkerOverlayApi {
         if(draw==null || !Double.isFinite(x+bottom+z+top) || top<=bottom || top-bottom>1000000 || beams.size()>=128) return true;
         beams.add(new Beam(world,x,bottom,z,top,occlude,draw));draw();return true;
     }
-    private static void drawBeams(MarkerView view,int nativeDepth) {
-        DhApiMat4f projection=new DhApiMat4f(),mvp=new DhApiMat4f(),inverse=new DhApiMat4f();
+    private static final DhApiMat4f beamProjection=new DhApiMat4f(),beamMvp=new DhApiMat4f(),beamInverse=new DhApiMat4f();
+    private static final int[] beamRectangle=new int[4];
+    private static void drawBeams(MarkerView view,ModelCapture.OverlayPass pass,Object world) {
         for(Beam beam:beams) {
-            if(beam.world!=Minecraft.getMinecraft().theWorld) continue;
+            if(beam.world!=world || !beamBounds(view,beam,beamRectangle)) continue;
             double x=beam.x-view.x,z=beam.z-view.z;
             double a=-(view.view.m20*x+view.view.m21*(beam.bottom-view.y)+view.view.m22*z+view.view.m23);
             double b=-(view.view.m20*x+view.view.m21*(beam.top-view.y)+view.view.m22*z+view.view.m23);
             double near=Math.max(.05,Math.min(a,b)-2),far=Math.max(a,b)+2;
             if(far<=near || far>2000000) continue;
-            projection.set(view.projection);
-            projection.m22=(float)(-(far+near)/(far-near));projection.m23=(float)(-2*far*near/(far-near));
-            mvp.set(projection);mvp.multiply(view.view);if(!ModelProjection.inverse(mvp,inverse)) continue;
-            int[] bounds=beamBounds(view,beam);if(bounds==null) continue;
-            if(!capture.begin(view.width,view.height,bounds[0],bounds[1],bounds[2],bounds[3],projection)) continue;
-            boolean complete=false;
+            beamProjection.set(view.projection);
+            beamProjection.m22=(float)(-(far+near)/(far-near));beamProjection.m23=(float)(-2*far*near/(far-near));
+            beamMvp.set(beamProjection);beamMvp.multiply(view.view);if(!ModelProjection.inverse(beamMvp,beamInverse)) continue;
+            if(!pass.begin(beamRectangle[0],beamRectangle[1],beamRectangle[2],beamRectangle[3],beamProjection)) continue;
             try {
                 GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glLoadMatrix(columnMajor(view.view));
                 GL11.glTranslated(-view.x,-view.y,-view.z);
-                GL20.glUseProgram(0);beam.draw.run();complete=true;
-            } finally { capture.end(complete); }
-            capture.compositeWorldOverlay(inverse,view.dhMvp,view.nativeMvp,view.terrainDepth,nativeDepth,view.reverse,beam.occlude);
+                beam.draw.run();
+            } finally { pass.end(); }
+            pass.beam(beamInverse,beam.occlude);
         }
     }
-    private static int[] beamBounds(MarkerView view,Beam beam) {
+    private static boolean beamBounds(MarkerView view,Beam beam,int[] bounds) {
         DhApiMat4f m=view.nativeMvp;
         double minX=1,minY=1,maxX=-1,maxY=-1;
         boolean front=false,behind=false;
@@ -124,17 +106,17 @@ public final class MarkerOverlayApi {
             double py=(m.m10*x+m.m11*y+m.m12*z+m.m13)/w;
             minX=Math.min(minX,px);maxX=Math.max(maxX,px);minY=Math.min(minY,py);maxY=Math.max(maxY,py);
         }
-        if(!front) return null;
-        if(behind) return new int[]{0,0,view.width,view.height};
-        int left=Math.max(0,(int)Math.floor((minX+1)*.5*view.width)-2);
-        int bottom=Math.max(0,(int)Math.floor((minY+1)*.5*view.height)-2);
-        int right=Math.min(view.width,(int)Math.ceil((maxX+1)*.5*view.width)+2);
-        int top=Math.min(view.height,(int)Math.ceil((maxY+1)*.5*view.height)+2);
-        return right>left && top>bottom?new int[]{left,bottom,right,top}:null;
+        if(!front) return false;
+        bounds[0]=behind?0:Math.max(0,(int)Math.floor((minX+1)*.5*view.width)-2);
+        bounds[1]=behind?0:Math.max(0,(int)Math.floor((minY+1)*.5*view.height)-2);
+        bounds[2]=behind?view.width:Math.min(view.width,(int)Math.ceil((maxX+1)*.5*view.width)+2);
+        bounds[3]=behind?view.height:Math.min(view.height,(int)Math.ceil((maxY+1)*.5*view.height)+2);
+        return bounds[2]>bounds[0] && bounds[3]>bounds[1];
     }
     private static final java.nio.FloatBuffer matrix=org.lwjgl.BufferUtils.createFloatBuffer(16);
+    private static final float[] rows=new float[16];
     private static java.nio.FloatBuffer columnMajor(DhApiMat4f value) {
-        float[] rows=new float[16];value.putValuesInArray(rows);matrix.clear();
+        value.putValuesInArray(rows);matrix.clear();
         for(int c=0;c<4;c++) for(int r=0;r<4;r++) matrix.put(rows[r*4+c]);matrix.flip();return matrix;
     }
     private static final class Beam {
