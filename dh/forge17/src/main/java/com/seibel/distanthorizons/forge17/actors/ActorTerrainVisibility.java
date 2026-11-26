@@ -15,7 +15,7 @@ public final class ActorTerrainVisibility {
     private final TerrainCorridor corridor=new TerrainCorridor();
     private final TerrainCorridor.Columns columns=this::known;
     private AngelicaTerrainCoverage nativeCoverage;
-    private boolean nativeFailed,nativeReady;
+    private boolean nativeFailed,nativeChecked,nativeReady;
     private RenderBufferHandler buffers;
     private DhApiRenderParam view;
     private World world;
@@ -34,6 +34,11 @@ public final class ActorTerrainVisibility {
         if(generation==0 || generation!=buffers.getCoverageGeneration()) return false;
         this.view=view;this.world=world;this.generation=generation;corridor.reset(8192);
         this.nativeMvp.set(nativeMvp);this.originX=originX;this.originY=originY;this.originZ=originZ;
+        return true;
+    }
+    private boolean nativeReady() {
+        if(nativeChecked) return nativeReady;
+        nativeChecked=true;
         if(!nativeFailed && Loader.isModLoaded("angelica")) try {
             if(nativeCoverage==null) nativeCoverage=new AngelicaTerrainCoverage();
             nativeReady=nativeCoverage.begin(world);
@@ -41,7 +46,7 @@ public final class ActorTerrainVisibility {
             nativeFailed=true;
             org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").warn("Native actor coverage adapter unavailable; DH coverage remains required",unsupported);
         }
-        return true;
+        return nativeReady;
     }
     public boolean isKnown(double cx,double cy,double cz,double x,double y,double z,double radius) {
         missing="budget or invalid corridor";
@@ -51,7 +56,7 @@ public final class ActorTerrainVisibility {
         // The conservative model corridor also contains off-screen/behind-camera
         // terrain. Its absence from this view cannot leave a hole in an actor pixel.
         if(!intersectsView(chunkX<<4,minY,maxY,chunkZ<<4)) return true;
-        boolean known=(nativeReady && nativeCoverage.isKnown(world,chunkX<<4,minY,maxY,chunkZ<<4,nativeMvp,originX,originY,originZ))
+        boolean known=(nativeReady() && nativeCoverage.isKnown(world,chunkX<<4,minY,maxY,chunkZ<<4,nativeMvp,originX,originY,originZ))
             || buffers.isTerrainChunkKnown(view,generation,chunkX,chunkZ);
         if(!known) missing="chunk="+chunkX+","+chunkZ+" y="+minY+".."+maxY;
         return known;
@@ -60,7 +65,7 @@ public final class ActorTerrainVisibility {
         return ModelBounds.intersectsView(nativeMvp,x-originX,minY-originY,z-originZ,x+16-originX,maxY+1-originY,z+16-originZ);
     }
     public void clear() {
-        world=null;view=null;buffers=null;nativeReady=false;corridor.reset(0);
+        world=null;view=null;buffers=null;nativeChecked=nativeReady=false;corridor.reset(0);
         if(nativeCoverage!=null) nativeCoverage.clear();
     }
 }

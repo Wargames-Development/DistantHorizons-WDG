@@ -72,6 +72,8 @@ public final class MarkerOverlayApi {
     private static final DhApiMat4f beamProjection=new DhApiMat4f(),beamMvp=new DhApiMat4f(),beamInverse=new DhApiMat4f();
     private static final int[] beamRectangle=new int[4];
     private static void drawBeams(MarkerView view,ModelCapture.OverlayPass pass,Object world) {
+        if(beams.isEmpty()) return;
+        java.nio.FloatBuffer modelView=columnMajor(view.view);
         for(Beam beam:beams) {
             if(beam.world!=world || !beamBounds(view,beam,beamRectangle)) continue;
             double x=beam.x-view.x,z=beam.z-view.z;
@@ -84,7 +86,7 @@ public final class MarkerOverlayApi {
             beamMvp.set(beamProjection);beamMvp.multiply(view.view);if(!ModelProjection.inverse(beamMvp,beamInverse)) continue;
             if(!pass.begin(beamRectangle[0],beamRectangle[1],beamRectangle[2],beamRectangle[3],beamProjection)) continue;
             try {
-                GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glLoadMatrix(columnMajor(view.view));
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glLoadMatrix(modelView);
                 GL11.glTranslated(-view.x,-view.y,-view.z);
                 beam.draw.run();
             } finally { pass.end(); }
