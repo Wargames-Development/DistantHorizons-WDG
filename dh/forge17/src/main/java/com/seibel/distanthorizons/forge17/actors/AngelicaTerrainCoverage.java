@@ -27,9 +27,11 @@ public final class AngelicaTerrainCoverage {
     private static final int MAX_SECTIONS=131072;
     private static final byte KNOWN=1,UNKNOWN=2;
     private final Long2ByteOpenHashMap checkedSections=new Long2ByteOpenHashMap();
-    private Field worldField,sectionsField;
+    private static Field worldField,sectionsField;
+    private static MethodHandle sharedSectionLookup;
+    private static boolean sectionLookupChecked;
     private MethodHandle sectionLookup;
-    private boolean failed,sectionLookupChecked;
+    private boolean failed;
     private World world;
     private RenderSectionManager manager;
     private Object renderLists;
@@ -54,7 +56,8 @@ public final class AngelicaTerrainCoverage {
             minSection=renderer.getMinimumBuildHeight()>>4;maxSection=(renderer.getMaximumBuildHeight()-1)>>4;
             if(maxSection<minSection || maxSection-minSection>=64 || nextManager.getTotalSections()>MAX_SECTIONS) return false;
             manager=nextManager;renderLists=nextLists;
-            resolveSectionLookup();
+            prewarm();
+            sectionLookup=sharedSectionLookup;
             if(sectionLookup!=null) nativeSections=sectionsField.get(manager);
             if(nativeSections==null) rebuildFallbackIndex();
             world=expectedWorld;return true;
@@ -64,17 +67,25 @@ public final class AngelicaTerrainCoverage {
             return false;
         }
     }
-    private void resolveSectionLookup() {
+    /** Resolve the Angelica bindings while Forge is loading the client. */
+    public static void prewarm() {
         if(sectionLookupChecked) return;
         sectionLookupChecked=true;
+        try {
+            Field field=SimpleWorldRenderer.class.getDeclaredField("world");
+            field.setAccessible(true);
+            worldField=field;
+        } catch(ReflectiveOperationException | RuntimeException | LinkageError unavailable) {
+            // Let begin report the failure through its usual unavailable path.
+        }
         try {
             // The packaged DH and Angelica jars use different FastUtil types.
             // Resolve the primitive lookup against the actual field's interface.
             Field field=RenderSectionManager.class.getDeclaredField("sectionByPosition");
             field.setAccessible(true);
-            sectionLookup=primitiveLookup(field.getType());
+            sharedSectionLookup=primitiveLookup(field.getType());
             sectionsField=field;
-        } catch(ReflectiveOperationException | RuntimeException unavailable) {
+        } catch(ReflectiveOperationException | RuntimeException | LinkageError unavailable) {
             // Alternate builds can still expose the public section collection.
         }
     }

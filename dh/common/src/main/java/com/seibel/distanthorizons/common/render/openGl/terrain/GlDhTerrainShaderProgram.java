@@ -7,6 +7,7 @@ import com.seibel.distanthorizons.api.objects.math.DhApiVec3f;
 import com.seibel.distanthorizons.common.render.openGl.GlDhMetaRenderer;
 import com.seibel.distanthorizons.common.render.openGl.glObject.GLProxy;
 import com.seibel.distanthorizons.common.render.openGl.glObject.buffer.GLVertexBuffer;
+import com.seibel.distanthorizons.common.render.openGl.glObject.buffer.GlQuadIndexBuffer;
 import com.seibel.distanthorizons.common.render.openGl.glObject.shader.GlShaderProgram;
 import com.seibel.distanthorizons.common.render.openGl.glObject.vertexAttribute.GlAbstractVertexAttribute;
 import com.seibel.distanthorizons.common.render.openGl.glObject.vertexAttribute.GlVertexAttributePostGL43;
@@ -36,6 +37,7 @@ import com.seibel.distanthorizons.core.wrapperInterfaces.render.objects.IVertexB
 import com.seibel.distanthorizons.coreapi.DependencyInjection.ApiEventInjector;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL14;
+import org.lwjgl.opengl.GL15;
 
 import static com.seibel.distanthorizons.lwjgl.LWJGLServiceProvider.LWJGL;
 
@@ -370,7 +372,48 @@ public class GlDhTerrainShaderProgram extends GlShaderProgram implements IDhApiS
 		}
 		
 		
-		if (bufferContainers != null)
+		this.drawTerrainBuffers(renderEventParam, opaquePass, bufferContainers);
+
+		//=========================//
+		// debug wireframe cleanup //
+		//=========================//
+
+		if (renderWireframe)
+		{
+			// default back to GL_FILL since all other rendering uses it
+			LWJGL.glPolygonMode(GL11.GL_FRONT_AND_BACK, GL11.GL_FILL);
+			GLMC.enableFaceCulling();
+		}
+
+		// Restore GL states that 1.12.2 vanilla expects
+		#if MC_VER <= MC_1_12_2
+		if (!opaquePass)
+		{
+			GLMC.disableBlend();
+			GLMC.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ZERO);
+		}
+		#endif
+	}
+
+	private void drawTerrainBuffers(RenderParams renderEventParam, boolean opaquePass,
+									SortedArraySet<LodBufferContainer> bufferContainers)
+	{
+		if (bufferContainers == null)
+		{
+			return;
+		}
+
+		GlDhMetaRenderer metaRenderer = GlDhMetaRenderer.INSTANCE;
+		// Only retain bindings when every draw uses DH's own VAO and no callback
+		// can change program or buffer state between sections.
+		boolean retainBindings = metaRenderer.shaderProgramForThisFrame == this
+			&& this.vao instanceof GlVertexAttributePostGL43
+			&& (IRIS_ACCESSOR == null || !IRIS_ACCESSOR.isShaderPackInUse())
+			&& ApiEventInjector.INSTANCE.get(DhApiBeforeBufferRenderEvent.class) == null;
+		boolean programBound = false;
+		int boundIbo = 0;
+		DhVec3d camPos = renderEventParam.exactCameraPosition;
+		try
 		{
 			for (int lodIndex = 0; lodIndex < bufferContainers.size(); lodIndex++)
 			{
@@ -382,22 +425,32 @@ public class GlDhTerrainShaderProgram extends GlShaderProgram implements IDhApiS
 					continue;
 				}
 				
-				// set uniforms and fire events
+				if (retainBindings && (opaquePass ? bufferContainer.vboOpaqueWrappers : bufferContainer.vboTransparentWrappers).length == 0)
 				{
-					DhVec3d camPos = renderEventParam.exactCameraPosition;
-					MODEL_POS.set(
-						(float) (bufferContainer.minCornerBlockPos.getX() - camPos.x),
-						(float) (bufferContainer.minCornerBlockPos.getY() - camPos.y),
-						(float) (bufferContainer.minCornerBlockPos.getZ() - camPos.z));
+					continue;
+				}
+
+				MODEL_POS.set(
+					(float) (bufferContainer.minCornerBlockPos.getX() - camPos.x),
+					(float) (bufferContainer.minCornerBlockPos.getY() - camPos.y),
+					(float) (bufferContainer.minCornerBlockPos.getZ() - camPos.z));
+				IDhApiShaderProgram shader = metaRenderer.shaderProgramForThisFrame;
+				if (!retainBindings)
+				{
 					BEFORE_BUFFER_RENDER_EVENT_PARAM.update(renderEventParam, MODEL_POS);
-					
-					GlDhMetaRenderer.INSTANCE.shaderProgramForThisFrame.bind();
-					GlDhMetaRenderer.INSTANCE.shaderProgramForThisFrame.setModelOffsetPos(MODEL_POS);
-					
+				}
+				if (!retainBindings || !programBound)
+				{
+					shader.bind();
+					programBound = true;
+				}
+				shader.setModelOffsetPos(MODEL_POS);
+				if (!retainBindings)
+				{
 					ApiEventInjector.INSTANCE.fireAllEvents(DhApiBeforeBufferRenderEvent.class, BEFORE_BUFFER_RENDER_EVENT_PARAM);
 				}
 				
-				IVertexBufferWrapper[] vertexBuffers = (opaquePass ? bufferContainer.vboOpaqueWrappers : bufferContainer.vboTransparentWrappers);
+				IVertexBufferWrapper[] vertexBuffers = opaquePass ? bufferContainer.vboOpaqueWrappers : bufferContainer.vboTransparentWrappers;
 				for (int vboIndex = 0; vboIndex < vertexBuffers.length; vboIndex++)
 				{
 					GLVertexBuffer vbo = (GLVertexBuffer) vertexBuffers[vboIndex];
@@ -409,67 +462,70 @@ public class GlDhTerrainShaderProgram extends GlShaderProgram implements IDhApiS
 					
 					// for lock information please view the lock's javadocs
 					long vboReadStamp = vbo.renderStampLock.readLock();
-					long iboReadStamp = vbo.getQuadIBO().renderStampLock.readLock();
 					try
 					{
-						// don't render empty sections
-						if (vbo.getVertexCount() == 0)
+						int vertexCount = vbo.getVertexCount();
+						int vboId = vbo.getId();
+						if (vertexCount == 0 || vboId == 0)
 						{
 							continue;
 						}
-						
-						// don't render deleted VBOs (this will crash the driver/game)
-						if (vbo.getId() == 0
-							|| vbo.getQuadIBO().getId() == 0)
+
+						GlQuadIndexBuffer ibo = vbo.getQuadIBO();
+						if (ibo == null)
 						{
 							continue;
 						}
-						
-						// 4 vertices per face, but 6 indices (IE 2 triangles) per face, aka need to multiply by 1.5
-						int indexCount = (int) (vbo.getVertexCount() * 1.5);
-						
-						vbo.bind();
-						vbo.getQuadIBO().bind();
-						
-						GlDhMetaRenderer.INSTANCE.shaderProgramForThisFrame.bindVertexBuffer(vbo.getId());
-						LWJGL.glDrawElements(
-							GL11.GL_TRIANGLES,
-							indexCount,
-							vbo.getQuadIBO().getGlType(), 0);
-						
-						vbo.unbind();
-						vbo.getQuadIBO().unbind();
+						long iboReadStamp = ibo.renderStampLock.readLock();
+						try
+						{
+							int iboId = ibo.getId();
+							if (iboId == 0)
+							{
+								continue;
+							}
+
+							if (!retainBindings)
+							{
+								vbo.bind();
+								ibo.bind();
+							}
+							else if (boundIbo != iboId)
+							{
+								ibo.bind();
+								boundIbo = iboId;
+							}
+
+							metaRenderer.shaderProgramForThisFrame.bindVertexBuffer(vboId);
+							// Four vertices and six indices per quad.
+							LWJGL.glDrawElements(GL11.GL_TRIANGLES, vertexCount * 3 / 2, ibo.getGlType(), 0);
+
+							if (!retainBindings)
+							{
+								vbo.unbind();
+								ibo.unbind();
+							}
+						}
+						finally
+						{
+							ibo.renderStampLock.unlockRead(iboReadStamp);
+						}
 					}
 					finally
 					{
-						vbo.renderStampLock.unlock(vboReadStamp);
-						vbo.getQuadIBO().renderStampLock.unlock(iboReadStamp);
+						vbo.renderStampLock.unlockRead(vboReadStamp);
 					}
 				}
 			}
 		}
-		
-		
-		
-		//=========================//
-		// debug wireframe cleanup //
-		//=========================//
-		
-		if (renderWireframe)
+		finally
 		{
-			// default back to GL_FILL since all other rendering uses it 
-			LWJGL.glPolygonMode(GL11.GL_FRONT_AND_BACK, GL11.GL_FILL);
-			GLMC.enableFaceCulling();
+			if (boundIbo != 0)
+			{
+				LWJGL.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+				LWJGL.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
+			}
 		}
-		
-		// Restore GL states that 1.12.2 vanilla expects
-		#if MC_VER <= MC_1_12_2
-		if (!opaquePass)
-		{
-			GLMC.disableBlend();
-			GLMC.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ONE, GL11.GL_ZERO);
-		}
-		#endif
 	}
 	
 	//endregion

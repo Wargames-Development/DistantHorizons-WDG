@@ -113,6 +113,7 @@ public class ForgeMain extends AbstractModInitializer implements IForgeMain
 				// we don't use try-add here since there's some additional validation beyond 
 				// just the mod being present 
 				this.addModCompatAccessor(IAngelicaAccessor.class, AngelicaAccessor::new);
+                com.seibel.distanthorizons.forge17.actors.AngelicaTerrainCoverage.prewarm();
 			}
 			
 			// RPLE
