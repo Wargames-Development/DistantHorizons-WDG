@@ -35,6 +35,7 @@ public final class ActorRenderer {
     private final ShaderActorClouds clouds=new ShaderActorClouds();
     final ActorCameraPass cameraPass=new ActorCameraPass(this);
     private final ActorTerrainVisibility terrain=new ActorTerrainVisibility();
+    private final ActorTerrainVisibility cameraTerrain=new ActorTerrainVisibility();
     private final Map<UUID,Contact> contacts=new LinkedHashMap<>();
     private final Set<UUID> nativeDrawn=new HashSet<>(),nativeVehicles=new HashSet<>();
     private final McheliActors vehicles;
@@ -109,6 +110,7 @@ public final class ActorRenderer {
     }
     @SubscribeEvent public void start(TickEvent.RenderTickEvent event) {
         if(event.phase!=TickEvent.Phase.START) return;
+        terrain.clear();
         VisualTerrainApi.beginFrame();
         MarkerOverlayApi.reset();valid=false;sceneComplete=false;actorsBeforeDeferred=false;nativeDrawn.clear();nativeVehicles.clear();drawn=unknown=outside=unprepared=projectionRejected=captureRejected=0;
         models.clear();submitted.clear();status="waiting for terrain view";
@@ -178,13 +180,17 @@ public final class ActorRenderer {
     int cameraOwnedKinds() { return (owned()?1:0) | (vehiclesOwnLegacy()?2:0); }
     boolean cameraLocalVehicle(net.minecraft.entity.Entity entity) { return vehicles.localVehicle(entity); }
     boolean cameraTerrainBegin(DhApiMat4f mvp,double x,double y,double z) {
-        return terrain.begin(source,Minecraft.getMinecraft().theWorld,generation,mvp,x,y,z);
+        return cameraTerrain.begin(source,Minecraft.getMinecraft().theWorld,generation,mvp,x,y,z);
     }
     boolean cameraTerrainKnown(double cx,double cy,double cz,ActorModel model) {
-        return terrain.isKnown(cx,cy,cz,model.x(),model.centerY(),model.z(),model.radius());
+        return cameraTerrain.isKnown(cx,cy,cz,model.x(),model.centerY(),model.z(),model.radius());
     }
-    String cameraTerrainMissing() { return terrain.missing(); }
-    void cameraTerrainEnd() { terrain.clear(); }
+    String cameraTerrainMissing() { return cameraTerrain.missing(); }
+    void cameraTerrainEnd() { cameraTerrain.clear(); }
+    boolean markerTerrainBegin(MarkerOverlayApi.MarkerView view) {
+        return terrain.begin(source,Minecraft.getMinecraft().theWorld,generation,view.nativeMvp,view.x,view.y,view.z);
+    }
+    void markerTerrainEnd() { terrain.end(); }
     void cameraModels(List<ActorModel> output,Set<UUID> nativeIds) {
         if(owned()) {
             update(PlayerClient.INSTANCE.frames());
@@ -241,7 +247,7 @@ public final class ActorRenderer {
         if(terrainDepth<=0 || !terrain.begin(source,mc.theWorld,generation,nativeMvp,nx,ny,nz)) return;
         int width=target==null?mc.getFramebuffer().framebufferWidth:target.sceneWidth;
         int height=target==null?mc.getFramebuffer().framebufferHeight:target.sceneHeight;
-        if(!ModelCapture.supportsSize(width,height)) { status="unsupported target "+width+"x"+height;terrain.clear();return; }
+        if(!ModelCapture.supportsSize(width,height)) { status="unsupported target "+width+"x"+height;terrain.end();return; }
         actorsBeforeDeferred=beforeDeferred;
         status="preparing models";
         try {
@@ -330,7 +336,7 @@ public final class ActorRenderer {
             } finally { GL30.glBindFramebuffer(GL30.GL_READ_FRAMEBUFFER,oldRead);GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,oldDraw); }
         } catch(Exception | LinkageError error) {
             failed=true;status="render failure (withheld)";org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").error("DH player presentation stopped after render failure",error);
-        } finally { terrain.clear();submitted.clear();models.clear();visibleModels.clear(); }
+        } finally { terrain.end();submitted.clear();models.clear();visibleModels.clear(); }
     }
     private double distance(ActorModel p) { double x=p.x()-nx,y=p.centerY()-ny,z=p.z()-nz;return x*x+y*y+z*z; }
     private void update(PlayerFrameCache cache) {

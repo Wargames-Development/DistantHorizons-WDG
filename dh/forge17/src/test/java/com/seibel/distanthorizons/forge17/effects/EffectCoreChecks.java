@@ -589,6 +589,7 @@ public final class EffectCoreChecks
         int selected=geometry.admit(raw,0,8,1);
         check(selected>=0 && geometry.vertices[selected*32]==999 && geometry.size==8,"later trail geometry can replace older reservoir entries without growing the budget");
         check(geometry.admit(raw,0,8,9999)<0,"worse reservoir candidates cannot evict selected geometry");
+        checks+=RenderTaskChecks.run();
         System.out.println("PASS "+checks+" core checks (rules, protocol and frame geometry).");
     }
 }

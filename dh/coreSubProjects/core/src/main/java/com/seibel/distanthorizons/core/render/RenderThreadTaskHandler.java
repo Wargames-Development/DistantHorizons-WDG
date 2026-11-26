@@ -20,6 +20,7 @@ import java.util.Timer;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
 
 public class RenderThreadTaskHandler
@@ -42,14 +43,17 @@ public class RenderThreadTaskHandler
 	private static final boolean LOG_SLOW_TASKS = false;
 	
 	private static final Timer TIMER = TimerUtil.CreateTimer("Cleanup timer");
-	private static final long MS_BETWEEN_CLEANUP_TICKS = 1_000L;
-	private static final long NANOS_BEFORE_RUN_CLEANUP_TIMER = TimeUnit.NANOSECONDS.convert(1_000L, TimeUnit.MILLISECONDS);
+	private static final long MS_BETWEEN_CLEANUP_TICKS = 50L;
+	private static final long IDLE_NANOS = TimeUnit.SECONDS.toNanos(1);
+	private static final long MAX_DRAIN_NANOS = TimeUnit.MILLISECONDS.toNanos(2);
+	private static final int MAX_TASKS_PER_DRAIN = 64;
 	
 	
 	public static final RenderThreadTaskHandler INSTANCE = new RenderThreadTaskHandler();
 	
 	
-	private long nanoSinceTasksRun = System.nanoTime();
+	private volatile long lastRenderDrainNanos = System.nanoTime();
+	private final AtomicBoolean idleDrainScheduled = new AtomicBoolean();
 	private final boolean running; 
 	
 	private Thread renderThread;
@@ -127,6 +131,7 @@ public class RenderThreadTaskHandler
 	 */
 	public void runRenderThreadTasks()
 	{
+		this.lastRenderDrainNanos = System.nanoTime();
 		IMinecraftRenderWrapper MC_RENDER = SingletonInjector.INSTANCE.get(IMinecraftRenderWrapper.class);
 		
 		// https://fpstoms.com/
@@ -137,15 +142,12 @@ public class RenderThreadTaskHandler
 		}
 		
 		
-		int msPerFrame = 1000 / frameLimit;
-		long nanoPerFrame = msPerFrame * 1_000_000L;
-		nanoPerFrame /= 2; // divide the time in half so we can only impact half of the framerate at worst
-		this.runRenderThreadTasks(nanoPerFrame);
+		long budget = Math.min(MAX_DRAIN_NANOS, TimeUnit.MILLISECONDS.toNanos(1000 / frameLimit) / 2);
+		this.runRenderThreadTasks(budget);
 	}
 	private void runRenderThreadTasks(long nanoMaxRunTime)
 	{
 		long loopStartTimeNano = System.nanoTime();
-		this.nanoSinceTasksRun = loopStartTimeNano;
 		
 		
 		if (this.renderThread == null)
@@ -154,18 +156,29 @@ public class RenderThreadTaskHandler
 		}
 		
 		
-		QueuedRunnable runnable = RENDER_THREAD_RUNNABLE_QUEUE.poll();
-		while(runnable != null)
+		for (int completed = 0; completed < MAX_TASKS_PER_DRAIN; completed++)
 		{
+			QueuedRunnable runnable = RENDER_THREAD_RUNNABLE_QUEUE.poll();
+			if (runnable == null)
+			{
+				break;
+			}
 			long taskStartNano = System.nanoTime();
 			
 			this.currentQueuedRunnable = runnable;
-			runnable.run();
-			this.currentQueuedRunnable = null;
+			try
+			{
+				runnable.run();
+			}
+			finally
+			{
+				this.currentQueuedRunnable = null;
+			}
 			
 			// only try running for a limited amount of time to prevent lag spikes
-			long taskNano = System.nanoTime() - taskStartNano;
-			long totalLoopNano = System.nanoTime() - loopStartTimeNano;
+			long finishedNano = System.nanoTime();
+			long taskNano = finishedNano - taskStartNano;
+			long totalLoopNano = finishedNano - loopStartTimeNano;
 			
 			// stat tracking
 			if (ModInfo.IS_DEV_BUILD)
@@ -174,7 +187,7 @@ public class RenderThreadTaskHandler
 				{
 					AVERAGE_NANO_RUN_TIME_BY_TASK_NAME.put(runnable.name, new RollingAverage(1_000));
 				}
-				AVERAGE_NANO_RUN_TIME_BY_TASK_NAME.get(runnable.name).add(totalLoopNano);
+				AVERAGE_NANO_RUN_TIME_BY_TASK_NAME.get(runnable.name).add(taskNano);
 				
 				COMPLETED_TASK_COUNTER.increment();
 			}
@@ -197,8 +210,6 @@ public class RenderThreadTaskHandler
 				
 				break;
 			}
-			
-			runnable = RENDER_THREAD_RUNNABLE_QUEUE.poll();
 		}
 	}
 	
@@ -208,9 +219,7 @@ public class RenderThreadTaskHandler
 	 */
 	private void manualCleanupTick()
 	{
-		long nowNano = System.nanoTime();
-		long nanoSinceLast = nowNano - this.nanoSinceTasksRun;
-		if (nanoSinceLast < NANOS_BEFORE_RUN_CLEANUP_TIMER)
+		if (!this.needsIdleDrain() || !this.idleDrainScheduled.compareAndSet(false, true))
 		{
 			return;
 		}
@@ -222,15 +231,48 @@ public class RenderThreadTaskHandler
 		IMinecraftClientWrapper mcClient = SingletonInjector.INSTANCE.get(IMinecraftClientWrapper.class);
 		if (mcClient != null)
 		{
-			mcClient.executeOnRenderThread(() -> this.runRenderThreadTasks(500 * 1_000_000L));
+			try
+			{
+				mcClient.executeOnRenderThread(this::runIdleTasks);
+			}
+			catch (RuntimeException failure)
+			{
+				this.idleDrainScheduled.set(false);
+				if (!ExceptionUtil.isShutdownException(failure))
+				{
+					RATE_LIMITED_LOGGER.warn("Could not schedule DH render queue recovery", failure);
+				}
+			}
 		}
 		else
 		{
+			this.idleDrainScheduled.set(false);
 			// shouldn't happen, but just in case
 			
 			// somehow the timer started when there wasn't a client wrapper
 			// this probably means the timer was started on a dedicated server
 			RATE_LIMITED_LOGGER.warn("["+RenderThreadTaskHandler.class.getSimpleName()+"] timer started when ["+IMinecraftClientWrapper.class.getSimpleName()+"] is null. This shouldn't happen but can likely be ignored.");
+		}
+	}
+
+	private boolean needsIdleDrain()
+	{
+		return System.nanoTime() - this.lastRenderDrainNanos >= IDLE_NANOS && !RENDER_THREAD_RUNNABLE_QUEUE.isEmpty();
+	}
+
+	private void runIdleTasks()
+	{
+		try
+		{
+			// A foreground drain may have resumed while this callback was queued.
+			if (this.needsIdleDrain())
+			{
+				this.runRenderThreadTasks(MAX_DRAIN_NANOS);
+			}
+		}
+		finally
+		{
+			this.idleDrainScheduled.set(false);
 		}
 	}
 	

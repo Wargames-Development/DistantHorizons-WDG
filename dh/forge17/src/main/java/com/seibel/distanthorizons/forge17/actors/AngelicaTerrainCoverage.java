@@ -7,7 +7,11 @@ import cpw.mods.fml.relauncher.SideOnly;
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceMap;
 import it.unimi.dsi.fastutil.longs.Long2ReferenceOpenHashMap;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import net.minecraft.world.World;
 import org.embeddedt.embeddium.impl.render.chunk.RenderSection;
 import org.embeddedt.embeddium.impl.render.chunk.RenderSectionManager;
@@ -15,7 +19,8 @@ import org.embeddedt.embeddium.impl.render.terrain.SimpleWorldRenderer;
 import org.embeddedt.embeddium.impl.util.PositionUtil;
 
 /** Optional Celeritas adapter. Instantiate only after checking Angelica is present.
- * All methods belong to the render thread, within one synchronous view draw.
+ * All methods belong to the render thread. The primary view can reuse section
+ * evidence until the next frame or until Angelica publishes a new render list.
  */
 @SideOnly(Side.CLIENT)
 public final class AngelicaTerrainCoverage {
@@ -23,28 +28,35 @@ public final class AngelicaTerrainCoverage {
     private static final byte KNOWN=1,UNKNOWN=2;
     private final Long2ByteOpenHashMap checkedSections=new Long2ByteOpenHashMap();
     private Field worldField,sectionsField;
-    private boolean failed,sectionsFieldChecked;
+    private MethodHandle sectionLookup;
+    private boolean failed,sectionLookupChecked;
     private World world;
     private RenderSectionManager manager;
-    private Long2ReferenceMap<RenderSection> sections;
+    private Object renderLists;
+    private Object nativeSections;
+    private Long2ReferenceMap<RenderSection> fallbackSections;
     private int minSection,maxSection;
 
     public boolean begin(World expectedWorld) {
-        clear();
-        if(failed || expectedWorld==null) return false;
+        if(failed || expectedWorld==null) return unavailable();
         try {
             CeleritasWorldRenderer renderer=CeleritasWorldRenderer.getInstanceOrNull();
-            if(renderer==null || !renderer.isActive()) return false;
+            if(renderer==null || !renderer.isActive()) return unavailable();
             // SimpleWorldRenderer exposes no public world getter. This single,
             // checked identity read prevents old-world meshes authorising a view.
             if(worldField==null) { worldField=SimpleWorldRenderer.class.getDeclaredField("world");worldField.setAccessible(true); }
-            if(worldField.get(renderer)!=expectedWorld) return false;
-            manager=renderer.getRenderSectionManager();
-            if(manager==null || manager.isInShadowPass()) return false;
+            if(worldField.get(renderer)!=expectedWorld) return unavailable();
+            RenderSectionManager nextManager=renderer.getRenderSectionManager();
+            if(nextManager==null || nextManager.isInShadowPass()) return unavailable();
+            Object nextLists=nextManager.getRenderLists();
+            if(expectedWorld==world && nextManager==manager && nextLists!=null && nextLists==renderLists) return true;
+            clear();
             minSection=renderer.getMinimumBuildHeight()>>4;maxSection=(renderer.getMaximumBuildHeight()-1)>>4;
-            if(maxSection<minSection || maxSection-minSection>=64) return false;
-            if(manager.getTotalSections()>MAX_SECTIONS) return false;
-            sections=sectionIndex(manager);
+            if(maxSection<minSection || maxSection-minSection>=64 || nextManager.getTotalSections()>MAX_SECTIONS) return false;
+            manager=nextManager;renderLists=nextLists;
+            resolveSectionLookup();
+            if(sectionLookup!=null) nativeSections=sectionsField.get(manager);
+            if(nativeSections==null) rebuildFallbackIndex();
             world=expectedWorld;return true;
         } catch(ReflectiveOperationException | RuntimeException | LinkageError error) {
             failed=true;clear();
@@ -52,32 +64,49 @@ public final class AngelicaTerrainCoverage {
             return false;
         }
     }
-    @SuppressWarnings("unchecked")
-    private Long2ReferenceMap<RenderSection> sectionIndex(RenderSectionManager manager) throws IllegalAccessException {
-        if(!sectionsFieldChecked) {
-            sectionsFieldChecked=true;
-            try {
-                Field field=RenderSectionManager.class.getDeclaredField("sectionByPosition");
-                if(Long2ReferenceMap.class.isAssignableFrom(field.getType())) {
-                    field.setAccessible(true);
-                    sectionsField=field;
-                }
-            } catch(NoSuchFieldException | SecurityException unavailable) {
-                // Alternate builds can still expose the public section collection.
-            }
+    private void resolveSectionLookup() {
+        if(sectionLookupChecked) return;
+        sectionLookupChecked=true;
+        try {
+            // The packaged DH and Angelica jars use different FastUtil types.
+            // Resolve the primitive lookup against the actual field's interface.
+            Field field=RenderSectionManager.class.getDeclaredField("sectionByPosition");
+            field.setAccessible(true);
+            sectionLookup=primitiveLookup(field.getType());
+            sectionsField=field;
+        } catch(ReflectiveOperationException | RuntimeException unavailable) {
+            // Alternate builds can still expose the public section collection.
         }
-        if(sectionsField!=null) return (Long2ReferenceMap<RenderSection>)sectionsField.get(manager);
-        Long2ReferenceMap<RenderSection> index=new Long2ReferenceOpenHashMap<>();
+    }
+
+    private static MethodHandle primitiveLookup(Class<?> indexType) throws ReflectiveOperationException {
+        Method method=indexType.getMethod("get",long.class);
+        return MethodHandles.publicLookup().unreflect(method).asType(
+            MethodType.methodType(RenderSection.class,Object.class,long.class));
+    }
+
+    private void rebuildFallbackIndex() {
+        fallbackSections=new Long2ReferenceOpenHashMap<>();
         for(RenderSection section:manager.getAllRenderSections())
-            index.put(PositionUtil.packSection(section.getChunkX(),section.getChunkY(),section.getChunkZ()),section);
-        return index;
+            fallbackSections.put(PositionUtil.packSection(section.getChunkX(),section.getChunkY(),section.getChunkZ()),section);
+    }
+
+    private RenderSection findSection(long key) {
+        if(nativeSections==null) return fallbackSections.get(key);
+        try {
+            return (RenderSection)sectionLookup.invokeExact(nativeSections,key);
+        } catch(RuntimeException | Error failure) {
+            throw failure;
+        } catch(Throwable failure) {
+            throw new IllegalStateException("Angelica section lookup failed",failure);
+        }
     }
 
     private boolean sectionKnown(int x,int y,int z) {
         long key=PositionUtil.packSection(x,y,z);
         byte status=checkedSections.get(key);
         if(status==0) {
-            RenderSection section=sections.get(key);
+            RenderSection section=findSection(key);
             // A pending rebuild retains its current mesh. Built empty sections
             // need no draw; occupied sections must be in this view's render list.
             status=section!=null && !section.isDisposed() && section.isBuilt()
@@ -102,5 +131,6 @@ public final class AngelicaTerrainCoverage {
         }
         return true;
     }
-    public void clear() { world=null;manager=null;sections=null;checkedSections.clear(); }
+    private boolean unavailable() { clear();return false; }
+    public void clear() { world=null;manager=null;renderLists=null;nativeSections=null;fallbackSections=null;checkedSections.clear(); }
 }

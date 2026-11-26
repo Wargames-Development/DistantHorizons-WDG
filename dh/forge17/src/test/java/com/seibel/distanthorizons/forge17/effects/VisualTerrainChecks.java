@@ -41,6 +41,7 @@ public final class VisualTerrainChecks {
             ActorRenderer renderer=(ActorRenderer)((sun.misc.Unsafe)access.get(null)).allocateInstance(ActorRenderer.class);
             List<ActorModel> primary=new ArrayList<>();set(renderer,"submitted",primary);
             set(renderer,"terrain",new ActorTerrainVisibility());
+            set(renderer,"cameraTerrain",new ActorTerrainVisibility());
             ActorCameraPass camera=new ActorCameraPass(renderer);set(renderer,"cameraPass",camera);
             int[] drawn={0};
             ActorModel model=new VisualTerrainApi.SubmittedModel(2,1,2,3,4,106,.5f,0,()->drawn[0]++);

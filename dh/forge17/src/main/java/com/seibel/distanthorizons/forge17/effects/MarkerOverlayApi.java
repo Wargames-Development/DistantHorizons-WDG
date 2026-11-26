@@ -36,7 +36,7 @@ public final class MarkerOverlayApi {
             ActorRenderer owner=ActorRenderer.INSTANCE;
             MarkerView view=owner.markerView();
             if(view==null || !ModelCapture.supportsSize(view.width,view.height)
-                    || !owner.cameraTerrainBegin(view.nativeMvp,view.x,view.y,view.z)) return;
+                    || !owner.markerTerrainBegin(view)) return;
             try(ModelCapture.OverlayPass pass=capture.overlays(draw,view.width,view.height,view.dhMvp,view.nativeMvp,view.terrainDepth,view.nativeDepth,view.reverse)) {
                 drawBeams(view,pass,mc.theWorld);
                 for(Marker marker:pending) {
@@ -53,7 +53,7 @@ public final class MarkerOverlayApi {
                         projected(view.nativeMvp,marker.x-view.x,marker.y-view.y,marker.z-view.z,true),
                         projected(view.nativeMvp,marker.x-view.x,marker.y-view.y,marker.z-view.z,false));
                 }
-            } finally { owner.cameraTerrainEnd(); }
+            } finally { owner.markerTerrainEnd(); }
         } catch(RuntimeException | LinkageError error) {
             failed=true;
             org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").error("DH visual marker pass stopped",error);

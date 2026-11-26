@@ -26,7 +26,7 @@ public final class ActorTerrainVisibility {
     public String missing() { return missing; }
     public boolean begin(DhApiRenderParam view,World world,long generation,
                          DhApiMat4f nativeMvp,double originX,double originY,double originZ) {
-        clear();
+        end();
         if(view==null || world==null || !(view.clientLevelWrapper instanceof IClientLevelWrapper)) return false;
         IClientLevelWrapper wrapper=(IClientLevelWrapper)view.clientLevelWrapper;
         if(wrapper.getWrappedMcObject()!=world || wrapper.getDhLevel()==null) return false;
@@ -64,8 +64,11 @@ public final class ActorTerrainVisibility {
     private boolean intersectsView(int x,int minY,int maxY,int z) {
         return ModelBounds.intersectsView(nativeMvp,x-originX,minY-originY,z-originZ,x+16-originX,maxY+1-originY,z+16-originZ);
     }
-    public void clear() {
+    public void end() {
         world=null;view=null;buffers=null;nativeChecked=nativeReady=false;corridor.reset(0);
+    }
+    public void clear() {
+        end();
         if(nativeCoverage!=null) nativeCoverage.clear();
     }
 }

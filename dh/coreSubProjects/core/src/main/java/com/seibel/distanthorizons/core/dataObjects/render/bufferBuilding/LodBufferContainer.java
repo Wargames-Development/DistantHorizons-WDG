@@ -40,6 +40,7 @@ import org.jetbrains.annotations.Nullable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.concurrent.*;
+import java.util.function.BooleanSupplier;
 
 /**
  * Java representation of one or more OpenGL buffers for rendering.
@@ -109,8 +110,20 @@ public class LodBufferContainer implements AutoCloseable
         ArrayList<ByteBuffer> transparentBuffers,
         TerrainCoverage coverage)
     {
+        return tryMakeAndUploadBuffersAsync(pos, clientLevelWrapper, opaqueBuffers, transparentBuffers, coverage, () -> false);
+    }
+
+    public static CompletableFuture<LodBufferContainer> tryMakeAndUploadBuffersAsync(
+        long pos, IClientLevelWrapper clientLevelWrapper, ArrayList<ByteBuffer> opaqueBuffers,
+        ArrayList<ByteBuffer> transparentBuffers, TerrainCoverage coverage, BooleanSupplier cancelled)
+    {
 		// new upload needed
 		CompletableFuture<LodBufferContainer> future = new CompletableFuture<>();
+		if (cancelled.getAsBoolean())
+		{
+			future.completeExceptionally(new CancellationException());
+			return future;
+		}
 		
 		
 		
@@ -131,11 +144,11 @@ public class LodBufferContainer implements AutoCloseable
 		
 		PhantomArrayListCheckout opaqueIndexCheckout = ARRAY_LIST_POOL.checkoutByteBuffers(opaqueBuffers.size());
 		PhantomArrayListCheckout transparentIndexCheckout = ARRAY_LIST_POOL.checkoutByteBuffers(transparentBuffers.size());
-		future.thenRun(() -> 
+		Runnable releaseIndexes = () ->
 		{
 			opaqueIndexCheckout.close();
 			transparentIndexCheckout.close();
-		});
+		};
 		
 		// create CPU index buffers if needed.
 		// Mac requires separate IBO objects for each VBO when using OpenGL,
@@ -160,6 +173,7 @@ public class LodBufferContainer implements AutoCloseable
 			{
 				// skip this event if requested
 				if (Thread.interrupted()
+					|| cancelled.getAsBoolean()
 					|| future.isCancelled())
 				{
 					throw new InterruptedException();
@@ -172,12 +186,6 @@ public class LodBufferContainer implements AutoCloseable
 			}
 			catch (Exception e)
 			{
-				if (!ExceptionUtil.isShutdownException(e))
-				{
-					LOGGER.error("Unexpected issue creating buffers for pos: ["+DhSectionPos.toString(bufferContainer.pos)+"], error: ["+e.getMessage()+"].", e);
-				}
-
-				bufferContainer.close();
 				createFuture.completeExceptionally(e);
 			}
 		});
@@ -200,29 +208,30 @@ public class LodBufferContainer implements AutoCloseable
 			}
 			
 			bufferContainer.close();
+			releaseIndexes.run();
 			future.completeExceptionally(e);
 			return null;
 		});
 		createFuture.thenRun(() ->
 		{
-			CompletableFuture<Void> opaqueFuture = uploadBuffersAsync(future, bufferContainer.vboOpaqueWrappers, opaqueBuffers, opaqueIndexBuffers);
-			CompletableFuture<Void> transparentFuture = uploadBuffersAsync(future, bufferContainer.vboTransparentWrappers, transparentBuffers, transparentIndexBuffers);
+			CompletableFuture<Void> opaqueFuture = uploadBuffersAsync(future, cancelled, bufferContainer.vboOpaqueWrappers, opaqueBuffers, opaqueIndexBuffers);
+			CompletableFuture<Void> transparentFuture = uploadBuffersAsync(future, cancelled, bufferContainer.vboTransparentWrappers, transparentBuffers, transparentIndexBuffers);
 			CompletableFuture<Void> uploadFuture = CompletableFuture.allOf(opaqueFuture, transparentFuture);
-			uploadFuture.exceptionally((Throwable e) ->
+			uploadFuture.whenComplete((ignored, e) ->
 			{
-				// upload failed //
-				if (!ExceptionUtil.isShutdownException(e))
+				// All queued jobs have finished using the pooled buffers, including on cancellation.
+				releaseIndexes.run();
+				if (e != null || cancelled.getAsBoolean() || future.isCancelled())
 				{
-					LOGGER.error("Unexpected issue uploading buffer [" + bufferContainer.minCornerBlockPos + "], error: [" + e.getMessage() + "].", e);
+					if (e != null && !ExceptionUtil.isShutdownException(e))
+					{
+						LOGGER.error("Unexpected issue uploading buffer [" + bufferContainer.minCornerBlockPos + "], error: [" + e.getMessage() + "].", e);
+					}
+					bufferContainer.close();
+					future.completeExceptionally(e != null ? e : new CancellationException());
+					return;
 				}
-				
-				bufferContainer.close();
-				future.completeExceptionally(e);
-				return null;
-			});
-			uploadFuture.thenRun(() ->
-			{
-				// upload success //
+
 				bufferContainer.buffersUploaded = true;
 				future.complete(bufferContainer);
 			});
@@ -297,6 +306,7 @@ public class LodBufferContainer implements AutoCloseable
 	/** Index buffers should be null if {@link AbstractDhRenderApiDefinition#useSingleIbo()} returns true. */
 	private static CompletableFuture<Void> uploadBuffersAsync(
 		CompletableFuture<LodBufferContainer> parentFuture,
+		BooleanSupplier cancelled,
 		IVertexBufferWrapper[] vboWrappers, 
 		ArrayList<ByteBuffer> vertexBuffers, @Nullable ArrayList<ByteBuffer> indexBuffers
 		)
@@ -339,6 +349,7 @@ public class LodBufferContainer implements AutoCloseable
 				{
 					// skip this event if requested
 					if (Thread.interrupted()
+						|| cancelled.getAsBoolean()
 						|| parentFuture.isCancelled())
 					{
 						throw new InterruptedException();
@@ -349,7 +360,6 @@ public class LodBufferContainer implements AutoCloseable
 				}
 				catch (Exception e)
 				{
-					LOGGER.error("Failed to upload buffer. Error: [" + e.getMessage() + "].", e);
 					vertexUploadFuture.completeExceptionally(e);
 				}
 			});
@@ -374,6 +384,7 @@ public class LodBufferContainer implements AutoCloseable
 					{
 						// skip this event if requested
 						if (Thread.interrupted()
+							|| cancelled.getAsBoolean()
 							|| parentFuture.isCancelled())
 						{
 							throw new InterruptedException();
@@ -384,7 +395,6 @@ public class LodBufferContainer implements AutoCloseable
 					}
 					catch (Exception e)
 					{
-						finalVboWrapper.close();
 						indexUploadFuture.completeExceptionally(e);
 					}
 				});
