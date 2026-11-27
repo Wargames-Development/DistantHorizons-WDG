@@ -34,6 +34,7 @@ import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
 import com.seibel.distanthorizons.core.logging.DhLogger;
 import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
 import com.seibel.distanthorizons.core.logging.f3.F3Screen;
+import com.seibel.distanthorizons.core.pos.DhChunkPos;
 import com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IMinecraftClientWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.world.ILevelWrapper;
 
@@ -133,8 +134,6 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
 			return;
 		}
 		
-		ILevelWrapper wrappedLevel = ProxyUtil.getLevelWrapper(level);
-		ChunkWrapper chunkWrapper = new ChunkWrapper(chunk, wrappedLevel);
 		if (!ChunkWrapper.canSaveChunk(chunk))
 		{
 			LOGGER.info(
@@ -142,7 +141,9 @@ public class ForgeClientProxy implements AbstractModInitializer.IEventProxy
 			return;
 		}
 		
-		SharedApi.INSTANCE.applyChunkUpdate(chunkWrapper, wrappedLevel, true);
+		ILevelWrapper wrappedLevel = ProxyUtil.getLevelWrapper(level);
+		DhChunkPos pos = new DhChunkPos(chunk.xPosition, chunk.zPosition);
+		SharedApi.INSTANCE.applyChunkUpdate(pos, wrappedLevel, true, () -> new ChunkWrapper(chunk, wrappedLevel));
 	}
 	
 	//endregion

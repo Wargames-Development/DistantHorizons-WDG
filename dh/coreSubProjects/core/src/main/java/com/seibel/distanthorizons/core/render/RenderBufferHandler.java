@@ -229,11 +229,8 @@ public class RenderBufferHandler implements AutoCloseable
 			{
 				if (enableFrustumCulling)
 				{
-					int blockMinX = DhSectionPos.getMinCornerBlockX(renderSection.pos);
-					int blockMinZ = DhSectionPos.getMinCornerBlockZ(renderSection.pos);
-					int blockWidth = DhSectionPos.getBlockWidth(renderSection.pos);
 					byte detailLevel = DhSectionPos.getDetailLevel(renderSection.pos);
-					if (!frustum.intersects(blockMinX, blockMinZ, blockWidth, detailLevel))
+					if (!frustum.intersects(renderSection.minBlockX, renderSection.minBlockZ, renderSection.blockWidth, detailLevel))
 					{
 						if (isShadowPass)
 						{

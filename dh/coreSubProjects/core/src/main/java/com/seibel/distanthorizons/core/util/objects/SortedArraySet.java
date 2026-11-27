@@ -19,12 +19,14 @@
 
 package com.seibel.distanthorizons.core.util.objects;
 
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+
 import java.util.*;
 
 public class SortedArraySet<E>
 {
 	private final ArrayList<E> list = new ArrayList<>();
-	private final HashSet<E> set = new HashSet<>();
+	private final ObjectOpenHashSet<E> set = new ObjectOpenHashSet<>();
 	
 	private final Comparator<? super E> comparator;
 	

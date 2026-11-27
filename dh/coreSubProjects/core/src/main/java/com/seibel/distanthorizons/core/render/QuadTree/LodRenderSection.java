@@ -68,6 +68,9 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	
 	
 	public final long pos;
+	public final int minBlockX;
+	public final int minBlockZ;
+	public final int blockWidth;
 	
 	private final IDhClientLevel clientLevel;
 	private final IClientLevelWrapper clientLevelWrapper;
@@ -121,6 +124,9 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 			IDhClientLevel clientLevel, FullDataSourceProviderV2 fullDataSourceProvider)
 	{
 		this.pos = pos;
+		this.minBlockX = DhSectionPos.getMinCornerBlockX(pos);
+		this.minBlockZ = DhSectionPos.getMinCornerBlockZ(pos);
+		this.blockWidth = DhSectionPos.getBlockWidth(pos);
 		this.quadTree = quadTree;
 		this.clientLevel = clientLevel;
 		this.clientLevelWrapper = clientLevel.getClientLevelWrapper();

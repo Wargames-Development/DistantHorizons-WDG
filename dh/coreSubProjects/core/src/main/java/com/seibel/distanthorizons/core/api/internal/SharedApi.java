@@ -37,7 +37,6 @@ import com.seibel.distanthorizons.core.render.DhApiRenderProxy;
 import com.seibel.distanthorizons.core.render.RenderThreadTaskHandler;
 import com.seibel.distanthorizons.core.render.renderer.AbstractDebugWireframeRenderer;
 import com.seibel.distanthorizons.core.sql.repo.AbstractDhRepo;
-import com.seibel.distanthorizons.core.util.objects.Pair;
 import com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil;
 import com.seibel.distanthorizons.core.world.*;
 import com.seibel.distanthorizons.core.wrapperInterfaces.chunk.IChunkWrapper;
@@ -50,6 +49,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.Supplier;
 
 /** Contains code and variables used by both {@link ClientApi} and {@link ServerApi} */
 public class SharedApi
@@ -189,19 +189,25 @@ public class SharedApi
 	
 	public void applyChunkUpdate(IChunkWrapper chunkWrapper, ILevelWrapper levelWrapper, boolean waitForLoadedWorld)
 	{
-		//===================//
-		// validation checks //
-		//===================//
-		
-		if (chunkWrapper == null)
+		if (chunkWrapper != null)
 		{
-			// shouldn't happen, but just in case
-			return;
+			this.applyChunkUpdate(chunkWrapper.getChunkPos(), levelWrapper, waitForLoadedWorld, chunkWrapper, null);
 		}
-		
+	}
+
+	/** The snapshot factory runs synchronously on the caller's world thread, only for an accepted update. */
+	public void applyChunkUpdate(DhChunkPos pos, ILevelWrapper levelWrapper, boolean waitForLoadedWorld,
+								 Supplier<IChunkWrapper> snapshot)
+	{
+		this.applyChunkUpdate(pos, levelWrapper, waitForLoadedWorld, null, snapshot);
+	}
+
+	private void applyChunkUpdate(DhChunkPos pos, ILevelWrapper levelWrapper, boolean waitForLoadedWorld,
+								  IChunkWrapper chunkWrapper, Supplier<IChunkWrapper> snapshot)
+	{
         com.seibel.distanthorizons.core.generation.WorldBorderBounds border=levelWrapper.getDhLevel()==null
             ?levelWrapper.getLodGenerationBounds():levelWrapper.getDhLevel().getLodGenerationBounds();
-        if(border!=null&&!border.intersectsChunk(chunkWrapper.getChunkPos().getX(),chunkWrapper.getChunkPos().getZ()))return;
+        if(border!=null&&!border.intersectsChunk(pos.getX(),pos.getZ()))return;
 		AbstractDhWorld dhWorld = SharedApi.getAbstractDhWorld();
 		if (dhWorld == null)
 		{
@@ -210,7 +216,8 @@ public class SharedApi
 				// If the client world isn't loaded yet, keep track of which chunks were loaded so we can use them later.
 				// This may happen if the client world and client level load events happen out of order
 				IClientLevelWrapper clientLevel = (IClientLevelWrapper) levelWrapper;
-				ClientApi.INSTANCE.waitingChunkByClientLevelAndPos.put(new Pair<>(clientLevel, chunkWrapper.getChunkPos()), chunkWrapper);
+				ClientApi.INSTANCE.queueWaitingChunk(clientLevel, pos,
+						chunkWrapper != null ? chunkWrapper : snapshot.get());
 			}
 			
 			return;
@@ -234,7 +241,8 @@ public class SharedApi
 				{
 					// the client level isn't loaded yet
 					IClientLevelWrapper clientLevel = (IClientLevelWrapper) levelWrapper;
-					ClientApi.INSTANCE.waitingChunkByClientLevelAndPos.put(new Pair<>(clientLevel, chunkWrapper.getChunkPos()), chunkWrapper);
+					ClientApi.INSTANCE.queueWaitingChunk(clientLevel, pos,
+							chunkWrapper != null ? chunkWrapper : snapshot.get());
 				}
 				
 				return;
@@ -257,7 +265,7 @@ public class SharedApi
 		// ignore chunk updates if the network should handle them
 		if (dhLevel instanceof DhClientLevel)
 		{
-			if (!((DhClientLevel) dhLevel).shouldProcessChunkUpdate(chunkWrapper.getChunkPos()))
+			if (!((DhClientLevel) dhLevel).shouldProcessChunkUpdate(pos))
 			{
 				return;
 			}
@@ -274,13 +282,13 @@ public class SharedApi
 		// ignore the wrong level wrapper type or
 		// if the chunk is already queued for handling
 		if (chunkManager == null 
-			|| chunkManager.contains(chunkWrapper.getChunkPos()))
+			|| chunkManager.contains(pos))
 		{
 			return;
 		}
 		
 		
-		queueChunkUpdate(chunkManager, chunkWrapper, dhLevel);
+		queueChunkUpdate(chunkManager, chunkWrapper != null ? chunkWrapper : snapshot.get(), dhLevel);
 	}
 	
 	private static void queueChunkUpdate(ChunkUpdateQueueManager chunkManager, IChunkWrapper chunkWrapper, IDhLevel dhLevel)

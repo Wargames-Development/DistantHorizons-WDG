@@ -38,7 +38,6 @@ import com.seibel.distanthorizons.core.render.RenderThreadTaskHandler;
 import com.seibel.distanthorizons.core.render.renderer.*;
 import com.seibel.distanthorizons.core.util.KeyCodesUtil;
 import com.seibel.distanthorizons.core.util.math.DhVec3d;
-import com.seibel.distanthorizons.core.util.objects.Pair;
 import com.seibel.distanthorizons.core.util.objects.RollingAverage;
 import com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil;
 import com.seibel.distanthorizons.core.world.IDhClientWorld;
@@ -137,7 +136,7 @@ public class ClientApi
 	/** Holds any levels that were loaded before the {@link ClientApi#onClientOnlyConnected} was fired. */
 	public final HashSet<IClientLevelWrapper> waitingClientLevels = new HashSet<>();
 	/** Holds any chunks that were found before the client levels are loaded. */
-	public final Map<Pair<IClientLevelWrapper, DhChunkPos>, IChunkWrapper> waitingChunkByClientLevelAndPos = new ConcurrentHashMap<>();
+	final Map<WaitingChunkKey, IChunkWrapper> waitingChunks = new ConcurrentHashMap<>();
 	
 	/** publicly available so {@link F3Screen} can display the error */
 	@Nullable
@@ -235,7 +234,7 @@ public class ClientApi
 		}
 		
 		// remove any waiting items
-		this.waitingChunkByClientLevelAndPos.clear();
+		this.waitingChunks.clear();
 	}
 	
 	//endregion
@@ -247,33 +246,55 @@ public class ClientApi
 	//==============//
 	//region level events
 	
+	void queueWaitingChunk(IClientLevelWrapper level, DhChunkPos pos, IChunkWrapper chunk)
+	{
+		this.waitingChunks.put(new WaitingChunkKey(level, pos), chunk);
+	}
+
+	static final class WaitingChunkKey
+	{
+		final IClientLevelWrapper level;
+		final DhChunkPos pos;
+
+		WaitingChunkKey(IClientLevelWrapper level, DhChunkPos pos)
+		{
+			this.level = level;
+			this.pos = pos;
+		}
+
+		@Override public int hashCode() { return 31 * System.identityHashCode(this.level) + this.pos.hashCode(); }
+
+		@Override public boolean equals(Object other)
+		{
+			if (!(other instanceof WaitingChunkKey)) return false;
+			WaitingChunkKey key = (WaitingChunkKey) other;
+			return this.level == key.level && this.pos.equals(key.pos);
+		}
+	}
+
 	public void loadWaitingChunksForLevel(IClientLevelWrapper level)
 	{
-		HashSet<Pair<IClientLevelWrapper, DhChunkPos>> keysToRemove = new HashSet<>();
+		int loaded = 0;
 		String levelDimensionName = level.getDimensionName();
-		for (Pair<IClientLevelWrapper, DhChunkPos> levelChunkPair : this.waitingChunkByClientLevelAndPos.keySet())
+		for (Map.Entry<WaitingChunkKey, IChunkWrapper> waiting : this.waitingChunks.entrySet())
 		{
 			// only load chunks that came from this level
-			IClientLevelWrapper levelWrapper = levelChunkPair.first;
+			IClientLevelWrapper levelWrapper = waiting.getKey().level;
 			if (levelWrapper.equals(level)
 				|| levelWrapper.getDimensionName().equals(levelDimensionName))
 			{
-				IChunkWrapper chunkWrapper = this.waitingChunkByClientLevelAndPos.get(levelChunkPair);
+				IChunkWrapper chunkWrapper = waiting.getValue();
 				SharedApi.INSTANCE.applyChunkUpdate(
 					// the level reference is changed since it may not match the level
 					// we're attempting to load now
 					chunkWrapper.copyWithLevel(level), 
 					level, 
 					false);
-				keysToRemove.add(levelChunkPair);
+				this.waitingChunks.remove(waiting.getKey(), chunkWrapper);
+				loaded++;
 			}
 		}
-		LOGGER.info("Loaded [" + keysToRemove.size() + "] waiting chunk wrappers.");
-		
-		for (Pair<IClientLevelWrapper, DhChunkPos> keyToRemove : keysToRemove)
-		{
-			this.waitingChunkByClientLevelAndPos.remove(keyToRemove);
-		}
+		LOGGER.info("Loaded [" + loaded + "] waiting chunk wrappers.");
 	}
 	
 	//endregion
