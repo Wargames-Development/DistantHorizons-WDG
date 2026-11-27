@@ -6,12 +6,49 @@ import com.seibel.distanthorizons.core.pos.DhSectionPos;
 import com.seibel.distanthorizons.core.util.threading.PriorityTaskPicker;
 import com.seibel.distanthorizons.core.wrapperInterfaces.render.objects.IVertexBufferWrapper;
 import java.util.Map;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
+import java.util.concurrent.atomic.LongAdder;
 
 /** Optional read-only counters for diagnosing coverage, cache provenance and mesh complexity. */
 public final class TerrainCacheDiagnostics {
     public static final boolean ENABLED = Boolean.getBoolean("wgprofiler.dhCacheDetails");
     private static final int[] DISTANCE_BOUNDS = {0, 256, 512, 1024, 2048, 4096, 8192};
     private TerrainCacheDiagnostics() { }
+
+    private static final class CpuClock {
+        static final ThreadMXBean THREADS = ManagementFactory.getThreadMXBean();
+    }
+
+    public static long threadCpuTime() {
+        if (!ENABLED) return -1;
+        ThreadMXBean threads = CpuClock.THREADS;
+        return threads.isCurrentThreadCpuTimeSupported() ? threads.getCurrentThreadCpuTime() : -1;
+    }
+
+    public static final class Work {
+        private final LongAdder tasks = new LongAdder();
+        private final LongAdder cpuSamples = new LongAdder();
+        private final LongAdder cpuNanos = new LongAdder();
+        private final LongAdder wallNanos = new LongAdder();
+
+        public void record(long cpuStart, long wallStart) {
+            tasks.increment();
+            wallNanos.add(System.nanoTime() - wallStart);
+            long end = threadCpuTime();
+            if (cpuStart >= 0 && end >= cpuStart) {
+                cpuSamples.increment();
+                cpuNanos.add(end - cpuStart);
+            }
+        }
+
+        public void writeTo(Map<String, Long> output, String prefix) {
+            output.put(prefix + "_tasks_total", tasks.sum());
+            output.put(prefix + "_wall_ns_total", wallNanos.sum());
+            output.put(prefix + "_cpu_samples_total", cpuSamples.sum());
+            output.put(prefix + "_cpu_ns_total", cpuNanos.sum());
+        }
+    }
 
     static final class Geometry {
         private final Bucket[] buckets = new Bucket[(Byte.MAX_VALUE + 1) * DISTANCE_BOUNDS.length];
@@ -131,5 +168,6 @@ public final class TerrainCacheDiagnostics {
         output.put(prefix + "_waiting", (long) executor.getQueueSize());
         output.put(prefix + "_running", (long) executor.getRunningTaskCount());
         output.put(prefix + "_completed_total", (long) executor.getCompletedTaskCount());
+        executor.writeWorkMetrics(output, prefix);
     }
 }

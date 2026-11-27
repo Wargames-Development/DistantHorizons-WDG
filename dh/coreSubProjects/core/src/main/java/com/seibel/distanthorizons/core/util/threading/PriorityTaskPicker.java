@@ -7,6 +7,7 @@ import com.seibel.distanthorizons.core.logging.DhLoggerBuilder;
 import com.seibel.distanthorizons.core.logging.f3.F3Screen;
 import com.seibel.distanthorizons.core.util.objects.RollingAverage;
 import com.seibel.distanthorizons.core.logging.DhLogger;
+import com.seibel.distanthorizons.core.render.TerrainCacheDiagnostics;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -15,10 +16,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.stream.Stream;
 
 /**
  * This handles dividing work DH needs to do across
@@ -41,11 +40,13 @@ public class PriorityTaskPicker
 	private static final int MS_TO_CHECK_ON_PAUSED_THREADS = 1_000;
 	
 	private final AtomicReference<ScheduledFuture<?>> scheduledFutureRef = new AtomicReference<>();
-	private final Runnable startNextTaskBlockingRunnable = () -> this.startNextTask(true);
+	private final AtomicBoolean dispatchRequested = new AtomicBoolean();
+	private final TerrainCacheDiagnostics.Work dispatchWork = new TerrainCacheDiagnostics.Work();
+	private long dispatchSequence;
 	
 	
 	/** the list of currently registered executors */
-	private final ArrayList<Executor> executors = new ArrayList<>();
+	private final List<Executor> executors = new CopyOnWriteArrayList<>();
 	
 	/** Lock to ensure task picking logic is thread-safe */
 	private final ReentrantLock taskPickerLock = new ReentrantLock();
@@ -79,128 +80,89 @@ public class PriorityTaskPicker
 	 * Tries to start the next queued task
 	 * for one of the available executors.
 	 */
-	private void tryStartNextTask() { this.startNextTask(false); }
-	
-	private void startNextTask(boolean waitForLock)
+	private void tryStartNextTask()
 	{
-		// A scheduled re-queue can race with world shutdown. Never submit more
-		// work after the executor pools have been told to stop.
-		if (this.isShutDownRef.get())
+		if (this.occupiedThreadsRef.get() >= Config.Common.MultiThreading.numberOfThreads.get()) return;
+		this.dispatchRequested.set(true);
+		do
 		{
+			if (this.isShutDownRef.get() || !this.taskPickerLock.tryLock()) return;
+			try
+			{
+				this.dispatchRequested.set(false);
+				this.dispatchReadyWork();
+			}
+			finally
+			{
+				this.taskPickerLock.unlock();
+			}
+			// An execute() or completion that lost the tryLock can request another pass.
+		}
+		while (this.dispatchRequested.get());
+	}
+
+	private void dispatchReadyWork()
+	{
+		if (!TerrainCacheDiagnostics.ENABLED)
+		{
+			this.fillSlots();
 			return;
 		}
-		
-		// only let one thread start the next task to prevent concurrency errors
-		if (waitForLock)
+		long wallStart = System.nanoTime();
+		long cpuStart = TerrainCacheDiagnostics.threadCpuTime();
+		try { this.fillSlots(); }
+		finally { this.dispatchWork.record(cpuStart, wallStart); }
+	}
+
+	private void fillSlots()
+	{
+		int budget = Config.Common.MultiThreading.numberOfThreads.get();
+		boolean retry = false;
+		while (!this.isShutDownRef.get() && this.occupiedThreadsRef.get() < budget)
 		{
-			// generally this will be done if an executor is paused,
-			// and we want to check up on it later
-			this.taskPickerLock.lock();
-		}
-		else
-		{
-			// most threads won't need to try queuing the next 
-			// task since that means someone else is already working on it
-			if (!this.taskPickerLock.tryLock())
+			Executor next = null;
+			for (Executor executor : this.executors)
 			{
-				return;
-			}
-		}
-		
-		
-		try
-		{
-			boolean executorPaused = false;
-			
-			// fill up executors that have run for less time first,
-			// this prevents long-running tasks from taking up all the CPU time
-			Iterator<Executor> iterator = this.getExecutorIteratorSortedByShortestTotalRunTime();
-			while (iterator.hasNext())
-			{
-				Executor executor = iterator.next();
-				
-				// skip executors that are paused
+				if (executor.taskQueue.isEmpty() || executor.isShutdown()) continue;
 				if (!executor.canRun())
 				{
-					executorPaused = true;
+					retry = true;
 					continue;
 				}
-				
-				TrackedRunnable task;
-				
-				// start tasks until we're running as many threads as acceptable by the config,
-				// or until this executor is empty,
-				// or until we should move on to the next executor
-				while (this.occupiedThreadsRef.get() < Config.Common.MultiThreading.numberOfThreads.get()
-						&& (task = executor.taskQueue.poll()) != null)
+				if (next == null || executor.shouldDispatchBefore(next)) next = executor;
+			}
+			if (next == null) break;
+
+			TrackedRunnable task = next.taskQueue.poll();
+			if (task == null) continue;
+			// Reserve the slot before the worker starts. A fast task can finish inside execute().
+			this.occupiedThreadsRef.incrementAndGet();
+			next.admittedTasks.incrementAndGet();
+			try
+			{
+				next.runTask(task);
+				next.lastDispatch = ++this.dispatchSequence;
+			}
+			catch (RejectedExecutionException e)
+			{
+				next.admittedTasks.decrementAndGet();
+				this.occupiedThreadsRef.decrementAndGet();
+				if (!this.isShutDownRef.get() && !next.isShutdown())
 				{
-					try
-					{
-						executor.runTask(task);
-						this.occupiedThreadsRef.getAndIncrement();
-					}
-					catch (RejectedExecutionException e)
-					{
-						if (this.isShutDownRef.get())
-						{
-							// Clear this executor's tasks since we no longer expect anything to execute.
-							executor.taskQueue.clear();
-						}
-						else
-						{
-							// This executor is still running, there must have been a glitch with the
-							// underlying thread pool.
-							// Re-queue the task so we don't lose any tasks
-							// (failing to re-queue tasks can cause LODs to fail to load due
-							// to completable futures becoming orphaned).
-							executor.taskQueue.add(task);
-						}
-					}
+					next.taskQueue.add(task);
+					retry = true;
 				}
-			}
-			
-			
-			// if an executor is paused then we'll
-			// need to check on it again sometime in the future
-			// otherwise we may not start the next task for a while
-			ScheduledFuture<?> newScheduledFuture = null;
-			if (executorPaused)
-			{
-				newScheduledFuture = SCHEDULED_EXECUTOR_SERVICE.schedule(
-					this.startNextTaskBlockingRunnable,
-					MS_TO_CHECK_ON_PAUSED_THREADS, TimeUnit.MILLISECONDS);
-			}
-			
-			ScheduledFuture<?> oldScheduledFuture = this.scheduledFutureRef.getAndSet(newScheduledFuture);
-			if (oldScheduledFuture != null)
-			{
-				// stop the last scheduled check,
-				// we just checked the queue and will want to wait the full
-				// timeout first
-				oldScheduledFuture.cancel(false);
+				break;
 			}
 		}
-		finally
+		if (retry && !this.isShutDownRef.get() && this.scheduledFutureRef.get() == null)
 		{
-			this.taskPickerLock.unlock();
-		}
-	}
-	private Iterator<Executor> getExecutorIteratorSortedByShortestTotalRunTime()
-	{
-		Stream<Executor> stream = this.executors.stream();
-		// returns smaller numbers first
-		//stream = stream.sorted(Comparator.comparingLong((executor) -> executor.totalRuntimeNanos.get()));
-		stream = stream.sorted((Executor a, Executor b) ->
-		{
-			int priorityCompare = Integer.compare(b.priority, a.priority); // higher number first
-			if (priorityCompare != 0)
+			this.scheduledFutureRef.set(SCHEDULED_EXECUTOR_SERVICE.schedule(() ->
 			{
-				return priorityCompare;
-			}
-			
-			return Long.compare(a.totalRuntimeNanos.get(), b.totalRuntimeNanos.get()); // lower number first
-		});
-		return stream.iterator();
+				this.scheduledFutureRef.set(null);
+				this.tryStartNextTask();
+			}, MS_TO_CHECK_ON_PAUSED_THREADS, TimeUnit.MILLISECONDS));
+		}
 	}
 	
 	/**
@@ -216,11 +178,13 @@ public class PriorityTaskPicker
 		}
 		LOGGER.info("Shutting down PriorityTaskPicker thread pool...");
 		
-		ScheduledFuture<?> scheduled = this.scheduledFutureRef.getAndSet(null);
-		if (scheduled != null)
+		this.taskPickerLock.lock();
+		try
 		{
-			scheduled.cancel(false);
+			ScheduledFuture<?> scheduled = this.scheduledFutureRef.getAndSet(null);
+			if (scheduled != null) scheduled.cancel(false);
 		}
+		finally { this.taskPickerLock.unlock(); }
 		
 		// Signal every executor before waiting; they can terminate in parallel.
 		for (Executor executor : this.executors)
@@ -284,6 +248,9 @@ public class PriorityTaskPicker
 		
 		private final AtomicInteger runningTasksRef = new AtomicInteger(0);
 		private final AtomicInteger completedTasksRef = new AtomicInteger(0);
+		private final AtomicInteger admittedTasks = new AtomicInteger(0);
+		private final TerrainCacheDiagnostics.Work work = new TerrainCacheDiagnostics.Work();
+		private long lastDispatch;
 		
 		/** 
 		 * a higher number means this executor will run before others. <br> 
@@ -292,7 +259,6 @@ public class PriorityTaskPicker
 		private final int priority;
 		private final int threadPriorityOffset;
 		
-		private final AtomicLong totalRuntimeNanos = new AtomicLong(0);
 		/** used for performance logging */
 		private final RollingAverage runTimeInMsRollingAverage = new RollingAverage(200);
 		
@@ -300,7 +266,7 @@ public class PriorityTaskPicker
 		private final PriorityTaskPicker.IExecutorCanRunFunc canRunFunc;
 		
 		/** holds the threads this {@link Executor} can run */
-		private RateLimitedThreadPoolExecutor threadPoolExecutor;
+		private final RateLimitedThreadPoolExecutor threadPoolExecutor;
 		
 		
 		
@@ -343,17 +309,30 @@ public class PriorityTaskPicker
 		///region
 		
 		@Override
-		public void onConfigValueSet() 
+		public synchronized void onConfigValueSet()
 		{
-			RateLimitedThreadPoolExecutor oldExecutor = this.threadPoolExecutor;
-			this.threadPoolExecutor = this.createThreadPool();
-			
-			// shut down the old executor after replacing it with the new one
-			// to make sure no tasks are lost in the transfer
-			if (oldExecutor != null)
+			if (this.threadPoolExecutor.isShutdown()) return;
+			int size = Config.Common.MultiThreading.numberOfThreads.get();
+			if (size < this.threadPoolExecutor.getMaximumPoolSize())
 			{
-				oldExecutor.shutdown();
+				this.threadPoolExecutor.setCorePoolSize(size);
+				this.threadPoolExecutor.setMaximumPoolSize(size);
 			}
+			else
+			{
+				this.threadPoolExecutor.setMaximumPoolSize(size);
+				this.threadPoolExecutor.setCorePoolSize(size);
+			}
+			this.parentTaskPicker.tryStartNextTask();
+		}
+
+		private boolean shouldDispatchBefore(Executor other)
+		{
+			int active = this.admittedTasks.get();
+			int otherActive = other.admittedTasks.get();
+			if (active != otherActive) return active < otherActive;
+			if (this.lastDispatch != other.lastDispatch) return this.lastDispatch < other.lastDispatch;
+			return this.priority > other.priority;
 		}
 		
 		///endregion
@@ -382,7 +361,16 @@ public class PriorityTaskPicker
 		}
 		
 		/** The passed in {@link Runnable} must be exactly the same as the one passed into {@link PriorityTaskPicker.Executor#execute(Runnable)} */
-		public void remove(@NotNull Runnable command) { this.taskQueue.removeIf(trackedRunnable -> trackedRunnable.command == command); }
+		public void remove(@NotNull Runnable command) { this.removeIfQueued(command); }
+
+		public boolean removeIfQueued(@NotNull Runnable command)
+		{
+			for (TrackedRunnable task : this.taskQueue)
+			{
+				if (task.command == command) return this.taskQueue.remove(task);
+			}
+			return false;
+		}
 		
 		
 		public void runTask(@NotNull Runnable command) { this.threadPoolExecutor.execute(command); }
@@ -394,6 +382,11 @@ public class PriorityTaskPicker
 		
 		public int getRunningTaskCount() { return this.runningTasksRef.get(); }
 		public int getCompletedTaskCount() { return this.completedTasksRef.get(); }
+		public void writeWorkMetrics(Map<String, Long> output, String prefix)
+		{
+			this.work.writeTo(output, prefix + "_executed");
+			if ("render_loader".equals(prefix)) parentTaskPicker.dispatchWork.writeTo(output, "worker_picker_dispatch");
+		}
 		/** Will return NaN if nothing has been submitted yet */
 		public double getAverageRunTimeInMs() { return this.runTimeInMsRollingAverage.getAverage(); }
 		
@@ -540,6 +533,7 @@ public class PriorityTaskPicker
 			this.executor.runningTasksRef.getAndIncrement();
 			
 			long startTime = System.nanoTime();
+			long cpuStart = TerrainCacheDiagnostics.threadCpuTime();
 			try
 			{
 				this.command.run();
@@ -547,13 +541,14 @@ public class PriorityTaskPicker
 			finally
 			{
 				long timeElapsed = System.nanoTime() - startTime;
+				if (TerrainCacheDiagnostics.ENABLED) this.executor.work.record(cpuStart, startTime);
 				this.executor.runTimeInMsRollingAverage.add(TimeUnit.NANOSECONDS.toMillis(timeElapsed));
 				
 				// Update variables related to task status
-				this.parentTaskPicker.occupiedThreadsRef.getAndDecrement();
 				this.executor.runningTasksRef.getAndDecrement();
 				this.executor.completedTasksRef.getAndIncrement();
-				this.executor.totalRuntimeNanos.addAndGet(timeElapsed);
+				this.executor.admittedTasks.decrementAndGet();
+				this.parentTaskPicker.occupiedThreadsRef.getAndDecrement();
 				
 				this.parentTaskPicker.tryStartNextTask();
 			}

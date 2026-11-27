@@ -20,6 +20,7 @@
 package com.seibel.distanthorizons.core.render.QuadTree;
 
 import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
+import com.seibel.distanthorizons.core.render.TerrainCacheDiagnostics;
 import com.seibel.distanthorizons.api.enums.rendering.EDhApiTransparency;
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
@@ -91,7 +92,14 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	/** @deprecated Call markRenderDataDirty() so an in-flight upload cannot erase invalidation. */
     @Deprecated public volatile boolean renderDataDirty = false;
     private final com.seibel.distanthorizons.core.render.TerrainBuildState buildState=new com.seibel.distanthorizons.core.render.TerrainBuildState();
-    public void markRenderDataDirty() { buildState.invalidate();renderDataDirty=true; }
+    public void markRenderDataDirty() {
+        synchronized (buildState) {
+            buildState.invalidate();
+            renderDataDirty = true;
+        }
+    }
+    void markMeshRefresh(int reasons) { buildState.invalidateForRefresh(reasons); }
+    int getRefreshReasons() { return buildState.getRefreshReasons(); }
     public boolean isRenderDataDirty() { return renderDataDirty || buildState.isDirty(); }
 	public boolean queuedMissingSectionsForRetrieval = false;
 	
@@ -109,7 +117,8 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	 * used alongside {@link LodRenderSection#getAndBuildRenderDataFutureRef} so we can remove
 	 * unnecessary tasks from the executor.
 	 */
-	private Runnable getAndBuildRenderDataRunnable = null;
+	private volatile Runnable getAndBuildRenderDataRunnable;
+	private volatile boolean closed;
 	
 	
 	
@@ -147,7 +156,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	/** @return true if the upload started, false if it wasn't able to for any reason */
 	public synchronized boolean uploadRenderDataToGpuAsync()
 	{
-		if (this.getAndBuildRenderDataFutureRef.get() != null)
+		if (this.closed || this.getAndBuildRenderDataFutureRef.get() != null)
 		{
 			// don't accidentally queue multiple uploads at the same time
 			return false;
@@ -163,8 +172,8 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 		future.handle((voidObj, throwable) ->
 		{
 			// the task is done, we don't need to track these anymore
-			this.getAndBuildRenderDataFutureRef.compareAndSet(future, null);
 			this.getAndBuildRenderDataRunnable = null;
+			this.getAndBuildRenderDataFutureRef.compareAndSet(future, null);
 			
 			return null;
 		});
@@ -183,8 +192,12 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 			
 			this.getAndBuildRenderDataRunnable = () ->
 			{
+				long wallStart = TerrainCacheDiagnostics.ENABLED ? System.nanoTime() : 0;
+				long cpuStart = TerrainCacheDiagnostics.threadCpuTime();
+				boolean uploaded = false;
 				try
 				{
+					if (this.closed || future.isCancelled()) { future.cancel(false); return; }
 					final long buildRevision=buildState.begin();
                     // build LOD data on a DH thread
 					try (LodQuadBuilder lodQuadBuilder = this.getAndBuildRenderData())
@@ -195,6 +208,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 							future.complete(null);
 							return;
 						}
+						if (this.closed || future.isCancelled()) { future.cancel(false); return; }
 						
 						// 3 because that's generally the max needed
 						try (PhantomArrayListCheckout opaqueCheckout = LodQuadBuilder.ARRAY_LIST_POOL.checkoutByteBuffers(3);
@@ -203,7 +217,8 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 							ArrayList<ByteBuffer> opaqueBuffers = lodQuadBuilder.makeOpaqueVertexBuffers(opaqueCheckout);
 							ArrayList<ByteBuffer> transparentBuffers = lodQuadBuilder.makeTransparentVertexBuffers(transparentCheckout);
 							// The existing worker backpressure bounds staged buffers until GPU jobs finish.
-							this.uploadToGpuAsync(future, opaqueBuffers, transparentBuffers, lodQuadBuilder.terrainCoverage, buildRevision).join();
+							uploaded = this.uploadToGpuAsync(
+								future, opaqueBuffers, transparentBuffers, lodQuadBuilder.terrainCoverage, buildRevision).join();
 						}
 						future.complete(null);
 					}
@@ -213,6 +228,15 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 					if (!ExceptionUtil.isShutdownException(e))
 						LOGGER.error("Unexpected issue creating render data for pos: ["+DhSectionPos.toString(this.pos)+"], error: ["+e.getMessage()+"].", e);
 					future.completeExceptionally(e);
+				}
+				finally
+				{
+					if (TerrainCacheDiagnostics.ENABLED)
+					{
+						TerrainCacheDiagnostics.Work work = uploaded ? this.quadTree.meshPublished
+							: this.closed || future.isCancelled() ? this.quadTree.meshDiscarded : this.quadTree.meshFailed;
+						work.record(cpuStart, wallStart);
+					}
 				}
 			};
 			executor.execute(this.getAndBuildRenderDataRunnable);
@@ -240,7 +264,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	{
 		try (ColumnRenderSource thisRenderSource = this.getRenderSourceForPos(this.pos, null))
 		{
-			if (thisRenderSource == null)
+			if (thisRenderSource == null || this.closed)
 			{
 				// nothing needs to be rendered
 				return null;
@@ -258,6 +282,11 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 				ColumnRenderSource eastRenderSource = this.getRenderSourceForPos(this.pos, EDhDirection.EAST);
 				ColumnRenderSource westRenderSource = this.getRenderSourceForPos(this.pos, EDhDirection.WEST))
 			{
+				if (this.closed)
+				{
+					lodQuadBuilder.close();
+					return null;
+				}
 				ColumnRenderSource[] adjacentRenderSections = new ColumnRenderSource[EDhDirection.CARDINAL_COMPASS.length];
 				adjacentRenderSections[EDhDirection.NORTH.compassIndex] = northRenderSource;
 				adjacentRenderSections[EDhDirection.SOUTH.compassIndex] = southRenderSource;
@@ -322,7 +351,8 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 				? this.fullDataSourceProvider.get(finalPos)
 				: this.fullDataSourceProvider.getAdjForDirection(finalPos, direction.opposite()))
 		{
-			ColumnRenderSource columnRenderSource = FullDataToRenderDataTransformer.transformFullDataToRenderSource(fullDataSource, this.clientLevelWrapper);
+			ColumnRenderSource columnRenderSource = FullDataToRenderDataTransformer.transformFullDataToRenderSource(
+				fullDataSource, this.clientLevelWrapper, direction == null ? null : direction.opposite());
 			return columnRenderSource;
 		}
 		catch (Exception e)
@@ -342,7 +372,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	//endregion
 	
 	
-	private synchronized CompletableFuture<LodBufferContainer> uploadToGpuAsync(
+	private synchronized CompletableFuture<Boolean> uploadToGpuAsync(
 		CompletableFuture<Void> parentFuture,
 		ArrayList<ByteBuffer> opaqueBuffers,
 		ArrayList<ByteBuffer> transparentBuffers,
@@ -352,8 +382,9 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 			this.pos, this.clientLevelWrapper, 
 			opaqueBuffers, 
 			transparentBuffers, coverage, parentFuture::isCancelled);
-		uploadFuture.whenComplete((bufferContainer, e) ->
+		return uploadFuture.handle((bufferContainer, e) ->
 		{
+			boolean published = false;
 			try
 			{
 				// handle errors and early shutdown
@@ -369,37 +400,36 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 						// shouldn't happen, but just in case
 						bufferContainer.close();
 					}
-					return;
+					return false;
 				}
 				
-				// close the old container
-				LodBufferContainer oldContainer = this.renderBufferContainer;
-				this.renderBufferContainer = bufferContainer.buffersUploaded ? bufferContainer : null;
+				LodBufferContainer oldContainer;
+				synchronized (buildState)
+				{
+					if (this.closed || parentFuture.isCancelled())
+					{
+						bufferContainer.close();
+						return false;
+					}
+					oldContainer = this.renderBufferContainer;
+					published = bufferContainer.buffersUploaded;
+					this.renderBufferContainer = published ? bufferContainer : null;
+					if (buildState.complete(buildRevision)) this.renderDataDirty = false;
+					else if (published && TerrainCacheDiagnostics.ENABLED) this.quadTree.meshPublishedWithPendingRefresh.increment();
+				}
 				if (oldContainer != null)
 				{
 					oldContainer.close();
 				}
 				
-				// upload complete
-				if(buildState.complete(buildRevision)) this.renderDataDirty = false;
-				
-				
-				if (parentFuture.isCancelled())
-				{
-					// if the parent future was canceled that likely means
-					// this LodRenderSection was closed before this point,
-					// meaning this buffer will become homeless, 
-					// so we need to clean it up here
-					bufferContainer.close();
-				}
 			}
 			catch (Exception finishEx)
 			{
 				LOGGER.error("Unexpected buffer finish exception: ["+finishEx.getMessage()+"]", finishEx);
 			}
+			return published;
 		});
 		
-		return uploadFuture;
 	}
 	
 	//endregion render data uploading
@@ -412,6 +442,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	//region
 	
 	public boolean canRender() { return this.renderBufferContainer != null; }
+	boolean isClosed() { return this.closed; }
 	public boolean gpuUploadComplete() 
 	{ 
 		return this.renderBufferContainer != null
@@ -477,6 +508,14 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 	@Override
 	public void close()
 	{
+		LodBufferContainer retired;
+		synchronized (buildState)
+		{
+			if (this.closed) return;
+			this.closed = true;
+			retired = this.renderBufferContainer;
+			this.renderBufferContainer = null;
+		}
 		DEBUG_RENDERER.unregister(this, Config.Client.Advanced.Debugging.DebugWireframe.showRenderSectionStatus);
 		
 		if (Config.Client.Advanced.Debugging.DebugWireframe.showRenderSectionStatus.get())
@@ -504,7 +543,8 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 				Runnable runnable = this.getAndBuildRenderDataRunnable;
 				if (runnable != null)
 				{
-					renderLoaderExecutor.remove(runnable);
+					if (renderLoaderExecutor.removeIfQueued(runnable) && TerrainCacheDiagnostics.ENABLED)
+						this.quadTree.meshCancelledBeforeStart.increment();
 				}
 			}
 			
@@ -515,9 +555,9 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 		
 		
 		this.setRenderingEnabled(false);
-		if (this.renderBufferContainer != null)
+		if (retired != null)
 		{
-			this.renderBufferContainer.close();
+			retired.close();
 		}
 		
 	}

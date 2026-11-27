@@ -97,6 +97,11 @@ public class FullDataSourceProviderV2 implements IDebugRenderable, AutoCloseable
 	
 	protected final FullDataUpdaterV2 dataUpdater;
 	protected final FullDataUpdatePropagatorV2 updatePropagator;
+
+	public void writePropagationWorkMetrics(java.util.Map<String, Long> output)
+	{
+		this.updatePropagator.writeWorkMetrics(output);
+	}
 	protected final DataMigratorV1 dataMigratorV1;
 	
 	

@@ -64,6 +64,7 @@ import org.jetbrains.annotations.Nullable;
 import javax.annotation.WillNotClose;
 import java.awt.*;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.LongAdder;
@@ -94,13 +95,23 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 	private final ThreadPoolExecutor fullDataRetrievalQueueThread;
 	
 	/**
-	 * This holds every {@link DhSectionPos} that should be reloaded next tick. <br>
-	 * This is a {@link ConcurrentLinkedQueue} because new sections can be added to this list via the world generator threads.
+	 * Coalesces notifications from source workers until the tree tick can mark the resident section dirty.
 	 */
-	private final ConcurrentLinkedQueue<Long> sectionsToReload = new ConcurrentLinkedQueue<>();
+	private static final int SOURCE_REFRESH = 1;
+	private static final int NEIGHBOR_REFRESH = 2;
+	private static final int NEAR_REFRESH_DISTANCE = 1024;
+	private final ConcurrentHashMap<Long, Integer> sectionsToReload = new ConcurrentHashMap<>();
 	private final LongAdder refreshNotifications = new LongAdder();
 	private final LongAdder buildsWithoutMesh = new LongAdder();
-	private volatile long initialMeshBuilds, dirtyMeshBuilds, refreshMeshBuilds, coalescedRefreshes;
+	private volatile long initialMeshBuilds, dirtyMeshBuilds, refreshMeshBuilds;
+	private volatile long sourceMeshBuilds, neighborOnlyMeshBuilds, meshBackpressureTicks;
+	private final LongAdder coalescedRefreshes = new LongAdder();
+	private boolean preferUrgentForSingleSlot = true;
+	final LongAdder meshCancelledBeforeStart = new LongAdder();
+	final LongAdder meshPublishedWithPendingRefresh = new LongAdder();
+	final TerrainCacheDiagnostics.Work meshPublished = new TerrainCacheDiagnostics.Work();
+	final TerrainCacheDiagnostics.Work meshDiscarded = new TerrainCacheDiagnostics.Work();
+	final TerrainCacheDiagnostics.Work meshFailed = new TerrainCacheDiagnostics.Work();
 	// The tree tick owns the in-progress sample and publishes a completed copy for the render thread.
 	private long[] desiredInProgress;
 	private volatile long[] desiredCoverage;
@@ -288,6 +299,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 		}
 		// this data will be updated as we walk through the tree
 		this.tickNodeHolder.clear();
+		this.applyMeshRefreshes();
 		
 		
 		//===================//
@@ -384,12 +396,6 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 			}
 		}
 		
-		// reloading is for sections that have been loaded once already
-		this.reloadQueuedSections();
-		
-		// loading is for sections that haven't rendered yet
-		this.loadQueuedSections(playerPos, this.tickNodeHolder.getLoadSections());
-		
 		//endregion
 		
 		
@@ -482,6 +488,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 				}
 			});
 		}
+		this.loadQueuedSections(playerPos, this.tickNodeHolder.getLoadSections());
 		
 		//endregion
 		
@@ -635,17 +642,15 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 		//===============================//
 		//region
 		
-		// load every node for rendering
-		if (!renderSection.gpuUploadInProgress()
-			&& !renderSection.gpuUploadComplete())
-		{
-			this.tickNodeHolder.addLoadSection(renderSection);
-		}
-		
-		
 		byte expectedDetailLevel = this.calcExpectedDetailLevel(playerPos, quadNode.sectionPos);
 		expectedDetailLevel = (byte) Math.min(expectedDetailLevel, this.minRootRenderDetailLevel);
 		expectedDetailLevel += DhSectionPos.SECTION_MINIMUM_DETAIL_LEVEL;
+		// A root that subdivides can never be selected by onDetailLevelTooLow.
+		if ((quadNode != rootNode || DhSectionPos.getDetailLevel(sectionPos) <= expectedDetailLevel)
+			&& !renderSection.gpuUploadInProgress() && !renderSection.gpuUploadComplete())
+		{
+			this.tickNodeHolder.addLoadSection(renderSection);
+		}
 		
 		if (DhSectionPos.getDetailLevel(quadNode.sectionPos) > expectedDetailLevel)
 		{
@@ -814,74 +819,87 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 	//=====================//
 	//region
 	
-	private void reloadQueuedSections()
+	private void applyMeshRefreshes()
 	{
-		Long pos;
-		HashSet<Long> positionsToRequeue = new HashSet<>();
-		while ((pos = this.sectionsToReload.poll()) != null)
+		for (Long pos : this.sectionsToReload.keySet())
 		{
-			if (positionsToRequeue.contains(pos))
-			{
-				if (TerrainCacheDiagnostics.ENABLED) coalescedRefreshes++;
-				// don't attempt to re-load positions that are already in the process of reloading
-				continue;
-			}
-			
+			Integer reasons = this.sectionsToReload.remove(pos);
 			LodRenderSection renderSection = this.tryGetValue(pos);
-			if (renderSection != null)
-			{
-				// the section only needs to be updated if a buffer is currently present 
-				if (renderSection.gpuUploadComplete())
-				{
-					if (renderSection.gpuUploadInProgress()
-						|| !renderSection.uploadRenderDataToGpuAsync())
-					{
-						// if a section is already loading or failed to start upload
-						// we need to wait to trigger it again
-						// if we don't trigger it again the LOD will be out of date
-						// and may be invisible/missing
-						positionsToRequeue.add(pos);
-					}
-					else if (TerrainCacheDiagnostics.ENABLED) refreshMeshBuilds++;
-				}
-			}
+			if (reasons != null && renderSection != null) renderSection.markMeshRefresh(reasons);
 		}
-		this.sectionsToReload.addAll(positionsToRequeue);
 	}
+
 	private void loadQueuedSections(DhBlockPos2D playerPos, HashSet<LodRenderSection> nodesNeedingLoading)
 	{
-		ArrayList<LodRenderSection> loadSectionList = new ArrayList<>(nodesNeedingLoading);
-		loadSectionList.sort((LodRenderSection a, LodRenderSection b) ->
+		if (nodesNeedingLoading.isEmpty()) return;
+		PriorityTaskPicker.Executor executor = ThreadPoolUtil.getRenderLoadingExecutor();
+		if (executor == null || executor.isShutdown()) return;
+		int budget = executor.getPoolSize();
+		int waiting = executor.getQueueSize();
+		if (waiting >= budget)
 		{
-			// lower-detail LODs first
-			byte aDetailLevel = DhSectionPos.getDetailLevel(a.pos);
-			byte bDetailLevel = DhSectionPos.getDetailLevel(b.pos);
-			if (aDetailLevel != bDetailLevel)
+			if (TerrainCacheDiagnostics.ENABLED) meshBackpressureTicks++;
+			return;
+		}
+
+		int limit = Math.min(nodesNeedingLoading.size(), budget * 2 - waiting);
+		Comparator<LodRenderSection> nearFirst = Comparator.comparingInt(
+			section -> DhSectionPos.getChebyshevSignedBlockDistance(section.pos, playerPos));
+		Comparator<LodRenderSection> coarseFirst = Comparator.<LodRenderSection>comparingInt(
+			section -> DhSectionPos.getDetailLevel(section.pos)).reversed().thenComparing(nearFirst);
+		PriorityQueue<LodRenderSection> urgent = new PriorityQueue<>(limit, nearFirst.reversed());
+		PriorityQueue<LodRenderSection> regular = new PriorityQueue<>(limit, coarseFirst.reversed());
+		for (LodRenderSection section : nodesNeedingLoading)
+		{
+			if (section.isClosed()) continue;
+			PriorityQueue<LodRenderSection> queue = section.getRenderingEnabled() && section.isRenderDataDirty()
+				&& DhSectionPos.getChebyshevSignedBlockDistance(section.pos, playerPos) <= NEAR_REFRESH_DISTANCE
+				? urgent : regular;
+			if (queue.size() < limit || queue.comparator().compare(section, queue.peek()) > 0)
 			{
-				return Byte.compare(bDetailLevel, aDetailLevel); // larger numbers first
+				if (queue.size() == limit) queue.poll();
+				queue.add(section);
 			}
-			
-			// closer LODs first
-			int aDist = DhSectionPos.getManhattanBlockDistance(a.pos, playerPos);
-			int bDist = DhSectionPos.getManhattanBlockDistance(b.pos, playerPos);
-			return Integer.compare(aDist, bDist); // smaller numbers first
-		});
-		
-		for (int i = 0; i < loadSectionList.size(); i++)
+		}
+		ArrayList<LodRenderSection> urgentOrder = new ArrayList<>(urgent);
+		urgentOrder.sort(nearFirst);
+		ArrayList<LodRenderSection> regularOrder = new ArrayList<>(regular);
+		regularOrder.sort(coarseFirst);
+		// An ongoing burst of refreshes should still leave room for new coverage.
+		int urgentAllowance = regularOrder.isEmpty() ? limit : (budget - waiting) / 2;
+		if (!regularOrder.isEmpty() && !urgentOrder.isEmpty() && budget - waiting == 1)
 		{
-			LodRenderSection renderSection = loadSectionList.get(i);
-			if (!renderSection.gpuUploadInProgress() 
-				&& !renderSection.gpuUploadComplete())
+			urgentAllowance = preferUrgentForSingleSlot ? 1 : 0;
+			preferUrgentForSingleSlot = !preferUrgentForSingleSlot;
+		}
+		int urgentFirst = Math.min(urgentAllowance, urgentOrder.size());
+		int attempted = admitMeshes(urgentOrder.subList(0, urgentFirst), executor, budget, limit);
+		attempted += admitMeshes(regularOrder, executor, budget, limit - attempted);
+		admitMeshes(urgentOrder.subList(urgentFirst, urgentOrder.size()), executor, budget, limit - attempted);
+	}
+
+	private int admitMeshes(List<LodRenderSection> sections, PriorityTaskPicker.Executor executor, int maxWaiting, int limit)
+	{
+		int attempted = 0;
+		for (LodRenderSection section : sections)
+		{
+			if (attempted >= limit || executor.getQueueSize() >= maxWaiting) break;
+			attempted++;
+			int reasons = section.getRefreshReasons();
+			boolean hadBuffer = section.canRender();
+			if (section.uploadRenderDataToGpuAsync() && TerrainCacheDiagnostics.ENABLED)
 			{
-				boolean hadBuffer = TerrainCacheDiagnostics.ENABLED && renderSection.canRender();
-				if (renderSection.uploadRenderDataToGpuAsync()
-					&& TerrainCacheDiagnostics.ENABLED)
+				if (!hadBuffer) initialMeshBuilds++;
+				else if (reasons == 0) dirtyMeshBuilds++;
+				else
 				{
-					if (hadBuffer) dirtyMeshBuilds++;
-					else initialMeshBuilds++;
+					refreshMeshBuilds++;
+					if ((reasons & SOURCE_REFRESH) != 0) sourceMeshBuilds++;
+					else neighborOnlyMeshBuilds++;
 				}
 			}
 		}
+		return attempted;
 	}
 	
 	//endregion
@@ -1366,7 +1384,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 		// after the cache has been cleared,
 		// this is done to prevent accidentally using old cached data
 		
-		this.sectionsToReload.add(pos);
+		this.queueMeshRefresh(pos, SOURCE_REFRESH);
 		
 		// the adjacent locations also need to be updated to make sure lighting
 		// and water updates correctly, otherwise oceans may have walls
@@ -1374,7 +1392,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 		for (EDhDirection direction : EDhDirection.CARDINAL_COMPASS)
 		{
 			long adjacentPos = DhSectionPos.getAdjacentPos(pos, direction);
-			this.sectionsToReload.add(adjacentPos);
+			this.queueMeshRefresh(adjacentPos, NEIGHBOR_REFRESH);
 		}
 	}
 
@@ -1395,6 +1413,15 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 		}
 	}
 
+	private void queueMeshRefresh(long pos, int reason)
+	{
+		this.sectionsToReload.merge(pos, reason, (pending, added) ->
+		{
+			if (TerrainCacheDiagnostics.ENABLED) coalescedRefreshes.increment();
+			return pending | added;
+		});
+	}
+
 	public void addTerrainCacheMetrics(Map<String, Long> output)
 	{
 		long[] desired = this.desiredCoverage;
@@ -1412,7 +1439,16 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 		output.put("mesh_source_or_neighbor_refresh_total", refreshMeshBuilds);
 		output.put("mesh_source_notifications_total", refreshNotifications.sum());
 		output.put("mesh_no_builder_total", buildsWithoutMesh.sum());
-		output.put("mesh_refresh_duplicates_coalesced_total", coalescedRefreshes);
+		output.put("mesh_refresh_duplicates_coalesced_total", coalescedRefreshes.sum());
+		output.put("mesh_source_refresh_total", sourceMeshBuilds);
+		output.put("mesh_neighbor_only_refresh_total", neighborOnlyMeshBuilds);
+		output.put("mesh_backpressure_ticks_total", meshBackpressureTicks);
+		output.put("mesh_cancelled_before_start_total", meshCancelledBeforeStart.sum());
+		output.put("mesh_published_with_pending_refresh_total", meshPublishedWithPendingRefresh.sum());
+		meshPublished.writeTo(output, "mesh_published");
+		meshDiscarded.writeTo(output, "mesh_discarded");
+		meshFailed.writeTo(output, "mesh_failed_or_missing");
+		this.fullDataSourceProvider.writePropagationWorkMetrics(output);
 		output.put("mesh_refresh_queue_entries", (long) this.sectionsToReload.size());
 		if (fullDataSourceProvider instanceof RemoteFullDataSourceProvider)
 		{

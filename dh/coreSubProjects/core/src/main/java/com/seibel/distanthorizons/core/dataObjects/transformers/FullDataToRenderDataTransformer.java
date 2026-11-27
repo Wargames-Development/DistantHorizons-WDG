@@ -21,6 +21,8 @@ package com.seibel.distanthorizons.core.dataObjects.transformers;
 
 import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
 import com.seibel.distanthorizons.core.render.TerrainCacheDiagnostics;
+import com.seibel.distanthorizons.core.enums.EDhDirection;
+import com.seibel.distanthorizons.core.sql.dto.util.FullDataMinMaxPosUtil;
 import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.api.enums.config.EDhApiBlocksToAvoid;
 import com.seibel.distanthorizons.api.enums.rendering.EDhApiBlockMaterial;
@@ -76,6 +78,14 @@ public class FullDataToRenderDataTransformer
 	public static ColumnRenderSource transformFullDataToRenderSource(
 			@Nullable FullDataSourceV2 fullDataSource, @Nullable IClientLevelWrapper levelWrapper)
 	{
+		return transformFullDataToRenderSource(fullDataSource, levelWrapper, null);
+	}
+
+	@Nullable
+	public static ColumnRenderSource transformFullDataToRenderSource(
+			@Nullable FullDataSourceV2 fullDataSource, @Nullable IClientLevelWrapper levelWrapper,
+			@Nullable EDhDirection sourceEdge)
+	{
 		if (fullDataSource == null)
 		{
 			return null;
@@ -89,7 +99,7 @@ public class FullDataToRenderDataTransformer
 		
 		try
 		{
-			return transformCompleteFullDataToColumnData(levelWrapper, fullDataSource);
+			return transformFullDataToColumnData(levelWrapper, fullDataSource, sourceEdge);
 		}
 		catch (InterruptedException e)
 		{
@@ -113,8 +123,8 @@ public class FullDataToRenderDataTransformer
 	 * @throws InterruptedException Can be caused by interrupting the thread upstream.
 	 * Generally thrown if the method is running after the client leaves the current world.
 	 */
-	private static ColumnRenderSource transformCompleteFullDataToColumnData(
-		IClientLevelWrapper levelWrapper, FullDataSourceV2 fullDataSource) throws InterruptedException
+	private static ColumnRenderSource transformFullDataToColumnData(
+		IClientLevelWrapper levelWrapper, FullDataSourceV2 fullDataSource, @Nullable EDhDirection sourceEdge) throws InterruptedException
 	{
 		final long pos = fullDataSource.getPos();
 		final byte dataDetail = fullDataSource.getDataDetailLevel();
@@ -142,6 +152,12 @@ public class FullDataToRenderDataTransformer
 		columnSource.markNotEmpty();
 		int baseX = DhSectionPos.getMinCornerBlockX(pos);
 		int baseZ = DhSectionPos.getMinCornerBlockZ(pos);
+		long bounds = sourceEdge == null
+			? FullDataMinMaxPosUtil.encodeAdjMinMaxPos((short) 0, (short) FullDataSourceV2.WIDTH, (short) 0, (short) FullDataSourceV2.WIDTH)
+			: FullDataMinMaxPosUtil.getEncodedMinMaxPos(sourceEdge);
+		int maxX = FullDataMinMaxPosUtil.getAdjMaxX(bounds);
+		int minZ = FullDataMinMaxPosUtil.getAdjMinZ(bounds);
+		int maxZ = FullDataMinMaxPosUtil.getAdjMaxZ(bounds);
 		
 		try(ColumnRenderView columnArrayView = ColumnRenderView.getPooled();
 			PhantomArrayListCheckout phantomCheckout = ARRAY_LIST_POOL.checkoutLongArrays(2);
@@ -149,9 +165,9 @@ public class FullDataToRenderDataTransformer
 			RenderDataPointReducingList reducingList = new RenderDataPointReducingList())
 		{
 			DhBlockPosMutable mutableBlockPos = new DhBlockPosMutable();
-			for (int x = 0; x < FullDataSourceV2.WIDTH; x++)
+			for (int x = FullDataMinMaxPosUtil.getAdjMinX(bounds); x < maxX; x++)
 			{
-				for (int z = 0; z < FullDataSourceV2.WIDTH; z++)
+				for (int z = minZ; z < maxZ; z++)
 				{
 					columnSource.populateColumnView(columnArrayView, x, z);
 					LongArrayList dataColumn = fullDataSource.getColumnAtRelPos(x, z);

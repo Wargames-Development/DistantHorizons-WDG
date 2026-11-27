@@ -20,6 +20,7 @@ import com.seibel.distanthorizons.core.util.ThreadUtil;
 import com.seibel.distanthorizons.core.util.WorldGenUtil;
 import com.seibel.distanthorizons.core.util.threading.PriorityTaskPicker;
 import com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil;
+import com.seibel.distanthorizons.core.render.TerrainCacheDiagnostics;
 import com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IMinecraftClientWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IMinecraftSharedWrapper;
 import it.unimi.dsi.fastutil.longs.LongArrayList;
@@ -28,8 +29,10 @@ import java.awt.*;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.LongAdder;
 
 public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseable
 {
@@ -65,6 +68,21 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 	 */
 	private final Set<Long> updatingPosSet = ConcurrentHashMap.newKeySet();
 	private final Set<Long> generatingPosSet = ConcurrentHashMap.newKeySet();
+	private final LongAdder lockMisses = new LongAdder();
+	private final LongAdder changedTargets = new LongAdder();
+	private final LongAdder unchangedTargets = new LongAdder();
+
+	void writeWorkMetrics(Map<String, Long> output)
+	{
+		output.put("propagation_parent_lock_misses_total", lockMisses.sum());
+		output.put("propagation_changed_targets_total", changedTargets.sum());
+		output.put("propagation_unchanged_targets_total", unchangedTargets.sum());
+	}
+
+	private void recordUpdateResult(boolean changed)
+	{
+		if (TerrainCacheDiagnostics.ENABLED) (changed ? changedTargets : unchangedTargets).increment();
+	}
 	
 	/**
 	 * It'd be better if we could be told when changes are available,
@@ -216,6 +234,7 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 						// TryLock is used instead of lock so this thread can handle a different update.
 						if (!parentWriteLock.tryLock())
 						{
+							if (TerrainCacheDiagnostics.ENABLED) lockMisses.increment();
 							return;
 						}
 						
@@ -267,6 +286,7 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 							
 							// if nothing was changed we don't want to propagate up any further
 							// since the further up nodes won't need any changes either
+							recordUpdateResult(parentUpdated);
 							if (parentUpdated)
 							{
 								// propagating up, parent will need changes
@@ -299,7 +319,7 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 				});
 			}
 			catch (RejectedExecutionException ignore)
-			{ /* the executor was shut down, it should be back up shortly and able to accept new jobs */ }
+			{ this.updatingPosSet.remove(parentInputPos); }
 			catch (Exception e)
 			{
 				this.updatingPosSet.remove(parentInputPos);
@@ -363,12 +383,14 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 						
 						ReentrantLock parentReadLock = this.dataUpdater.updateLockProvider.getLock(parentOutputPos);
 						boolean parentLocked = false;
+						boolean visitedChildren = false;
 						try
 						{
 							// Locking the parent before the children should prevent deadlocks.
 							// TryLock is used instead of lock so this thread can handle a different update.
 							if (!parentReadLock.tryLock())
 							{
+								if (TerrainCacheDiagnostics.ENABLED) lockMisses.increment();
 								return;
 							}
 							
@@ -387,6 +409,7 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 								
 								
 								// apply parent to each child
+								visitedChildren = true;
 								for (int i = 0; i < 4; i++)
 								{
 									long childInputPos = DhSectionPos.getChildByIndex(parentOutputPos, i);
@@ -406,6 +429,7 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 											}
 											
 											boolean childUpdated = childInputDataSource.updateFromDataSource(parentOutputDataSource);
+											recordUpdateResult(childUpdated);
 											// don't propagate down if the child didn't change
 											// if that happens that probably means the child was already
 											// higher detail
@@ -441,8 +465,6 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 									}
 									finally
 									{
-										this.provider.repo.setApplyToChild(parentOutputPos, false);
-										
 										childWriteLock.unlock();
 										this.dataUpdater.lockedPosSet.remove(childInputPos);
 									}
@@ -451,18 +473,25 @@ public class FullDataUpdatePropagatorV2 implements IDebugRenderable, AutoCloseab
 						}
 						finally
 						{
-							if (parentLocked)
+							try
 							{
-								parentReadLock.unlock();
-								this.dataUpdater.lockedPosSet.remove(parentOutputPos);
+								// This is one parent flag, protected by the parent lock for all four children.
+								if (visitedChildren) this.provider.repo.setApplyToChild(parentOutputPos, false);
 							}
-							
-							this.updatingPosSet.remove(parentOutputPos);
+							finally
+							{
+								if (parentLocked)
+								{
+									parentReadLock.unlock();
+									this.dataUpdater.lockedPosSet.remove(parentOutputPos);
+								}
+								this.updatingPosSet.remove(parentOutputPos);
+							}
 						}
 					});
 				}
 				catch (RejectedExecutionException ignore)
-				{ /* the executor was shut down, it should be back up shortly and able to accept new jobs */ }
+				{ this.updatingPosSet.remove(parentOutputPos); }
 				catch (Exception e)
 				{
 					this.updatingPosSet.remove(parentOutputPos);

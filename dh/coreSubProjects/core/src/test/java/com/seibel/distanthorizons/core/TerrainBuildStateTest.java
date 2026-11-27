@@ -7,6 +7,16 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class TerrainBuildStateTest {
+    @Test public void refreshReasonsSurviveCompletionOfAnOlderMesh() {
+        TerrainBuildState state = new TerrainBuildState();
+        state.invalidateForRefresh(1);
+        long old = state.begin();
+        state.invalidateForRefresh(2);
+        assertFalse(state.complete(old));
+        assertEquals(3, state.getRefreshReasons());
+        assertTrue(state.complete(state.begin()));
+        assertEquals(0, state.getRefreshReasons());
+    }
     @Test public void terrainUpdateDuringBuildSurvivesOldUpload() {
         TerrainBuildState state=new TerrainBuildState();
         long old=state.begin();state.invalidate();
