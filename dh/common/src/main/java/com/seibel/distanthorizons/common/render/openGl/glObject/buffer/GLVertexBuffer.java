@@ -57,10 +57,15 @@ public class GLVertexBuffer extends GLBuffer implements IVertexBufferWrapper
 	
 	private GlQuadIndexBuffer quadIBO = null;
 	private static GlQuadIndexBuffer GLOBAL_QUAD_IBO = null;
+	private static GlQuadIndexBuffer GLOBAL_SHORT_QUAD_IBO = null;
 	public GlQuadIndexBuffer getQuadIBO()
 	{
 		if (RENDER_DEF.useSingleIbo())
 		{
+			if (this.vertexCount <= IndexBufferBuilder.MAX_SHORT_QUADS * 4 && GLOBAL_SHORT_QUAD_IBO != null)
+			{
+				return GLOBAL_SHORT_QUAD_IBO;
+			}
 			return GLOBAL_QUAD_IBO;
 		}
 		else
@@ -84,14 +89,23 @@ public class GLVertexBuffer extends GLBuffer implements IVertexBufferWrapper
 			{
 				try (PhantomArrayListCheckout checkout = LodBufferContainer.ARRAY_LIST_POOL.checkoutByteBuffers(1))
 				{
-					GLOBAL_QUAD_IBO = new GlQuadIndexBuffer();
-					
 					int maxSize = LodQuadBuilder.getMaxBufferByteSize();
 					int maxVertexCount = maxSize / LodQuadBuilder.BYTES_PER_VERTEX;
 					int maxQuadCount = (maxVertexCount / 4);
 					
-					ByteBuffer buffer = IndexBufferBuilder.populateBuffer(checkout, 0, maxQuadCount);
-					GLOBAL_QUAD_IBO.upload(buffer, maxQuadCount);
+					if (maxQuadCount > IndexBufferBuilder.MAX_SHORT_QUADS)
+					{
+						GlQuadIndexBuffer wide = new GlQuadIndexBuffer();
+						wide.upload(IndexBufferBuilder.populateBuffer(checkout, 0, maxQuadCount), maxQuadCount);
+						GLOBAL_QUAD_IBO = wide;
+					}
+
+					// All supported OpenGL backends can draw unsigned short indices.
+					int shortQuads = Math.min(maxQuadCount, IndexBufferBuilder.MAX_SHORT_QUADS);
+					GlQuadIndexBuffer compact = new GlQuadIndexBuffer();
+					compact.upload(IndexBufferBuilder.populateBuffer(checkout, 0, shortQuads, true),
+						shortQuads, org.lwjgl.opengl.GL11.GL_UNSIGNED_SHORT);
+					GLOBAL_SHORT_QUAD_IBO = compact;
 				}
 			});
 		}

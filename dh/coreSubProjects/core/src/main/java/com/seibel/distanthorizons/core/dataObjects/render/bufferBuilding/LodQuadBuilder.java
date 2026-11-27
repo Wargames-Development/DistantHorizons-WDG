@@ -128,8 +128,11 @@ public class LodQuadBuilder implements AutoCloseable
 	private IClientLevelWrapper clientLevelWrapper;
     private com.seibel.distanthorizons.core.generation.WorldBorderBounds borderClip;
     private int borderOriginX,borderOriginZ;
-    public void setBorderClip(com.seibel.distanthorizons.core.generation.WorldBorderBounds border,int x,int z) {
-        this.borderClip=border;this.borderOriginX=x;this.borderOriginZ=z;
+    public void setBorderClip(com.seibel.distanthorizons.core.generation.WorldBorderBounds border,long section) {
+        this.borderOriginX=com.seibel.distanthorizons.core.pos.DhSectionPos.getMinCornerBlockX(section);
+        this.borderOriginZ=com.seibel.distanthorizons.core.pos.DhSectionPos.getMinCornerBlockZ(section);
+        // Generated faces stay within the section footprint, including its boundary planes.
+        this.borderClip=border!=null && border.classify(section)!=1 ? border : null;
     }
     private boolean clipToBorder(BufferQuad quad) {
         return com.seibel.distanthorizons.core.generation.WorldBorderMeshClip.clip(quad,this.borderClip,this.borderOriginX,this.borderOriginZ);

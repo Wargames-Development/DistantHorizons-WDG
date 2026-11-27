@@ -58,7 +58,8 @@ void main()
     if (dhColor.a == 0.0f)
     {
         // if not done vanilla clouds will render incorrectly at night
-        dhColor = combinedMcDhColor;
+        fragColor = vec4(combinedMcDhColor.rgb, 1.0);
+        return;
     }
     
     

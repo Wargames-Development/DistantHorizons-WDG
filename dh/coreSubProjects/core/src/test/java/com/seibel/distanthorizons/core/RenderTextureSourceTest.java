@@ -5,6 +5,14 @@ import it.unimi.dsi.fastutil.longs.LongArrayList;
 import org.junit.Test;
 import static org.junit.Assert.*;
 public class RenderTextureSourceTest {
+    @Test public void keepsFirstTiedMatchAndSkipsDominatedMaterialLookups() throws Exception {
+        LongArrayList column=new LongArrayList();
+        column.add(FullDataPointUtil.encode(1,4,68,(byte)0,(byte)0));
+        column.add(FullDataPointUtil.encode(2,4,64,(byte)0,(byte)0));
+        int[] lookups={0};
+        assertEquals(0,RenderTextureSource.select(column,64,72,1,id->{lookups[0]++;return 1;}));
+        assertEquals(1,lookups[0]);
+    }
     @Test public void mergedTrunkCannotInheritLeavesAboveIt() throws Exception {
         LongArrayList column=new LongArrayList();
         column.add(FullDataPointUtil.encode(1,2,70,(byte)0,(byte)15));

@@ -459,6 +459,7 @@ public final class EffectCoreChecks
         checks+=com.seibel.distanthorizons.forge17.actors.PlayerTrackChecks.run();
         checkNativeEmitter();
         checkPrivateCameraScope();
+        MarkerOverlayGlChecks.runIfAvailable();
         checks+=MissileCameraOriginChecks.run();
         checks+=ActorCameraOriginChecks.run();
         checks+=ActorNearViewChecks.run();

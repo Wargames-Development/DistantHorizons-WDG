@@ -12,8 +12,10 @@ public final class RenderTextureSource {
         for(int index=0;index<column.size();index++) {
             long point=column.getLong(index);int y=FullDataPointUtil.getBottomY(point);
             int overlap=Math.min(top,y+FullDataPointUtil.getHeight(point))-Math.max(bottom,y);
-            if(overlap<=0 || materialForId.applyAsInt(FullDataPointUtil.getId(point))!=material) continue;
-            if(overlap>largestOverlap) { largestOverlap=overlap;selected=index; }
+            if(overlap<=largestOverlap || materialForId.applyAsInt(FullDataPointUtil.getId(point))!=material) continue;
+            if(overlap==top-bottom) return index;
+            largestOverlap=overlap;
+            selected=index;
         }
         return selected;
     }

@@ -97,9 +97,9 @@ void main()
             // render fog based on distance from the camera
             vec3 vertexWorldPos = calcViewPosition(fragmentDepth, uInvMvmProj);
 
-            float horizontalWorldDistance = length(vertexWorldPos.xz) * uFogScale;
-            float worldDistance = length(vertexWorldPos.xyz) * uFogScale;
-            float activeDistance = uUseSphericalFog ? worldDistance : horizontalWorldDistance;
+            vec3 fogPosition = vertexWorldPos;
+            if (!uUseSphericalFog) fogPosition.y = 0.0;
+            float activeDistance = length(fogPosition) * uFogScale;
 
 
             // far fog

@@ -3,10 +3,10 @@ package com.seibel.distanthorizons.core.dataObjects.render.bufferBuilding;
 import com.seibel.distanthorizons.core.util.objects.pooling.PhantomArrayList.PhantomArrayListCheckout;
 
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 
 public class IndexBufferBuilder
 {
+	public static final int MAX_SHORT_QUADS = (1 << Short.SIZE) / 4;
 	
 	
 	//==========//
@@ -16,11 +16,21 @@ public class IndexBufferBuilder
 	
 	public static ByteBuffer populateBuffer(PhantomArrayListCheckout checkout, int checkoutIndex, int quadCount)
 	{
+		return populateBuffer(checkout, checkoutIndex, quadCount, false);
+	}
+
+	public static ByteBuffer populateBuffer(PhantomArrayListCheckout checkout, int checkoutIndex, int quadCount, boolean compact)
+	{
+		if (compact && quadCount > MAX_SHORT_QUADS)
+		{
+			throw new IllegalArgumentException("Quad count exceeds unsigned short index range");
+		}
 		int indexCount = quadCount * 6; // 2 triangles per quad
-		int byteSize = indexCount * Integer.BYTES;
+		int byteSize = indexCount * (compact ? Short.BYTES : Integer.BYTES);
 		
 		ByteBuffer buffer = checkout.getByteBuffer(checkoutIndex, byteSize);
-		buildBufferInt(quadCount, buffer);
+		if (compact) buildBufferShort(quadCount, buffer);
+		else buildBufferInt(quadCount, buffer);
 		
 		return buffer;
 	}

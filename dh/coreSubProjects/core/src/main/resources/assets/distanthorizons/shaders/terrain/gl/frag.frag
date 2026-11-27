@@ -41,15 +41,16 @@ vec3 quantize(vec3 val, int stepSize)
     return floor(val * stepSize) / stepSize;
 }
 
-void applyNoise(inout vec4 fragColor, const in float viewDist)
+void applyNoise(inout vec4 fragColor, float viewDist, vec3 positionDx, vec3 positionDy)
 {
-    vec3 vertexNormal = normalize(cross(dFdy(vPos.xyz), dFdx(vPos.xyz)));
+    vec3 vertexNormal = normalize(cross(positionDy, positionDx));
     // This bit of code is required to fix the vertex position problem cus of floats in the verted world position varuable
     vec3 fixedVPos = vPos.xyz + vertexNormal * 0.001;
 
     float noiseAmplification = uNoiseIntensity;
     float lum = (fragColor.r + fragColor.g + fragColor.b) / 3.0;
-    noiseAmplification = (1.0 - pow(lum * 2.0 - 1.0, 2.0)) * noiseAmplification; // Lessen the effect on depending on how dark the object is, equasion for this is -(2x-1)^{2}+1
+    float contrast = lum * 2.0 - 1.0;
+    noiseAmplification *= 1.0 - contrast * contrast;
     noiseAmplification *= fragColor.a; // The effect would lessen on transparent objects
 
     // Random value for each position
@@ -114,22 +115,23 @@ vec2 blockFaceUv()
 
 void main()
 {
-    fragColor = vertexColor;
-    
-    if (vTextureTileId != 0u)
+    bool textured = vTextureTileId != 0u;
+    bool noisy = uNoiseEnabled && !textured;
+    vec2 uv, uvDx, uvDy;
+    vec3 positionDx, positionDy;
+    // Capture derivatives before fragments in the transition ring can diverge.
+    if (textured)
     {
-        // tile id -> grid cell -> exact texel.
-        // texture() allow us to use mipmaps
         ivec2 atlasSize = textureSize(uBlockAtlas, 0);
         vec2 tileOrigin = vec2(float(vTextureTileId % 256u), float(vTextureTileId / 256u)) * 16.0;
-        vec2 uv = (tileOrigin + blockFaceUv() * 16.0) / vec2(atlasSize);
-        vec4 tile = texture(uBlockAtlas, uv);
-        
-        // The tile's color ratio preserves the LOD's original tint and shading.
-        // Tile color value of gray, 128 (half way between 0 and 255)
-        // means the LOD will use it's base color.
-        vec3 clampedColor = clamp(fragColor.rgb * (tile.rgb * 2.0), 0.0, 1.0);
-        fragColor.rgb = mix(fragColor.rgb, clampedColor, tile.a);
+        uv = (tileOrigin + blockFaceUv() * 16.0) / vec2(atlasSize);
+        uvDx = dFdx(uv);
+        uvDy = dFdy(uv);
+    }
+    if (noisy)
+    {
+        positionDx = dFdx(vPos.xyz);
+        positionDy = dFdy(vPos.xyz);
     }
     
     float viewDist = length(vertexWorldPos);
@@ -160,11 +162,15 @@ void main()
         }
     }
     
-    if (uNoiseEnabled
-        // only apply noise to untextured blocks, 
-        // textured blocks don't need the fake texturing
-        && vTextureTileId == 0u)
+    fragColor = vertexColor;
+    if (textured)
     {
-        applyNoise(fragColor, viewDist);
+        vec4 tile = textureGrad(uBlockAtlas, uv, uvDx, uvDy);
+        vec3 clampedColor = clamp(fragColor.rgb * (tile.rgb * 2.0), 0.0, 1.0);
+        fragColor.rgb = mix(fragColor.rgb, clampedColor, tile.a);
+    }
+    else if (noisy && (uNoiseDropoff == 0 || viewDist < float(uNoiseDropoff)))
+    {
+        applyNoise(fragColor, viewDist, positionDx, positionDy);
     }
 }

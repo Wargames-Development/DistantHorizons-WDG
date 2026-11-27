@@ -65,7 +65,12 @@ public class PriorityTaskPicker
 	public Executor createExecutor(String name, int priority) { return this.createExecutor(name, priority, null); }
 	public Executor createExecutor(String name, int priority, @Nullable PriorityTaskPicker.IExecutorCanRunFunc canRunFunc)
 	{
-		Executor executor = new Executor(this, name, priority, canRunFunc);
+		return this.createExecutor(name, priority, canRunFunc, 0);
+	}
+
+	public Executor createExecutor(String name, int priority, @Nullable PriorityTaskPicker.IExecutorCanRunFunc canRunFunc, int threadPriorityOffset)
+	{
+		Executor executor = new Executor(this, name, priority, canRunFunc, threadPriorityOffset);
 		this.executors.add(executor);
 		return executor;
 	}
@@ -285,6 +290,7 @@ public class PriorityTaskPicker
 		 * 0 = default
 		 */
 		private final int priority;
+		private final int threadPriorityOffset;
 		
 		private final AtomicLong totalRuntimeNanos = new AtomicLong(0);
 		/** used for performance logging */
@@ -303,11 +309,12 @@ public class PriorityTaskPicker
 		//=============//
 		///region
 		
-		public Executor(PriorityTaskPicker parentTaskPicker, String name, int priority, @Nullable PriorityTaskPicker.IExecutorCanRunFunc canRunFunc)
+		private Executor(PriorityTaskPicker parentTaskPicker, String name, int priority, @Nullable PriorityTaskPicker.IExecutorCanRunFunc canRunFunc, int threadPriorityOffset)
 		{
 			this.parentTaskPicker = parentTaskPicker;
 			this.name = name;
 			this.priority = priority;
+			this.threadPriorityOffset = threadPriorityOffset;
 			this.canRunFunc = canRunFunc;
 			
 			this.threadPoolExecutor = this.createThreadPool();
@@ -317,9 +324,11 @@ public class PriorityTaskPicker
 		
 		private RateLimitedThreadPoolExecutor createThreadPool()
 		{
+			int threadPriority = Math.max(Thread.MIN_PRIORITY, Math.min(Thread.MAX_PRIORITY,
+				Config.Common.MultiThreading.threadPriority.get() + this.threadPriorityOffset));
 			return new RateLimitedThreadPoolExecutor(
 					Config.Common.MultiThreading.numberOfThreads.get(),
-					new DhThreadFactory(this.name, Config.Common.MultiThreading.threadPriority.get(), false),
+					new DhThreadFactory(this.name, threadPriority, false),
 					new ArrayBlockingQueue<>(Runtime.getRuntime().availableProcessors())
 			);
 		}

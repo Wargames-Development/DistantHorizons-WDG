@@ -107,7 +107,7 @@ public class LodRenderer
 	 * otherwise it will only render opaque LODs.
 	 */
 	public void render(RenderParams renderParams, IProfilerWrapper profiler)
-	{  this.renderTerrain(renderParams, profiler, false);  }
+	{  this.renderTerrain(renderParams, profiler, false, DhApiRenderProxy.INSTANCE.getDeferTransparentRendering());  }
 	
 	/**
 	 * This method is designed for Iris to be able 
@@ -116,21 +116,20 @@ public class LodRenderer
 	 * but shouldn't be activated as per deferWaterRendering.
 	 */
 	public void renderDeferred(RenderParams renderParams, IProfilerWrapper profiler)
-	{ this.renderTerrain(renderParams, profiler, true); }
+	{
+		if (DhApiRenderProxy.INSTANCE.getDeferTransparentRendering())
+		{
+			this.renderTerrain(renderParams, profiler, true, true);
+		}
+	}
 	
-	private void renderTerrain(RenderParams renderParams, IProfilerWrapper profiler, boolean runningDeferredPass)
+	private void renderTerrain(RenderParams renderParams, IProfilerWrapper profiler, boolean runningDeferredPass, boolean deferTransparentRendering)
 	{
 		//===============//
 		// validate pass //
 		//===============//
 		//region
 		
-		boolean deferTransparentRendering = DhApiRenderProxy.INSTANCE.getDeferTransparentRendering();
-		if (runningDeferredPass 
-			&& !deferTransparentRendering)
-		{
-			return;
-		}
 		boolean firstPass = !runningDeferredPass;
 		
 		// RenderParams parameter validation should be done before this

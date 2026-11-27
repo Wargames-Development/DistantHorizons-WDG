@@ -28,6 +28,8 @@ import static com.seibel.distanthorizons.lwjgl.LWJGLServiceProvider.LWJGL;
 public class GLState implements AutoCloseable
 {
 	private static final MinecraftGLWrapper GLMC = MinecraftGLWrapper.INSTANCE;
+	private final boolean restoreFramebufferAttachments;
+	private boolean keepFramebufferBinding;
 	
 	
 	public int program;
@@ -67,7 +69,16 @@ public class GLState implements AutoCloseable
 	
 	
 	
-	public GLState() { this.saveState(); }
+	public GLState() { this(true); }
+
+	/** Pass false for draws that bind existing framebuffers without modifying their attachments. */
+	public GLState(boolean restoreFramebufferAttachments)
+	{
+		this.restoreFramebufferAttachments = restoreFramebufferAttachments;
+		this.saveState();
+	}
+
+	public void keepFramebufferBinding() { this.keepFramebufferBinding = true; }
 	
 	public void saveState()
 	{
@@ -95,7 +106,7 @@ public class GLState implements AutoCloseable
 		
 		GLMC.glActiveTexture(this.activeTextureNumber);
 		
-		if (this.fbo != 0)
+		if (this.restoreFramebufferAttachments && this.fbo != 0)
 		{
 			this.frameBufferTexture0 = LWJGL.glGetFramebufferAttachmentParameteri(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT0, GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
 			this.frameBufferTexture1 = LWJGL.glGetFramebufferAttachmentParameteri(GL30.GL_FRAMEBUFFER, GL30.GL_COLOR_ATTACHMENT1, GL30.GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
@@ -136,14 +147,23 @@ public class GLState implements AutoCloseable
 	@Override 
 	public void close()
 	{
-		// explicitly unbinding the frame buffer is necessary to prevent GL_CLEAR calls from hitting the wrong buffer
-		GLMC.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
 		boolean frameBufferSet = false;
-		
-		if (this.fbo != 0 && GL30.glIsFramebuffer(this.fbo))
+		if (!this.keepFramebufferBinding)
 		{
-			GLMC.glBindFramebuffer(GL30.GL_FRAMEBUFFER, this.fbo);
-			frameBufferSet = true;
+			if (this.restoreFramebufferAttachments)
+			{
+				// Attachment-editing passes restore the original framebuffer before restoring its attachments.
+				GLMC.glBindFramebuffer(GL30.GL_FRAMEBUFFER, 0);
+				if (this.fbo != 0 && GL30.glIsFramebuffer(this.fbo))
+				{
+					GLMC.glBindFramebuffer(GL30.GL_FRAMEBUFFER, this.fbo);
+					frameBufferSet = true;
+				}
+			}
+			else
+			{
+				GLMC.glBindFramebuffer(GL30.GL_FRAMEBUFFER, this.fbo);
+			}
 		}
 		
 		

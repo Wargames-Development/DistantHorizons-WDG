@@ -162,7 +162,7 @@ public final class ModelCapture implements AutoCloseable {
         private int nativeDepth,program,previousVao,arrayBuffer,elementBuffer,mode,activeTexture;
         private int texture0,texture1,texture2,texture3;
         private int left,bottom,right,top;
-        private boolean drawing,uniformsReady,normalBlend;
+        private boolean drawing,captureBound,compositing,uniformsReady,normalBlend;
         private SamplerBindings samplers;
 
         private OverlayPass(int target,int width,int height,DhApiMat4f dhMvp,DhApiMat4f nativeMvp,
@@ -189,17 +189,20 @@ public final class ModelCapture implements AutoCloseable {
                 checkDepthFeedback(target,depth,terrain,nativeDepth);
             }
             this.left=left;this.bottom=bottom;this.right=right;this.top=top;
-            // Legacy callbacks can change fixed-function state. Keep that isolation local to each draw.
-            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glPushMatrix();
-            GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glPushMatrix();
-            drawing=true;
             try {
-                if(framebuffer==0 || width!=ModelCapture.this.width || height!=ModelCapture.this.height) {
-                    GL11.glPushAttrib(GL11.GL_TEXTURE_BIT);
-                    try { ensure(width,height); }
-                    finally { GL11.glPopAttrib(); }
-                } else GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,framebuffer);
+                if(!captureBound) {
+                    captureBound=true;
+                    if(framebuffer==0 || width!=ModelCapture.this.width || height!=ModelCapture.this.height) {
+                        GL11.glPushAttrib(GL11.GL_TEXTURE_BIT);
+                        try { ensure(width,height); }
+                        finally { GL11.glPopAttrib(); }
+                    } else GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,framebuffer);
+                }
+                // The saved draw buffer belongs to the capture FBO; restore it on the same FBO.
+                GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+                GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glPushMatrix();
+                GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glPushMatrix();
+                drawing=true;
                 setupCapture(width,height,left,bottom,right,top,projection);
                 GL20.glUseProgram(0);
                 return true;
@@ -211,21 +214,33 @@ public final class ModelCapture implements AutoCloseable {
             drawing=false;
             GL11.glMatrixMode(GL11.GL_MODELVIEW);GL11.glPopMatrix();
             GL11.glMatrixMode(GL11.GL_PROJECTION);GL11.glPopMatrix();
-            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,target);
             GL11.glPopAttrib();
+            restoreBuffers();
         }
 
-        public void marker(DhApiMat4f inverse,float front,float centre,float x,float y) {
-            compositeOverlay(inverse,true,true,front,centre,x,y);
+        public void startMarkers(DhApiMat4f inverse) {
+            startComposite(inverse,true,true);
+        }
+
+        public void marker(int left,int bottom,int right,int top,float front,float centre,float x,float y) {
+            shader.setUniform(markerDepthUniform,front);shader.setUniform(markerTerrainDepthUniform,centre);
+            GL20.glUniform2f(markerAnchorUniform,x,y);
+            drawComposite(left,bottom,right,top);
         }
 
         public void beam(DhApiMat4f inverse,boolean occlude) {
-            compositeOverlay(inverse,false,occlude,0,0,0,0);
+            try {
+                startComposite(inverse,false,occlude);
+                drawComposite(left,bottom,right,top);
+            } finally { endComposite(); }
         }
 
-        private void compositeOverlay(DhApiMat4f inverse,boolean marker,boolean occlude,float front,float centre,float x,float y) {
+        private void startComposite(DhApiMat4f inverse,boolean marker,boolean occlude) {
+            GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,target);
+            captureBound=false;
             GL11.glPushAttrib(GL11.GL_ENABLE_BIT|GL11.GL_COLOR_BUFFER_BIT|GL11.GL_DEPTH_BUFFER_BIT
                 |GL11.GL_SCISSOR_BIT|GL11.GL_VIEWPORT_BIT);
+            compositing=true;
             try {
                 ensureShader();shader.bind();
                 if(!uniformsReady) {
@@ -241,25 +256,29 @@ public final class ModelCapture implements AutoCloseable {
                 }
                 shader.setUniform(inverseUniform,inverse);shader.setUniform(markerUniform,marker);
                 shader.setUniform(occludeWorldUniform,occlude);
-                if(marker) {
-                    shader.setUniform(markerDepthUniform,front);shader.setUniform(markerTerrainDepthUniform,centre);
-                    GL20.glUniform2f(markerAnchorUniform,x,y);
-                }
                 bindUnit(0,colour);bindUnit(1,depth);bindUnit(2,terrain);bindUnit(3,nativeDepth);
                 GL11.glViewport(0,0,width,height);GL11.glEnable(GL11.GL_SCISSOR_TEST);
-                GL11.glScissor(left,bottom,right-left,top-bottom);
                 GL11.glDisable(GL11.GL_LIGHTING);GL11.glDisable(GL11.GL_FOG);GL11.glDisable(GL11.GL_ALPHA_TEST);GL11.glDisable(GL11.GL_CULL_FACE);
                 GL11.glEnable(GL11.GL_BLEND);GL11.glBlendFunc(GL11.GL_ONE,GL11.GL_ONE_MINUS_SRC_ALPHA);
                 GL30.glDisablei(GL11.GL_BLEND,2);
                 GL11.glColorMask(true,true,true,true);GL11.glDepthMask(false);GL11.glDisable(GL11.GL_DEPTH_TEST);
-                GL30.glBindVertexArray(vao);GL11.glDrawArrays(GL11.GL_TRIANGLES,0,6);
-            } finally {
-                GL11.glPopAttrib();
-                if(normalBlend) GL30.glEnablei(GL11.GL_BLEND,2);else GL30.glDisablei(GL11.GL_BLEND,2);
-                bindUnit(0,texture0);bindUnit(1,texture1);bindUnit(2,texture2);bindUnit(3,texture3);
-                GL13.glActiveTexture(activeTexture);
-                restoreBuffers();
-            }
+                GL30.glBindVertexArray(vao);
+            } catch(RuntimeException | LinkageError error) { endComposite();throw error; }
+        }
+
+        private void drawComposite(int left,int bottom,int right,int top) {
+            GL11.glScissor(left,bottom,right-left,top-bottom);
+            GL11.glDrawArrays(GL11.GL_TRIANGLES,0,6);
+        }
+
+        public void endComposite() {
+            if(!compositing) return;
+            compositing=false;
+            GL11.glPopAttrib();
+            if(normalBlend) GL30.glEnablei(GL11.GL_BLEND,2);else GL30.glDisablei(GL11.GL_BLEND,2);
+            bindUnit(0,texture0);bindUnit(1,texture1);bindUnit(2,texture2);bindUnit(3,texture3);
+            GL13.glActiveTexture(activeTexture);
+            restoreBuffers();
         }
 
         private void restoreBuffers() {
@@ -271,7 +290,8 @@ public final class ModelCapture implements AutoCloseable {
         @Override public void close() {
             if(samplers==null) return;
             end();
-            if(!uniformsReady) restoreBuffers();
+            endComposite();
+            if(captureBound) GL30.glBindFramebuffer(GL30.GL_DRAW_FRAMEBUFFER,target);
             GL20.glUseProgram(program);
             GL11.glMatrixMode(mode);
             samplers.close();samplers=null;

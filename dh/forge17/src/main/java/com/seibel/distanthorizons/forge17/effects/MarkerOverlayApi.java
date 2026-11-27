@@ -15,6 +15,7 @@ import org.lwjgl.opengl.*;
 public final class MarkerOverlayApi {
     public static final int API_VERSION=1;
     private static final List<Marker> pending=new ArrayList<>();
+    private static final List<Marker> batch=new ArrayList<>(16);
     private static final ModelCapture capture=new ModelCapture();
     private static boolean failed;
     private static final List<Beam> beams=new ArrayList<>();
@@ -26,7 +27,7 @@ public final class MarkerOverlayApi {
         if(draw==null || !Double.isFinite(x+y+z+radius) || radius<0 || radius>128 || pending.size()>=128) return true;
         pending.add(new Marker(world,x,y,z,radius,left,bottom,right,top,draw));return true;
     }
-    static void reset() { pending.clear();beams.clear(); }
+    static void reset() { pending.clear();beams.clear();batch.clear(); }
     static void draw() {
         if(pending.isEmpty() && beams.isEmpty()) return;
         Minecraft mc=Minecraft.getMinecraft();
@@ -41,24 +42,33 @@ public final class MarkerOverlayApi {
                 drawBeams(view,pass,mc.theWorld);
                 for(Marker marker:pending) {
                     if(marker.world!=mc.theWorld) continue;
-                    int left=Math.max(0,marker.left),bottom=Math.max(0,marker.bottom);
-                    int right=Math.min(view.width,marker.right),top=Math.min(view.height,marker.top);
-                    if(left>=right || bottom>=top) continue;
-                    float front=targetDepth(view,marker,true);
-                    if(!Float.isFinite(front) || front<0 || !owner.markerKnown(view,marker.x,marker.y,marker.z,marker.radius)) continue;
-                    if(!pass.begin(left,bottom,right,top,view.projection)) continue;
+                    if(!marker.prepare(view) || !owner.markerKnown(view,marker.x,marker.y,marker.z,marker.radius)) continue;
+                    if(batch.size()==16 || marker.overlaps(batch)) compositeMarkers(view,pass);
+                    if(!pass.begin(marker.left,marker.bottom,marker.right,marker.top,view.projection)) break;
                     try { marker.draw.run(); }
                     finally { pass.end(); }
-                    pass.marker(view.inverse,front,targetDepth(view,marker,false),
-                        projected(view.nativeMvp,marker.x-view.x,marker.y-view.y,marker.z-view.z,true),
-                        projected(view.nativeMvp,marker.x-view.x,marker.y-view.y,marker.z-view.z,false));
+                    batch.add(marker);
                 }
+                compositeMarkers(view,pass);
             } finally { owner.markerTerrainEnd(); }
         } catch(RuntimeException | LinkageError error) {
             failed=true;
             org.apache.logging.log4j.LogManager.getLogger("DistantHorizons").error("DH visual marker pass stopped",error);
         } finally {
             reset();
+        }
+    }
+    private static void compositeMarkers(MarkerView view,ModelCapture.OverlayPass pass) {
+        if(batch.isEmpty()) return;
+        // Overlapping scissors close the batch before another clear can overwrite those pixels.
+        pass.startMarkers(view.inverse);
+        try {
+            for(Marker marker:batch) {
+                pass.marker(marker.left,marker.bottom,marker.right,marker.top,marker.front,marker.centre,marker.anchorX,marker.anchorY);
+            }
+        } finally {
+            pass.endComposite();
+            batch.clear();
         }
     }
     /** Optional WGMap beam handoff. Callback draws absolute world geometry on this frame only.
@@ -125,21 +135,38 @@ public final class MarkerOverlayApi {
         final Object world;final double x,bottom,z,top;final boolean occlude;final Runnable draw;
         Beam(Object world,double x,double bottom,double z,double top,boolean occlude,Runnable draw) { this.world=world;this.x=x;this.bottom=bottom;this.z=z;this.top=top;this.occlude=occlude;this.draw=draw; }
     }
-    private static float projected(DhApiMat4f m,double x,double y,double z,boolean horizontal) {
-        double w=m.m30*x+m.m31*y+m.m32*z+m.m33;
-        return (float)((horizontal?m.m00*x+m.m01*y+m.m02*z+m.m03:m.m10*x+m.m11*y+m.m12*z+m.m13)/w);
-    }
-    private static float targetDepth(MarkerView view,Marker marker,boolean front) {
-        DhApiMat4f m=view.view,p=view.projection;
-        double eye=m.m20*(marker.x-view.x)+m.m21*(marker.y-view.y)+m.m22*(marker.z-view.z)+m.m23;
-        if(eye>=0) return Float.NaN;
-        // Use a conservative front envelope so the target cannot cover its own glyph.
-        if(front) eye=Math.min(-.05,eye+marker.radius+.05);
-        return (float)(.5*((p.m22*eye+p.m23)/-eye+1));
+    private static float targetDepth(DhApiMat4f projection,double eye) {
+        return (float)(.5*((projection.m22*eye+projection.m23)/-eye+1));
     }
     private static final class Marker {
-        final Object world;final double x,y,z,radius;final int left,bottom,right,top;final Runnable draw;
+        final Object world;final double x,y,z,radius;final Runnable draw;
+        int left,bottom,right,top;
+        float front,centre,anchorX,anchorY;
         Marker(Object world,double x,double y,double z,double radius,int left,int bottom,int right,int top,Runnable draw) { this.world=world;this.x=x;this.y=y;this.z=z;this.radius=radius;this.left=left;this.bottom=bottom;this.right=right;this.top=top;this.draw=draw; }
+        boolean prepare(MarkerView view) {
+            left=Math.max(0,left);bottom=Math.max(0,bottom);
+            right=Math.min(view.width,right);top=Math.min(view.height,top);
+            if(left>=right || bottom>=top) return false;
+            double dx=x-view.x,dy=y-view.y,dz=z-view.z;
+            DhApiMat4f camera=view.view;
+            double eye=camera.m20*dx+camera.m21*dy+camera.m22*dz+camera.m23;
+            if(eye>=0) return false;
+            // Use a conservative front envelope so the target cannot cover its own glyph.
+            front=targetDepth(view.projection,Math.min(-.05,eye+radius+.05));
+            if(!Float.isFinite(front) || front<0) return false;
+            centre=targetDepth(view.projection,eye);
+            DhApiMat4f m=view.nativeMvp;
+            double w=m.m30*dx+m.m31*dy+m.m32*dz+m.m33;
+            anchorX=(float)((m.m00*dx+m.m01*dy+m.m02*dz+m.m03)/w);
+            anchorY=(float)((m.m10*dx+m.m11*dy+m.m12*dz+m.m13)/w);
+            return true;
+        }
+        boolean overlaps(List<Marker> otherMarkers) {
+            for(Marker other:otherMarkers) {
+                if(left<other.right && right>other.left && bottom<other.top && top>other.bottom) return true;
+            }
+            return false;
+        }
     }
     static final class MarkerView {
         final DhApiMat4f nativeMvp=new DhApiMat4f(),dhMvp=new DhApiMat4f(),inverse=new DhApiMat4f();

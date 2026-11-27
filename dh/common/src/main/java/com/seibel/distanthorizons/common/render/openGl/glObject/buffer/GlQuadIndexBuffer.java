@@ -46,6 +46,11 @@ public class GlQuadIndexBuffer extends GLIndexBuffer
 	
 	public void upload(ByteBuffer buffer, int quadCount)
 	{
+		this.upload(buffer, quadCount, GL11.GL_UNSIGNED_INT);
+	}
+
+	void upload(ByteBuffer buffer, int quadCount, int indexType)
+	{
 		if (quadCount < 0)
 		{
 			throw new IllegalArgumentException("quadCount must be greater than 0");
@@ -57,13 +62,13 @@ public class GlQuadIndexBuffer extends GLIndexBuffer
 		}
 		
 		this.indicesCount = quadCount * 6; // 2 triangles per quad
-		if (this.indicesCount >= this.getCapacity()
+		if (indexType == this.glType && this.indicesCount >= this.getCapacity()
 			&& this.indicesCount < this.getCapacity() * BUFFER_SHRINK_TRIGGER)
 		{
 			return;
 		}
 		
-		this.glType = GL11.GL_UNSIGNED_INT;
+		this.glType = indexType;
 		super.uploadBuffer(buffer, EDhApiGpuUploadMethod.DATA,
 			this.indicesCount * GLEnums.getTypeSize(this.glType), GL15.GL_STATIC_DRAW);
 	}

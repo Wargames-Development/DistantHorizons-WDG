@@ -103,7 +103,7 @@ public class GlDhCopyShader extends GlAbstractShaderRenderer
 		}
 		
 		
-		try (GLState state = new GLState())
+		try (GLState state = new GLState(false))
 		{
 			
 			GLMC.disableDepthTest();
@@ -126,9 +126,9 @@ public class GlDhCopyShader extends GlAbstractShaderRenderer
 			GLMC.glBindFramebuffer(GL30.GL_FRAMEBUFFER, targetFrameBuffer);
 			
 			GlScreenQuad.INSTANCE.render();
+			// The following Minecraft pass already needs this framebuffer.
+			state.keepFramebufferBinding();
 		}
-		// everything's been restored, except at this point the MC framebuffer should now be used instead
-		GLMC.glBindFramebuffer(GL30.GL_FRAMEBUFFER, targetFrameBuffer);
 		
 	}
 	private void renderToMcTexture()
