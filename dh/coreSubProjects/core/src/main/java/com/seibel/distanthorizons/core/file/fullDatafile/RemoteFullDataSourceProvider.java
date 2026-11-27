@@ -24,6 +24,7 @@ import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiGeneratorPlan;
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
 import com.seibel.distanthorizons.core.file.structure.ISaveStructure;
+import com.seibel.distanthorizons.core.generation.queues.IFullDataSourceRetrievalQueue;
 import com.seibel.distanthorizons.core.generation.queues.RemoteWorldRetrievalQueue;
 import com.seibel.distanthorizons.core.generation.tasks.DataSourceRetrievalResult;
 import com.seibel.distanthorizons.core.level.IDhLevel;
@@ -39,6 +40,7 @@ import java.io.File;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
@@ -92,6 +94,16 @@ public class RemoteFullDataSourceProvider extends GeneratedFullDataSourceProvide
 
 	@Override
 	public boolean canQueueRetrievalNow() { return this.canQueueRetrievalNow(true); }
+
+	public void addTerrainDownloadMetrics(Map<String, Long> output)
+	{
+		if (this.networkState != null) this.networkState.fullDataPayloadReceiver.addTerrainDownloadMetrics(output);
+		if (this.syncOnLoadRequestQueue != null)
+			this.syncOnLoadRequestQueue.addTerrainDownloadMetrics(output, "cache_sync");
+		IFullDataSourceRetrievalQueue queue = this.worldGenQueueRef.get();
+		if (queue instanceof RemoteWorldRetrievalQueue)
+			((RemoteWorldRetrievalQueue) queue).addTerrainDownloadMetrics(output, "missing_terrain");
+	}
 	
 	@Override
 	@Nullable

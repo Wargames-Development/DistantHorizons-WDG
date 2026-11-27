@@ -24,8 +24,11 @@ import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiDistantGenerat
 import com.seibel.distanthorizons.core.config.Config;
 import com.seibel.distanthorizons.core.config.listeners.IConfigListener;
 import com.seibel.distanthorizons.core.dataObjects.fullData.sources.FullDataSourceV2;
+import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
+import com.seibel.distanthorizons.core.dataObjects.render.bufferBuilding.LodBufferContainer;
 import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
 import com.seibel.distanthorizons.core.enums.EDhDirection;
+import com.seibel.distanthorizons.core.file.fullDatafile.RemoteFullDataSourceProvider;
 import com.seibel.distanthorizons.core.file.fullDatafile.V2.FullDataSourceProviderV2;
 import com.seibel.distanthorizons.core.file.fullDatafile.V2.FullDataUpdatePropagatorV2;
 import com.seibel.distanthorizons.core.generation.tasks.DataSourceRetrievalResult;
@@ -38,6 +41,7 @@ import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
 import com.seibel.distanthorizons.core.render.CameraZoom;
 import com.seibel.distanthorizons.core.render.RenderBufferHandler;
+import com.seibel.distanthorizons.core.render.TerrainCacheDiagnostics;
 import com.seibel.distanthorizons.core.render.renderer.AbstractDebugWireframeRenderer;
 import com.seibel.distanthorizons.core.render.renderer.BeaconRenderHandler;
 import com.seibel.distanthorizons.core.render.renderer.IDebugRenderable;
@@ -62,6 +66,7 @@ import java.awt.*;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -93,6 +98,13 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 	 * This is a {@link ConcurrentLinkedQueue} because new sections can be added to this list via the world generator threads.
 	 */
 	private final ConcurrentLinkedQueue<Long> sectionsToReload = new ConcurrentLinkedQueue<>();
+	private final LongAdder refreshNotifications = new LongAdder();
+	private final LongAdder buildsWithoutMesh = new LongAdder();
+	private volatile long initialMeshBuilds, dirtyMeshBuilds, refreshMeshBuilds, coalescedRefreshes;
+	// The tree tick owns the in-progress sample and publishes a completed copy for the render thread.
+	private long[] desiredInProgress;
+	private volatile long[] desiredCoverage;
+	private long nextCoverageSample;
 	private final IDhClientLevel level;
 	/** 
 	 * Note: this doesn't lock all operations as some other threads/operations
@@ -263,6 +275,17 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 	}
 	private void updateAllRenderSections(DhBlockPos2D playerPos)
 	{
+		if (TerrainCacheDiagnostics.ENABLED)
+		{
+			long now = System.nanoTime();
+			desiredInProgress = null;
+			if (nextCoverageSample == 0 || now - nextCoverageSample >= 0)
+			{
+				nextCoverageSample = now + 1_000_000_000L;
+				desiredInProgress = new long[6];
+				desiredInProgress[5] = now;
+			}
+		}
 		// this data will be updated as we walk through the tree
 		this.tickNodeHolder.clear();
 		
@@ -341,6 +364,11 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 		//============//
 		//region
 		
+		if (desiredInProgress != null)
+		{
+			desiredCoverage = desiredInProgress;
+			desiredInProgress = null;
+		}
 		if (this.requeueAllRetrievalTasksRef.getAndSet(false))
 		{
 			Iterator<QuadNode<LodRenderSection>> nodeIterator = this.nodeIterator();
@@ -721,6 +749,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 			return true;
 		}
 		
+		if (desiredInProgress != null && quadNode.value != null) recordDesiredCoverage(quadNode.value);
 		if (quadNode.value != null 
 			&& quadNode.value.canRender())
 		{
@@ -793,6 +822,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 		{
 			if (positionsToRequeue.contains(pos))
 			{
+				if (TerrainCacheDiagnostics.ENABLED) coalescedRefreshes++;
 				// don't attempt to re-load positions that are already in the process of reloading
 				continue;
 			}
@@ -812,6 +842,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 						// and may be invisible/missing
 						positionsToRequeue.add(pos);
 					}
+					else if (TerrainCacheDiagnostics.ENABLED) refreshMeshBuilds++;
 				}
 			}
 		}
@@ -842,7 +873,13 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 			if (!renderSection.gpuUploadInProgress() 
 				&& !renderSection.gpuUploadComplete())
 			{
-				renderSection.uploadRenderDataToGpuAsync();
+				boolean hadBuffer = TerrainCacheDiagnostics.ENABLED && renderSection.canRender();
+				if (renderSection.uploadRenderDataToGpuAsync()
+					&& TerrainCacheDiagnostics.ENABLED)
+				{
+					if (hadBuffer) dirtyMeshBuilds++;
+					else initialMeshBuilds++;
+				}
 			}
 		}
 	}
@@ -1322,6 +1359,7 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 	 */
 	public void queuePosToReload(long pos)
 	{		
+		if (TerrainCacheDiagnostics.ENABLED) refreshNotifications.increment();
 		// queue reloads //
 		
 		// only queue each section for reloading
@@ -1338,6 +1376,53 @@ public class LodQuadTree extends QuadTree<LodRenderSection> implements IDebugRen
 			long adjacentPos = DhSectionPos.getAdjacentPos(pos, direction);
 			this.sectionsToReload.add(adjacentPos);
 		}
+	}
+
+	private void recordDesiredCoverage(LodRenderSection section)
+	{
+		long area = (long) section.blockWidth * section.blockWidth;
+		desiredInProgress[0]++;
+		desiredInProgress[1] += area;
+		LodBufferContainer buffer = section.renderBufferContainer;
+		if (buffer == null) return;
+		desiredInProgress[2]++;
+		TerrainCoverage.CacheStats stats = buffer.terrainCoverage.cacheStats;
+		if (stats != null)
+		{
+			long columnArea = area / (TerrainCoverage.WIDTH * TerrainCoverage.WIDTH);
+			desiredInProgress[3] += stats.presentColumns * columnArea;
+			desiredInProgress[4] += stats.knownColumns * columnArea;
+		}
+	}
+
+	public void addTerrainCacheMetrics(Map<String, Long> output)
+	{
+		long[] desired = this.desiredCoverage;
+		if (desired != null)
+		{
+			output.put("desired_sections", desired[0]);
+			output.put("desired_footprint_blocks2", desired[1]);
+			output.put("desired_sections_with_buffer", desired[2]);
+			output.put("desired_present_blocks2", desired[3]);
+			output.put("desired_complete_blocks2", desired[4]);
+			output.put("desired_sample_age_ms", (System.nanoTime() - desired[5]) / 1_000_000L);
+		}
+		output.put("mesh_initial_or_evicted_total", initialMeshBuilds);
+		output.put("mesh_dirty_existing_total", dirtyMeshBuilds);
+		output.put("mesh_source_or_neighbor_refresh_total", refreshMeshBuilds);
+		output.put("mesh_source_notifications_total", refreshNotifications.sum());
+		output.put("mesh_no_builder_total", buildsWithoutMesh.sum());
+		output.put("mesh_refresh_duplicates_coalesced_total", coalescedRefreshes);
+		output.put("mesh_refresh_queue_entries", (long) this.sectionsToReload.size());
+		if (fullDataSourceProvider instanceof RemoteFullDataSourceProvider)
+		{
+			((RemoteFullDataSourceProvider) fullDataSourceProvider).addTerrainDownloadMetrics(output);
+		}
+	}
+
+	void recordBuildWithoutMesh()
+	{
+		if (TerrainCacheDiagnostics.ENABLED) buildsWithoutMesh.increment();
 	}
 	
 	//endregion external render requests

@@ -191,6 +191,7 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 					{
 						if (lodQuadBuilder == null)
 						{
+							this.quadTree.recordBuildWithoutMesh();
 							future.complete(null);
 							return;
 						}
@@ -278,6 +279,16 @@ public class LodRenderSection implements IDebugRenderable, AutoCloseable
 				// the render sources are only needed by this synchronous method,
 				// then they can be closed
 				ColumnRenderBufferBuilder.makeLodRenderData(lodQuadBuilder, thisRenderSource, this.clientLevelWrapper, adjacentRenderSections, adjIsSameDetailLevel);
+				if (lodQuadBuilder.terrainCoverage.cacheStats != null)
+				{
+					int populatedNeighbors = 0;
+					for (ColumnRenderSource neighbor : adjacentRenderSections)
+					{
+						if (neighbor != null && !neighbor.isEmpty()) populatedNeighbors++;
+					}
+					lodQuadBuilder.terrainCoverage = lodQuadBuilder.terrainCoverage.withMeshStats(
+						populatedNeighbors, lodQuadBuilder.getCandidateQuads());
+				}
 				return lodQuadBuilder;
 			}
 			catch (Exception e)

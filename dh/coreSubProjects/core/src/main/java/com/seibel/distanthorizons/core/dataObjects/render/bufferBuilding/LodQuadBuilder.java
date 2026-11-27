@@ -142,6 +142,9 @@ public class LodQuadBuilder implements AutoCloseable
 	private EDhApiGrassSideRendering grassSideRenderingMode;
 	
 	private int premergeCount = 0;
+	private long candidateQuads;
+
+	public long getCandidateQuads() { return this.candidateQuads; }
 	
 	
 	
@@ -177,6 +180,7 @@ public class LodQuadBuilder implements AutoCloseable
 		this.grassSideRenderingMode = Config.Client.Advanced.Graphics.Quality.grassSideRendering.get();
 		
 		this.premergeCount = 0;
+		this.candidateQuads = 0;
 	}
 	
 	//endregion
@@ -277,6 +281,7 @@ public class LodQuadBuilder implements AutoCloseable
 	{
 		long mergeCount = 0; // can be used for debugging
 		long preQuadsCount = this.getCurrentOpaqueQuadsCount() + this.getCurrentTransparentQuadsCount();
+		if (this.terrainCoverage.cacheStats != null) this.candidateQuads = preQuadsCount + this.premergeCount;
 		if (preQuadsCount <= 1)
 		{
 			return;

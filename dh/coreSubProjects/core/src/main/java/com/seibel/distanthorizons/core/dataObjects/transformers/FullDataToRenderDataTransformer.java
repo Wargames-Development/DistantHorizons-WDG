@@ -20,6 +20,7 @@
 package com.seibel.distanthorizons.core.dataObjects.transformers;
 
 import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
+import com.seibel.distanthorizons.core.render.TerrainCacheDiagnostics;
 import com.seibel.distanthorizons.api.enums.worldGeneration.EDhApiWorldGenerationStep;
 import com.seibel.distanthorizons.api.enums.config.EDhApiBlocksToAvoid;
 import com.seibel.distanthorizons.api.enums.rendering.EDhApiBlockMaterial;
@@ -125,12 +126,18 @@ public class FullDataToRenderDataTransformer
 		final ColumnRenderSource columnSource = ColumnRenderSource.createEmpty(pos, maxVertSliceCount, levelWrapper.getMinHeight());
 		if (fullDataSource.isEmpty)
 		{
+			if (TerrainCacheDiagnostics.ENABLED) {
+				columnSource.terrainCoverage = TerrainCoverage.UNKNOWN.withSourceStats(
+					new TerrainCoverage.CacheStats(0, 0, 0, fullDataSource.createdUnixDateTime, fullDataSource.lastModifiedUnixDateTime));
+			}
 			return columnSource;
 		}
 		
         // Generation state is the minimum of all contributing child columns.
         // DOWN_SAMPLED/partial terrain must never authorise actor visibility.
         long[] knownRows = new long[64];
+        int presentColumns = 0, knownColumns = 0;
+        long inputSpans = 0;
 
 		columnSource.markNotEmpty();
 		int baseX = DhSectionPos.getMinCornerBlockX(pos);
@@ -149,8 +156,15 @@ public class FullDataToRenderDataTransformer
 					columnSource.populateColumnView(columnArrayView, x, z);
 					LongArrayList dataColumn = fullDataSource.getColumnAtRelPos(x, z);
                     int index = FullDataSourceV2.relativePosToIndex(x, z);
-                    if (fullDataSource.columnGenerationSteps.getByte(index) == EDhApiWorldGenerationStep.LIGHT.value
-                            && dataColumn != null && !dataColumn.isEmpty()) knownRows[x] |= 1L << z;
+                    boolean complete = fullDataSource.columnGenerationSteps.getByte(index) == EDhApiWorldGenerationStep.LIGHT.value;
+                    if ((complete || TerrainCacheDiagnostics.ENABLED) && dataColumn != null && !dataColumn.isEmpty()) {
+                        if (complete) knownRows[x] |= 1L << z;
+                        if (TerrainCacheDiagnostics.ENABLED) {
+                            presentColumns++;
+                            if (complete) knownColumns++;
+                            inputSpans += dataColumn.size();
+                        }
+                    }
 					
 					updateOrReplaceRenderDataViewColumnWithFullDataColumn(
 						levelWrapper, fullDataSource,
@@ -164,7 +178,9 @@ public class FullDataToRenderDataTransformer
 			}
 		}
 		
-		columnSource.terrainCoverage = TerrainCoverage.copyOf(knownRows);
+		columnSource.terrainCoverage = TerrainCoverage.copyOf(knownRows, TerrainCacheDiagnostics.ENABLED
+			? new TerrainCoverage.CacheStats(presentColumns, knownColumns, inputSpans,
+				fullDataSource.createdUnixDateTime, fullDataSource.lastModifiedUnixDateTime) : null);
 		return columnSource;
 	}
 	

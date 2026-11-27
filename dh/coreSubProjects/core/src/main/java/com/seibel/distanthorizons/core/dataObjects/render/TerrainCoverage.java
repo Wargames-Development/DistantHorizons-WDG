@@ -10,13 +10,52 @@ public final class TerrainCoverage {
     public static final int WIDTH = 64;
     public static final TerrainCoverage UNKNOWN = new TerrainCoverage(new long[WIDTH]);
     private final long[] rows;
+    public final CacheStats cacheStats;
 
-    private TerrainCoverage(long[] rows) { this.rows = rows; }
+    private TerrainCoverage(long[] rows) { this(rows, null); }
+
+    private TerrainCoverage(long[] rows, CacheStats cacheStats) {
+        this.rows = rows;
+        this.cacheStats = cacheStats;
+    }
 
     /** Copies worker-owned bits before publishing them with an uploaded buffer. */
     public static TerrainCoverage copyOf(long[] rows) {
+        return copyOf(rows, null);
+    }
+
+    public static TerrainCoverage copyOf(long[] rows, CacheStats cacheStats) {
         if (rows.length != WIDTH) throw new IllegalArgumentException("Expected 64 coverage rows");
-        return new TerrainCoverage(Arrays.copyOf(rows, WIDTH));
+        return new TerrainCoverage(Arrays.copyOf(rows, WIDTH), cacheStats);
+    }
+
+    public TerrainCoverage withSourceStats(CacheStats stats) { return new TerrainCoverage(rows, stats); }
+
+    public TerrainCoverage withMeshStats(int neighborsWithData, long candidateQuads) {
+        return cacheStats == null ? this : new TerrainCoverage(rows, new CacheStats(
+            cacheStats.presentColumns, cacheStats.knownColumns, cacheStats.inputSpans, cacheStats.createdMs,
+            cacheStats.modifiedMs, neighborsWithData, candidateQuads));
+    }
+
+    /** Optional measurements, independent of the occlusion queries below. */
+    public static final class CacheStats {
+        public final int presentColumns, knownColumns, neighborsWithData;
+        public final long inputSpans, createdMs, modifiedMs, candidateQuads;
+
+        public CacheStats(int presentColumns, int knownColumns, long inputSpans, long createdMs, long modifiedMs) {
+            this(presentColumns, knownColumns, inputSpans, createdMs, modifiedMs, 0, 0);
+        }
+
+        private CacheStats(int presentColumns, int knownColumns, long inputSpans, long createdMs, long modifiedMs,
+                           int neighborsWithData, long candidateQuads) {
+            this.presentColumns = presentColumns;
+            this.knownColumns = knownColumns;
+            this.inputSpans = inputSpans;
+            this.createdMs = createdMs;
+            this.modifiedMs = modifiedMs;
+            this.neighborsWithData = neighborsWithData;
+            this.candidateQuads = candidateQuads;
+        }
     }
 
     public boolean isKnown(int x, int z) {

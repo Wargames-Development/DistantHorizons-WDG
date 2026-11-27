@@ -359,6 +359,7 @@ public class RenderThreadTaskHandler
 	 * Can be used to get stack traces for render thread tasks while they're being run. 
 	 */
 	public @Nullable QueuedRunnable getCurrentlyRunningTask() { return this.currentQueuedRunnable; }
+	public int getQueueSize() { return RENDER_THREAD_RUNNABLE_QUEUE.size(); }
 	
 	//endregion
 	

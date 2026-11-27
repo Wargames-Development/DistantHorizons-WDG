@@ -23,6 +23,7 @@ import com.seibel.distanthorizons.api.DhApi;
 import com.seibel.distanthorizons.api.interfaces.override.rendering.IDhApiCullingFrustum;
 import com.seibel.distanthorizons.api.interfaces.override.rendering.IDhApiShadowCullingFrustum;
 import com.seibel.distanthorizons.core.config.Config;
+import com.seibel.distanthorizons.core.dataObjects.render.TerrainCoverage;
 import com.seibel.distanthorizons.core.dataObjects.render.bufferBuilding.LodBufferContainer;
 import com.seibel.distanthorizons.core.dependencyInjection.ModAccessorInjector;
 import com.seibel.distanthorizons.core.dependencyInjection.SingletonInjector;
@@ -38,6 +39,7 @@ import com.seibel.distanthorizons.core.render.renderer.cullingFrustum.DhFrustumB
 import com.seibel.distanthorizons.core.render.renderer.cullingFrustum.NeverCullFrustum;
 import com.seibel.distanthorizons.core.util.LodUtil;
 import com.seibel.distanthorizons.core.util.objects.SortedArraySet;
+import com.seibel.distanthorizons.core.util.threading.ThreadPoolUtil;
 import com.seibel.distanthorizons.core.wrapperInterfaces.minecraft.IMinecraftRenderWrapper;
 import com.seibel.distanthorizons.core.wrapperInterfaces.modAccessor.IIrisAccessor;
 import com.seibel.distanthorizons.coreapi.ModInfo;
@@ -47,6 +49,9 @@ import com.seibel.distanthorizons.core.util.math.DhVec3d;
 import org.joml.Matrix4f;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * This object tells the {@link LodRenderer} what buffers to render
@@ -84,6 +89,7 @@ public class RenderBufferHandler implements AutoCloseable
 	private int culledBufferCount;
 	private int shadowVisibleBufferCount;
 	private int shadowCulledBufferCount;
+	private boolean lastListWasShadow;
 	
 	
 	
@@ -164,6 +170,7 @@ public class RenderBufferHandler implements AutoCloseable
 		boolean enableFrustumCulling;
 		IDhApiCullingFrustum frustum;
 		boolean isShadowPass = (IRIS_ACCESSOR != null && IRIS_ACCESSOR.isRenderingShadowPass());
+		this.lastListWasShadow = isShadowPass;
 		if (isShadowPass)
 		{
 			enableFrustumCulling = !Config.Client.Advanced.Graphics.Culling.disableShadowPassFrustumCulling.get();
@@ -293,6 +300,52 @@ public class RenderBufferHandler implements AutoCloseable
 	//region
 	
     public long getCoverageGeneration() { return coverageGeneration; }
+
+    /** Sample on the render thread after building a primary view. Read immutable metadata from resident meshes. */
+    public Map<String, Long> sampleTerrainCacheMetrics() {
+        if (!TerrainCacheDiagnostics.ENABLED || this.lastListWasShadow || this.coverageView == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, Long> output = new LinkedHashMap<>();
+        TerrainCacheDiagnostics.Geometry geometry = new TerrainCacheDiagnostics.Geometry(
+            this.coverageView.exactCameraPosition.x, this.coverageView.exactCameraPosition.z, System.currentTimeMillis());
+        for (int i = 0; i < this.loadedNearToFarBuffers.size(); i++) {
+            geometry.add(this.loadedNearToFarBuffers.get(i));
+        }
+        geometry.writeTo(output);
+        long footprint = 0, presentArea = 0, completeArea = 0, missingStats = 0;
+        for (LodRenderSection section : this.tempProcessNodeList) {
+            if (section == null) continue;
+            LodBufferContainer buffer = section.renderBufferContainer;
+            long area = (long) section.blockWidth * section.blockWidth;
+            footprint += area;
+            if (buffer == null || buffer.terrainCoverage.cacheStats == null) {
+                missingStats++;
+                continue;
+            }
+            long columnArea = area / (TerrainCoverage.WIDTH * TerrainCoverage.WIDTH);
+            presentArea += columnArea * buffer.terrainCoverage.cacheStats.presentColumns;
+            completeArea += columnArea * buffer.terrainCoverage.cacheStats.knownColumns;
+        }
+        output.put("selected_sections", (long) this.tempProcessNodeList.size());
+        output.put("selected_footprint_blocks2", footprint);
+        output.put("selected_present_blocks2", presentArea);
+        output.put("selected_complete_blocks2", completeArea);
+        output.put("selected_sections_without_source_stats", missingStats);
+        output.put("config_distance_chunks", (long) Config.Client.Advanced.Graphics.Quality.lodChunkRenderDistanceRadius.get());
+        output.put("config_horizontal_quality", (long) Config.Client.Advanced.Graphics.Quality.horizontalQuality.get().ordinal());
+        output.put("config_max_horizontal_resolution", (long) Config.Client.Advanced.Graphics.Quality.maxHorizontalResolution.get().ordinal());
+        output.put("config_vertical_quality", (long) Config.Client.Advanced.Graphics.Quality.verticalQuality.get().ordinal());
+        output.put("config_transparency", (long) Config.Client.Advanced.Graphics.Quality.transparency.get().ordinal());
+        output.put("config_textured_lods", Config.Client.Advanced.Graphics.Texture.enableTexturedLods.get() ? 1L : 0L);
+        this.lodQuadTree.addTerrainCacheMetrics(output);
+        TerrainCacheDiagnostics.queue(output, "render_loader", ThreadPoolUtil.getRenderLoadingExecutor());
+        TerrainCacheDiagnostics.queue(output, "file_handler", ThreadPoolUtil.getFileHandlerExecutor());
+        TerrainCacheDiagnostics.queue(output, "update_propagation", ThreadPoolUtil.getUpdatePropagatorExecutor());
+        TerrainCacheDiagnostics.queue(output, "network_compression", ThreadPoolUtil.getNetworkCompressionExecutor());
+        output.put("render_tasks_waiting", (long) RenderThreadTaskHandler.INSTANCE.getQueueSize());
+        return output;
+    }
 
     private void ensureCoverageIndex() {
         if (!coverageIndexReady) {

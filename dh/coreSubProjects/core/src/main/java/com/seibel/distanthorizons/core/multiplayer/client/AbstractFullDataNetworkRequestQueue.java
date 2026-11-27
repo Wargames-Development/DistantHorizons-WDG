@@ -18,6 +18,7 @@ import com.seibel.distanthorizons.core.network.messages.fullData.FullDataSourceR
 import com.seibel.distanthorizons.core.network.messages.fullData.FullDataSourceResponseMessage;
 import com.seibel.distanthorizons.core.pos.blockPos.DhBlockPos2D;
 import com.seibel.distanthorizons.core.pos.DhSectionPos;
+import com.seibel.distanthorizons.core.render.TerrainCacheDiagnostics;
 import com.seibel.distanthorizons.core.render.renderer.AbstractDebugWireframeRenderer;
 import com.seibel.distanthorizons.core.render.renderer.IDebugRenderable;
 import com.seibel.distanthorizons.core.sql.dto.FullDataSourceV2DTO;
@@ -35,6 +36,7 @@ import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 
 public abstract class AbstractFullDataNetworkRequestQueue implements IDebugRenderable, AutoCloseable
 {
@@ -70,6 +72,8 @@ public abstract class AbstractFullDataNetworkRequestQueue implements IDebugRende
 	
 	private final AtomicInteger finishedRequests = new AtomicInteger();
 	private final AtomicInteger failedRequests = new AtomicInteger();
+	private final LongAdder attempts = new LongAdder();
+	private final LongAdder unchangedResponses = new LongAdder();
 	private final ConfigEntry<Boolean> showDebugWireframeConfig;
 	
 	private final SupplierBasedRateLimiter<Void> rateLimiter = new SupplierBasedRateLimiter<>(this::getRequestRateLimit);
@@ -213,6 +217,7 @@ public abstract class AbstractFullDataNetworkRequestQueue implements IDebugRende
 		Long offsetEntryTimestamp = requestTask.updateTimestamp != null
 				? requestTask.updateTimestamp + this.networkState.getServerTimeOffset()
 				: null;
+		if (TerrainCacheDiagnostics.ENABLED) attempts.increment();
 		
 		CompletableFuture<FullDataSourceResponseMessage> dataSourceNetworkFuture = this.networkState.getSession().sendRequest(
 				new FullDataSourceRequestMessage(this.level.getLevelWrapper(), requestPos, offsetEntryTimestamp),
@@ -246,6 +251,7 @@ public abstract class AbstractFullDataNetworkRequestQueue implements IDebugRende
 			if (response.payload == null)
 			{
 				LodUtil.assertTrue(this.changedOnly, "Received empty data source response for not changes-only request");
+				if (TerrainCacheDiagnostics.ENABLED) unchangedResponses.increment();
 				requestTask.future.cancel(false);
 				return;
 			}
@@ -369,6 +375,16 @@ public abstract class AbstractFullDataNetworkRequestQueue implements IDebugRende
 	
 	public int getWaitingTaskCount() { return this.waitingTasksBySectionPos.size(); }
 	public int getInProgressTaskCount() { return Short.MAX_VALUE - this.pendingTasksSemaphore.availablePermits(); }
+
+	public void addTerrainDownloadMetrics(Map<String, Long> output, String prefix)
+	{
+		output.put(prefix + "_waiting_and_active", (long) this.getWaitingTaskCount());
+		output.put(prefix + "_active", (long) this.getInProgressTaskCount());
+		output.put(prefix + "_attempts_total", attempts.sum());
+		output.put(prefix + "_finished_total", (long) this.finishedRequests.get());
+		output.put(prefix + "_failed_total", (long) this.failedRequests.get());
+		output.put(prefix + "_unchanged_total", unchangedResponses.sum());
+	}
 	
 	
 	
